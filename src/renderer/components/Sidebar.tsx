@@ -312,7 +312,7 @@ function ChatSidebar({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-2">
         {!isHealthy ? (
           <div className="px-2 py-4 text-center text-danger text-sm">
             <div className="mb-2">buddy 服务未运行</div>
