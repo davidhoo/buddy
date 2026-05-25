@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Task, TaskStatus, ActiveRun } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { elapsedText } from '../lib/format'
@@ -247,6 +247,27 @@ function ChatSidebar({
   const [renamingRepoRoot, setRenamingRepoRoot] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('buddy.pinnedTaskIds') || '[]')
+    } catch { return [] }
+  })
+
+  const togglePin = useCallback((taskId: string) => {
+    setPinnedTaskIds(prev => {
+      const next = prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
+      try { localStorage.setItem('buddy.pinnedTaskIds', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  // Drop stale pins (deleted tasks)
+  const validPinnedIds = pinnedTaskIds.filter(id => tasks.some(t => t.task_id === id))
+  const pinnedTasks = validPinnedIds
+    .map(id => tasks.find(t => t.task_id === id)!)
+    .filter(Boolean)
+  const unpinnedTasks = tasks.filter(t => !validPinnedIds.includes(t.task_id))
+
   // Close menu on outside click
   useEffect(() => {
     if (!openMenuRepoRoot) return
@@ -259,7 +280,7 @@ function ChatSidebar({
     return () => document.removeEventListener('mousedown', handler)
   }, [openMenuRepoRoot])
 
-  const groupedTasks = tasks.reduce<Record<string, Task[]>>((acc, task) => {
+  const groupedTasks = unpinnedTasks.reduce<Record<string, Task[]>>((acc, task) => {
     const key = projectName(task, projectNames)
     if (!acc[key]) acc[key] = []
     acc[key].push(task)
@@ -307,12 +328,93 @@ function ChatSidebar({
           <div className="px-2 py-4 text-center text-danger text-sm">
             加载失败: {error.message}
           </div>
-        ) : Object.keys(groupedTasks).length === 0 ? (
+        ) : Object.keys(groupedTasks).length === 0 && pinnedTasks.length === 0 ? (
           <div className="px-2 py-4 text-center text-fg-muted text-sm">
             暂无任务
           </div>
         ) : (
           <>
+            {pinnedTasks.length > 0 && (
+              <>
+                <div className="px-2 pt-2 pb-1 text-xs text-fg-muted font-medium">置顶</div>
+                {pinnedTasks.map((task) => {
+                  const isSelected = selectedTaskId === task.task_id
+                  const isRunning = statusClass(task.status) === 'running'
+                  const round = task.round ?? 0
+                  const elapsed = isRunning && task.active_run?.started_at
+                    ? elapsedText(task.active_run.started_at)
+                    : null
+                  const proj = projectName(task, projectNames)
+                  return (
+                    <div
+                      key={task.task_id}
+                      onClick={() => onSelectTask(task.task_id, task.workspace_key)}
+                      title={`${task.task_id}\n${task.workspace_key}`}
+                      className={`group/task w-full text-left px-3 py-1.5 ml-2 rounded-md mb-0.5 transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-bg-muted'
+                          : 'hover:bg-bg-subtle'
+                      } ${task.status === 'DONE' ? 'task-done' : ''}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
+                        <span className={`text-sm truncate flex-1 ${
+                          isSelected ? 'text-fg font-medium' : 'text-fg-secondary'
+                        }`}>
+                          {task.task_id}
+                        </span>
+                        <span className="text-xs text-fg-muted truncate max-w-[60px]">{proj}</span>
+                        <span className={`task-status-text status-text-${statusClass(task.status)}`}>
+                          {statusText[task.status] || task.status}
+                        </span>
+                        {task.updated_at && (
+                          <span className="text-xs text-fg-muted flex-shrink-0 group-hover/task:hidden">
+                            {formatRelativeTime(task.updated_at)}
+                          </span>
+                        )}
+                        <div className="hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); togglePin(task.task_id) }}
+                            className="w-5 h-5 flex items-center justify-center rounded text-accent hover:text-accent-hover hover:bg-bg-muted"
+                            title="取消置顶"
+                          >
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(-30deg)' }}>
+                              <path d="M12 17v5" />
+                              <path d="M5 17h14l-1.5-2.5V9a4 4 0 0 0-3-3.87V4a1.5 1.5 0 0 0-3 0v1.13A4 4 0 0 0 8.5 9v5.5L7 17z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const ok = window.confirm(`确定删除任务 ${task.task_id}？\n\n这会删除该任务的本地记录、对话和 artifacts。`)
+                              if (ok) onDeleteTask(task.task_id, task.workspace_key)
+                            }}
+                            className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-danger hover:bg-bg-muted"
+                            title="删除会话"
+                          >
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      {(round > 0 || elapsed) && (
+                        <div className="flex items-center gap-1.5 mt-0.5 pl-[22px] text-xs text-fg-muted">
+                          {round > 0 && <span>第 {round} 轮</span>}
+                          {round > 0 && elapsed && <span>·</span>}
+                          {elapsed && <LiveElapsed startedAt={task.active_run!.started_at} />}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
             <div className="px-2 pt-2 pb-1 text-xs text-fg-muted font-medium">项目</div>
             {Object.entries(groupedTasks).map(([projectKey, workspaceTasks]) => {
               const hasSelected = workspaceTasks.some(t => t.task_id === selectedTaskId)
@@ -437,12 +539,12 @@ function ChatSidebar({
                             <div className="hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation() }}
-                                className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted"
+                                onClick={(e) => { e.stopPropagation(); togglePin(task.task_id) }}
+                                className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-accent hover:bg-bg-muted"
                                 title="置顶"
                               >
-                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <line x1="12" y1="17" x2="12" y2="22" />
+                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(-30deg)' }}>
+                                  <path d="M12 17v5" />
                                   <path d="M5 17h14l-1.5-2.5V9a4 4 0 0 0-3-3.87V4a1.5 1.5 0 0 0-3 0v1.13A4 4 0 0 0 8.5 9v5.5L7 17z" />
                                 </svg>
                               </button>
