@@ -13,7 +13,7 @@ export class WindowManager {
       minHeight: 600,
       show: false,
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 16 },
+      trafficLightPosition: { x: 16, y: 19 },
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false

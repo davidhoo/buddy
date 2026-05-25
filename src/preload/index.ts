@@ -1,7 +1,8 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
-  // 后续添加 API
+  selectDirectory: (defaultPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:selectDirectory', defaultPath)
 }
 
 contextBridge.exposeInMainWorld('api', api)

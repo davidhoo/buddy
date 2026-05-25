@@ -40,12 +40,19 @@ export function ResizeHandle({ onResize, direction, className = '' }: ResizeHand
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      // 组件卸载时（如 sidebar 拖到阈值后被自动隐藏），如果还处于拖拽中，
+      // mouseup 不会再触发到我们的 handler，需要主动清理 body 全局样式
+      if (isDragging.current) {
+        isDragging.current = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
     }
   }, [direction, onResize])
 
   return (
     <div
-      className={`w-1 cursor-col-resize hover:bg-accent-green/50 active:bg-accent-green transition-colors ${className}`}
+      className={`w-1 cursor-col-resize ${className}`}
       onMouseDown={handleMouseDown}
     />
   )

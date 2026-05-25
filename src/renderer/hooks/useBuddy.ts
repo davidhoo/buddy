@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { GlobalSettings } from '../../shared/types'
 
 export function useHealthCheck() {
   return useQuery({
@@ -144,6 +145,17 @@ export function useInterrupt() {
       api.interrupt(taskId, workspaceKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task'] })
+    }
+  })
+}
+
+export function useUpdateGlobalSettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (settings: GlobalSettings) => api.updateGlobalSettings(settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bootstrap'] })
     }
   })
 }

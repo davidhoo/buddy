@@ -4,6 +4,8 @@ export interface Task {
   status: TaskStatus
   updated_at: string
   repo_root: string
+  round?: number
+  active_run?: ActiveRun | null
 }
 
 export type TaskStatus =
@@ -34,15 +36,21 @@ export interface TaskState {
   round: number
   next_actor: string
   countdown?: Countdown
-  active_run?: ActiveRun
+  active_run?: ActiveRun | null
   claude_session_id?: string
   codex_thread_id?: string
+  opencode_session_id?: string
+  kimi_session_id?: string
+  updated_at?: string
+  repo_root?: string
+  pending_break?: { actor?: string } | null
 }
 
 export interface Countdown {
   status: 'running' | 'paused' | 'elapsed' | 'skipped'
   remaining: number
   default_next_actor: string
+  deadline?: string
 }
 
 export interface ActiveRun {
@@ -56,6 +64,9 @@ export interface TaskSettings {
   flow_policy: string
   role_mode: string
   launchers: Record<string, Launcher>
+  implementer_actor?: string
+  reviewer_actor?: string
+  max_rounds?: number
 }
 
 export interface Launcher {
@@ -95,9 +106,18 @@ export interface HealthResponse {
 }
 
 export interface BootstrapResponse {
-  version: string
+  version?: string
   repo_root: string
   data_root: string
-  workspace_key: string
+  workspace_key?: string
   tasks: Task[]
+  global_settings?: GlobalSettings
+}
+
+export interface GlobalSettings {
+  protocol_version?: string
+  countdown_seconds?: number
+  max_rounds?: number
+  max_consecutive_failures?: number
+  launchers?: Record<string, Launcher>
 }

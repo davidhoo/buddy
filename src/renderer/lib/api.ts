@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { Task, TaskDetail, BootstrapResponse, Event } from '../../shared/types'
+import { Task, TaskDetail, BootstrapResponse, Event, GlobalSettings } from '../../shared/types'
 
 const client = axios.create({
   baseURL: '/api',
@@ -115,6 +115,11 @@ export const api = {
     const params: Record<string, string | number> = { task: taskId, since }
     if (workspaceKey) params.workspace = workspaceKey
     const response = await client.get('/events', { params })
+    return response.data
+  },
+
+  async updateGlobalSettings(settings: GlobalSettings): Promise<GlobalSettings> {
+    const response = await client.post('/global-settings', settings)
     return response.data
   }
 }
