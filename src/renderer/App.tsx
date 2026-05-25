@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useSkipCountdown, usePauseCountdown, useInterrupt, useDeleteTask } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { TitleBar } from './components/TitleBar'
@@ -20,8 +20,23 @@ export default function App() {
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [autoStartSeconds, setAutoStartSeconds] = useState(0)
+  const autoStartTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [isFullScreen, setIsFullScreen] = useState(false)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [projectNames, setProjectNames] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('buddy.projectNames') || '{}')
+    } catch { return {} }
+  })
 
   useTheme()
+
+  useEffect(() => {
+    window.api.isFullScreen().then(setIsFullScreen).catch(() => {})
+    const cleanup = window.api.onFullScreenChange(setIsFullScreen)
+    return cleanup
+  }, [])
 
   const { data: isHealthy, isLoading: isCheckingHealth, error: healthError } = useHealthCheck()
   const { data: bootstrap, isLoading: isLoadingBootstrap, error: bootstrapError } = useBootstrap()
@@ -36,6 +51,13 @@ export default function App() {
   const pauseCountdown = usePauseCountdown()
   const interrupt = useInterrupt()
 
+  const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
+
+  const handleDraftChange = useCallback((value: string) => {
+    if (!selectedTaskId) return
+    setDrafts(prev => ({ ...prev, [selectedTaskId]: value }))
+  }, [selectedTaskId])
+
   const handleSelectTask = useCallback((taskId: string, workspaceKey: string) => {
     setSelectedTaskId(taskId)
     setSelectedWorkspaceKey(workspaceKey)
@@ -44,6 +66,7 @@ export default function App() {
   const handleDeleteTask = useCallback(async (taskId: string, workspaceKey: string) => {
     try {
       await deleteTask.mutateAsync({ taskId, workspaceKey })
+      setDrafts(prev => { const { [taskId]: _, ...rest } = prev; return rest })
       if (selectedTaskId === taskId) {
         setSelectedTaskId(null)
         setSelectedWorkspaceKey(null)
@@ -53,6 +76,35 @@ export default function App() {
       window.alert('删除失败：' + (error instanceof Error ? error.message : String(error)))
     }
   }, [deleteTask, selectedTaskId])
+
+  const handleRenameProject = useCallback((repoRoot: string, newName: string) => {
+    setProjectNames(prev => {
+      const next = { ...prev, [repoRoot]: newName }
+      try { localStorage.setItem('buddy.projectNames', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const handleOpenInFinder = useCallback((path: string) => {
+    window.api.openInFinder(path).catch((err: unknown) => {
+      console.error('Failed to open in Finder:', err)
+    })
+  }, [])
+
+  const handleRemoveProject = useCallback(async (repoRoot: string) => {
+    const projectTasks = tasks.filter(t => t.repo_root === repoRoot)
+    for (const task of projectTasks) {
+      try {
+        await deleteTask.mutateAsync({ taskId: task.task_id, workspaceKey: task.workspace_key })
+      } catch (error) {
+        console.error('Failed to delete task:', task.task_id, error)
+      }
+    }
+    if (projectTasks.some(t => t.task_id === selectedTaskId)) {
+      setSelectedTaskId(null)
+      setSelectedWorkspaceKey(null)
+    }
+  }, [tasks, deleteTask, selectedTaskId])
 
   const handleCreateTask = useCallback(async (
     taskId: string,
@@ -75,8 +127,16 @@ export default function App() {
       setSelectedWorkspaceKey(result.workspace_key)
       setShowCreateModal(false)
       setPendingRepoRoot(null)
-    } catch (error) {
-      console.error('Failed to create task:', error)
+      // Auto-start: 5s countdown if task has real text
+      const hasRealText = taskText.trim().length > 0
+      if (hasRealText) {
+        setAutoStartSeconds(5)
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      // Extract API error message from axios error
+      const apiMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || msg
+      window.alert('创建失败：' + apiMsg)
     }
   }, [bootstrap, createTask])
 
@@ -96,6 +156,7 @@ export default function App() {
 
   const handleSendMessage = useCallback((message: string, actor?: string) => {
     if (!selectedTaskId) return
+    setDrafts(prev => ({ ...prev, [selectedTaskId]: '' }))
     sendMessage.mutate({
       taskId: selectedTaskId,
       data: {
@@ -139,11 +200,62 @@ export default function App() {
 
   const handleInterrupt = useCallback(() => {
     if (!selectedTaskId) return
+    // Cancel auto-start if interrupting
+    if (autoStartTimerRef.current) {
+      clearInterval(autoStartTimerRef.current)
+      autoStartTimerRef.current = null
+      setAutoStartSeconds(0)
+    }
     interrupt.mutate({
       taskId: selectedTaskId,
       workspaceKey: selectedWorkspaceKey ?? undefined
     })
   }, [selectedTaskId, selectedWorkspaceKey, interrupt])
+
+  // Auto-start countdown: when autoStartSeconds > 0 and task is READY, start timer
+  useEffect(() => {
+    if (autoStartSeconds <= 0 || !selectedTaskId) return
+    const isReady = taskDetail?.state?.status === 'READY' && (taskDetail?.state?.round ?? 0) === 0
+    if (!isReady) {
+      // Task not ready yet, wait for next poll
+      return
+    }
+    if (autoStartTimerRef.current) return
+    autoStartTimerRef.current = setInterval(() => {
+      setAutoStartSeconds(prev => {
+        if (prev <= 1) {
+          if (autoStartTimerRef.current) {
+            clearInterval(autoStartTimerRef.current)
+            autoStartTimerRef.current = null
+          }
+          // Auto-start now
+          startTask.mutate({
+            taskId: selectedTaskId,
+            data: { workspace_key: selectedWorkspaceKey ?? undefined }
+          })
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => {
+      if (autoStartTimerRef.current) {
+        clearInterval(autoStartTimerRef.current)
+        autoStartTimerRef.current = null
+      }
+    }
+  }, [autoStartSeconds, selectedTaskId, selectedWorkspaceKey, taskDetail?.state?.status, taskDetail?.state?.round, startTask])
+
+  // Cancel auto-start if task is no longer READY (e.g. already started by other means)
+  useEffect(() => {
+    if (autoStartSeconds > 0 && taskDetail?.state?.status && taskDetail.state.status !== 'READY') {
+      if (autoStartTimerRef.current) {
+        clearInterval(autoStartTimerRef.current)
+        autoStartTimerRef.current = null
+      }
+      setAutoStartSeconds(0)
+    }
+  }, [autoStartSeconds, taskDetail?.state?.status])
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth(prev => {
@@ -172,6 +284,7 @@ export default function App() {
         isLoading={isLoadingTasks}
         error={tasksError}
         isHealthy={isHealthy ?? false}
+        isFullScreen={isFullScreen}
         view={view}
         settingsTab={settingsTab}
         onSelectTask={handleSelectTask}
@@ -182,6 +295,10 @@ export default function App() {
         onSelectSettingsTab={setSettingsTab}
         onResize={handleSidebarResize}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onRenameProject={handleRenameProject}
+        onOpenInFinder={handleOpenInFinder}
+        onRemoveProject={handleRemoveProject}
+        projectNames={projectNames}
       />
 
       {/* 右侧主区 */}
@@ -191,6 +308,7 @@ export default function App() {
           taskName={taskDetail?.task_id ?? ''}
           isSidebarOpen={isSidebarOpen}
           isStatusBarOpen={isStatusBarOpen}
+          isFullScreen={isFullScreen}
           showToggles={view !== 'settings'}
           bare={view === 'settings'}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -212,6 +330,9 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onStartTask={handleStartTask}
                 onInterrupt={handleInterrupt}
+                autoStartSeconds={autoStartSeconds}
+                draft={currentDraft}
+                onDraftChange={handleDraftChange}
               />
 
               {/* 右侧状态栏 */}
@@ -265,8 +386,12 @@ function CreateTaskModal({
   const [maxRounds, setMaxRounds] = useState<number>(globalSettings?.max_rounds ?? 10)
   const [countdownSeconds, setCountdownSeconds] = useState<number>(globalSettings?.countdown_seconds ?? 30)
 
+  const TASK_NAME_RE = /^[a-zA-Z0-9一-鿿㐀-䶿""「」【】{}][a-zA-Z0-9一-鿿㐀-䶿 ._\-""「」【】{}]{0,63}$/
+  const taskIdError = taskId.trim() && !TASK_NAME_RE.test(taskId.trim())
+    ? '只能使用中文、字母、数字、点、下划线、短横线、空格及「」【】{}等，最长 64 字符'
+    : null
   const sameActorError = implementer === reviewer
-  const canSubmit = taskId.trim() && !sameActorError
+  const canSubmit = taskId.trim() && !taskIdError && !sameActorError
 
   const seedFor = (actor: Actor, session: string): Record<string, string> => {
     const value = session.trim()
@@ -343,8 +468,15 @@ function CreateTaskModal({
               value={taskId}
               onChange={(e) => setTaskId(e.target.value)}
               placeholder="输入任务名称"
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg"
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 bg-bg ${taskIdError ? 'border-danger focus:border-danger focus:ring-danger' : 'border-border focus:border-accent focus:ring-accent'}`}
             />
+            <div className="flex justify-between mt-1">
+              <span className="text-xs text-fg-muted">中文、字母、数字、点、下划线、短横线、空格及「」【】{}，最长 64 字符</span>
+              <span className="text-xs text-fg-muted">{taskId.trim().length}/64</span>
+            </div>
+            {taskIdError && (
+              <div className="text-xs text-danger mt-1">{taskIdError}</div>
+            )}
           </div>
 
           {/* 工作目录 */}

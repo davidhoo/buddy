@@ -2,6 +2,7 @@ interface TitleBarProps {
   taskName: string
   isSidebarOpen: boolean
   isStatusBarOpen: boolean
+  isFullScreen: boolean
   showToggles?: boolean
   bare?: boolean
   onToggleSidebar: () => void
@@ -12,6 +13,7 @@ export function TitleBar({
   taskName,
   isSidebarOpen,
   isStatusBarOpen,
+  isFullScreen,
   showToggles = true,
   bare = false,
   onToggleSidebar,
@@ -19,10 +21,10 @@ export function TitleBar({
 }: TitleBarProps) {
   return (
     <div className={`h-[50px] flex items-center px-4 bg-bg-elevated drag-region ${bare ? '' : 'border-b border-border'}`}>
-      {/* 红绿灯 + 展开按钮（仅在侧边栏关闭时显示，否则它们在侧边栏顶部） */}
+      {/* 红绿灯占位 + 展开按钮（仅在侧边栏关闭时显示，否则它们在侧边栏顶部） */}
       {!isSidebarOpen && (
         <>
-          <div className="w-[68px] flex-shrink-0" />
+          <div className={`flex-shrink-0 ${isFullScreen ? 'w-[32px]' : 'w-[68px]'}`} />
           {showToggles && (
             <button
               onClick={onToggleSidebar}

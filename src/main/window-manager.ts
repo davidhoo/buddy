@@ -37,6 +37,14 @@ export class WindowManager {
       this.mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
     }
 
+    this.mainWindow.on('enter-full-screen', () => {
+      this.mainWindow?.webContents.send('window:fullScreenChange', true)
+    })
+
+    this.mainWindow.on('leave-full-screen', () => {
+      this.mainWindow?.webContents.send('window:fullScreenChange', false)
+    })
+
     this.setupApiProxy()
 
     return this.mainWindow

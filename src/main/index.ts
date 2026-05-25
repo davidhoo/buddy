@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { WindowManager } from './window-manager'
 
 const windowManager = new WindowManager()
@@ -19,6 +19,14 @@ app.whenReady().then(() => {
         })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle('window:isFullScreen', () => {
+    return windowManager.getMainWindow()?.isFullScreen() ?? false
+  })
+
+  ipcMain.handle('shell:openInFinder', async (_event, path: string) => {
+    await shell.openPath(path)
   })
 
   app.on('activate', () => {

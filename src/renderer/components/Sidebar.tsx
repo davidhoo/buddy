@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Task, TaskStatus, ActiveRun } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { elapsedText } from '../lib/format'
@@ -53,6 +53,11 @@ interface SidebarProps {
   onSelectSettingsTab: (tab: SettingsTab) => void
   onResize: (delta: number) => void
   onToggleSidebar: () => void
+  isFullScreen: boolean
+  onRenameProject: (repoRoot: string, newName: string) => void
+  onOpenInFinder: (path: string) => void
+  onRemoveProject: (repoRoot: string) => void
+  projectNames: Record<string, string>
 }
 
 export function Sidebar({
@@ -72,7 +77,12 @@ export function Sidebar({
   onBackToApp,
   onSelectSettingsTab,
   onResize,
-  onToggleSidebar
+  onToggleSidebar,
+  isFullScreen,
+  onRenameProject,
+  onOpenInFinder,
+  onRemoveProject,
+  projectNames
 }: SidebarProps) {
   if (!isOpen) return null
 
@@ -81,7 +91,7 @@ export function Sidebar({
       <div className="bg-bg text-fg flex flex-col h-full select-none" style={{ width: `${width}px` }}>
       {/* 顶部红绿灯区域 + 收起按钮 */}
       <div className="h-[50px] flex-shrink-0 flex items-center drag-region">
-        <div className="w-[76px] flex-shrink-0" />
+        <div className={`flex-shrink-0 ${isFullScreen ? 'w-4' : 'w-[76px]'}`} />
         {view !== 'settings' && (
           <button
             onClick={onToggleSidebar}
@@ -114,6 +124,10 @@ export function Sidebar({
           onCreateTask={onCreateTask}
           onDeleteTask={onDeleteTask}
           onOpenSettings={onOpenSettings}
+          onRenameProject={onRenameProject}
+          onOpenInFinder={onOpenInFinder}
+          onRemoveProject={onRemoveProject}
+          projectNames={projectNames}
         />
       )}
     </div>
@@ -209,7 +223,11 @@ function ChatSidebar({
   onSelectTask,
   onCreateTask,
   onDeleteTask,
-  onOpenSettings
+  onOpenSettings,
+  onRenameProject,
+  onOpenInFinder,
+  onRemoveProject,
+  projectNames
 }: {
   tasks: Task[]
   selectedTaskId: string | null
@@ -220,9 +238,29 @@ function ChatSidebar({
   onCreateTask: (repoRoot?: string) => void
   onDeleteTask: (taskId: string, workspaceKey: string) => void
   onOpenSettings: () => void
+  onRenameProject: (repoRoot: string, newName: string) => void
+  onOpenInFinder: (path: string) => void
+  onRemoveProject: (repoRoot: string) => void
+  projectNames: Record<string, string>
 }) {
+  const [openMenuRepoRoot, setOpenMenuRepoRoot] = useState<string | null>(null)
+  const [renamingRepoRoot, setRenamingRepoRoot] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!openMenuRepoRoot) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuRepoRoot(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openMenuRepoRoot])
+
   const groupedTasks = tasks.reduce<Record<string, Task[]>>((acc, task) => {
-    const key = projectName(task)
+    const key = projectName(task, projectNames)
     if (!acc[key]) acc[key] = []
     acc[key].push(task)
     return acc
@@ -242,8 +280,13 @@ function ChatSidebar({
       <div className="px-4 py-2">
         <button
           onClick={() => onCreateTask()}
-          className="w-full px-4 py-2 bg-accent text-fg-inverse rounded-lg hover:bg-accent-hover transition-colors"
+          className="w-full px-4 py-2 bg-accent text-fg-inverse rounded-lg hover:bg-accent-hover transition-colors flex items-center justify-center gap-2"
         >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+            <line x1="12" y1="8" x2="12" y2="16" />
+            <line x1="8" y1="12" x2="16" y2="12" />
+          </svg>
           新建任务
         </button>
       </div>
@@ -273,27 +316,75 @@ function ChatSidebar({
             <div className="px-2 pt-2 pb-1 text-xs text-fg-muted font-medium">项目</div>
             {Object.entries(groupedTasks).map(([projectKey, workspaceTasks]) => {
               const hasSelected = workspaceTasks.some(t => t.task_id === selectedTaskId)
+              const repoRoot = workspaceTasks[0]?.repo_root || ''
+              const isMenuOpen = openMenuRepoRoot === repoRoot
               return (
                 <div key={projectKey} className="mb-3">
                   <div
-                    title={workspaceTasks[0]?.repo_root || projectKey}
+                    title={repoRoot || projectKey}
                     className={`group flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-bg-subtle ${
                     hasSelected ? 'text-fg font-medium' : 'text-fg-secondary'
                   }`}>
                     <FolderIcon />
                     <span className="truncate flex-1">{projectKey}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation() }}
-                      className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted transition-opacity"
-                      title="更多操作"
-                    >
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="5" cy="12" r="1.2" fill="currentColor" />
-                        <circle cx="12" cy="12" r="1.2" fill="currentColor" />
-                        <circle cx="19" cy="12" r="1.2" fill="currentColor" />
-                      </svg>
-                    </button>
+                    <div className="relative" ref={isMenuOpen ? menuRef : undefined}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(isMenuOpen ? null : repoRoot) }}
+                        className={`w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted transition-opacity ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        title="更多操作"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="5" cy="12" r="1.2" fill="currentColor" />
+                          <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+                          <circle cx="19" cy="12" r="1.2" fill="currentColor" />
+                        </svg>
+                      </button>
+                      {isMenuOpen && (
+                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] bg-bg-elevated border border-border rounded-lg shadow-lg py-1">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(null); setRenamingRepoRoot(repoRoot) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-fg hover:bg-bg-subtle transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                            重命名项目
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(null); onOpenInFinder(repoRoot) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-fg hover:bg-bg-subtle transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            在访达中打开
+                          </button>
+                          <div className="my-1 border-t border-border-subtle" />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuRepoRoot(null)
+                              const ok = window.confirm(`确定移除项目「${projectKey}」？\n\n这会删除该项目下的所有任务。`)
+                              if (ok) onRemoveProject(repoRoot)
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-danger hover:bg-bg-subtle transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                            </svg>
+                            移除
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onCreateTask(workspaceTasks[0]?.repo_root) }}
@@ -301,8 +392,9 @@ function ChatSidebar({
                       title="在此项目新建任务"
                     >
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        <rect x="3" y="3" width="18" height="18" rx="4" />
+                        <line x1="12" y1="8" x2="12" y2="16" />
+                        <line x1="8" y1="12" x2="16" y2="12" />
                       </svg>
                     </button>
                   </div>
@@ -391,6 +483,17 @@ function ChatSidebar({
         )}
       </div>
 
+      {renamingRepoRoot && (
+        <RenameDialog
+          currentName={projectNames[renamingRepoRoot] || renamingRepoRoot.replace(/\/+$/, '').split('/').pop() || ''}
+          onConfirm={(newName) => {
+            onRenameProject(renamingRepoRoot, newName)
+            setRenamingRepoRoot(null)
+          }}
+          onCancel={() => setRenamingRepoRoot(null)}
+        />
+      )}
+
       <div className="p-4 border-t border-border-subtle">
         <button
           onClick={onOpenSettings}
@@ -415,7 +518,10 @@ function FolderIcon() {
   )
 }
 
-function projectName(task: Task): string {
+function projectName(task: Task, projectNames?: Record<string, string>): string {
+  if (task.repo_root && projectNames?.[task.repo_root]) {
+    return projectNames[task.repo_root]
+  }
   if (task.repo_root) {
     const basename = task.repo_root.replace(/\/+$/, '').split('/').pop()
     if (basename) return basename
@@ -438,4 +544,65 @@ function formatRelativeTime(iso: string): string {
   const month = Math.floor(day / 30)
   if (month < 12) return `${month}月`
   return `${Math.floor(month / 12)}年`
+}
+
+function RenameDialog({
+  currentName,
+  onConfirm,
+  onCancel
+}: {
+  currentName: string
+  onConfirm: (newName: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(currentName)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (trimmed && trimmed !== currentName) {
+      onConfirm(trimmed)
+    } else {
+      onCancel()
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-bg-elevated rounded-xl shadow-xl w-[360px] p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold mb-3">修改项目名称</h3>
+        <form onSubmit={handleSubmit}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-sm"
+          />
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-3 py-1.5 text-sm text-fg hover:bg-bg-subtle rounded-lg transition-colors"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="px-3 py-1.5 text-sm bg-accent text-fg-inverse rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50"
+            >
+              确定
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
 }

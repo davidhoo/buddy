@@ -8,7 +8,8 @@ import {
   taskActors,
   shortId,
   elapsedText,
-  formatTime
+  formatTime,
+  decodeErrorText
 } from '../lib/format'
 
 interface StatusBarProps {
@@ -293,6 +294,7 @@ function eventPayloadSummary(event: Event): string {
   const payload = event.payload || {}
   const value = (payload.error as string | undefined) || (payload.text as string | undefined) || ''
   if (!value) return ''
-  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  const raw = typeof value === 'string' ? value : JSON.stringify(value)
+  const text = decodeErrorText(raw)
   return text.length > 1200 ? `${text.slice(0, 1200).trimEnd()}\n...（已截断）` : text
 }

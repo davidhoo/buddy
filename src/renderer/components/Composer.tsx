@@ -10,10 +10,12 @@ interface ComposerProps {
   isReady: boolean
   settings: TaskSettings | null
   taskState: TaskState | null
+  autoStartSeconds: number
+  draft: string
+  onDraftChange: (value: string) => void
 }
 
-export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, settings, taskState }: ComposerProps) {
-  const [message, setMessage] = useState('')
+export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, settings, taskState, autoStartSeconds, draft, onDraftChange }: ComposerProps) {
   const { impl, participants } = taskActors(settings)
   const [nextActor, setNextActor] = useState<Actor>(impl)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -48,12 +50,12 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
       textareaRef.current.style.height = 'auto'
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
     }
-  }, [message])
+  }, [draft])
 
   const handleSend = () => {
-    if (message.trim()) {
-      onSend(message.trim(), nextActor)
-      setMessage('')
+    if (draft.trim()) {
+      onSend(draft.trim(), nextActor)
+      onDraftChange('')
     }
   }
 
@@ -67,9 +69,10 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
 
   // 按钮逻辑：运行中显示 stop，就绪无内容显示开始，其他显示发送
   const showStop = isRunning
-  const showStart = isReady && !message.trim() && !isRunning
+  const showStart = isReady && !draft.trim() && !isRunning
+  const showAutoStart = autoStartSeconds > 0 && isReady
   const handlePrimary = showStop ? onInterrupt : showStart ? () => onStart(nextActor) : handleSend
-  const primaryDisabled = showStop ? false : showStart ? false : !message.trim()
+  const primaryDisabled = showStop ? false : showStart ? false : !draft.trim()
 
   return (
     <div className="px-4 pb-4 pt-2">
@@ -77,8 +80,8 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
         {/* 输入区 */}
         <textarea
           ref={textareaRef}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isRunning ? '可先输入补充指令，打断后再发送' : '给下一轮的补充指令\n例如：先别改配置文件，下一轮只做审验。'}
           className="w-full resize-none bg-transparent border-0 outline-none text-sm leading-relaxed placeholder:text-fg-muted"
@@ -88,7 +91,13 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
         {/* 工具栏 */}
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-1 text-xs text-fg-muted select-none">
-            {isRunning ? '点击 ■ 打断当前运行' : 'Enter 换行，Shift+Enter 发送'}
+            {showAutoStart ? (
+              <span className="text-success-fg font-medium">{autoStartSeconds} 秒后自动开始…</span>
+            ) : isRunning ? (
+              '点击 ■ 打断当前运行'
+            ) : (
+              'Enter 换行，Shift+Enter 发送'
+            )}
           </div>
 
           <div className="flex items-center gap-2">

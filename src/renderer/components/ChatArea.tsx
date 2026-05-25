@@ -10,9 +10,12 @@ interface ChatAreaProps {
   onSendMessage: (message: string, actor?: string) => void
   onStartTask: (actor?: string) => void
   onInterrupt: () => void
+  autoStartSeconds: number
+  draft: string
+  onDraftChange: (value: string) => void
 }
 
-export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt }: ChatAreaProps) {
+export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoStartSeconds, draft, onDraftChange }: ChatAreaProps) {
   const transcriptRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -80,6 +83,9 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt }: Chat
         isReady={isReady}
         settings={task?.settings ?? null}
         taskState={task?.state ?? null}
+        autoStartSeconds={autoStartSeconds}
+        draft={draft}
+        onDraftChange={onDraftChange}
       />
     </div>
   )

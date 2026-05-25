@@ -1,6 +1,6 @@
 import { TranscriptEntry } from '../../shared/types'
 import { renderMarkdown } from '../lib/markdown'
-import { formatDuration, formatTime } from '../lib/format'
+import { formatDuration, formatTime, decodeErrorText } from '../lib/format'
 
 interface MessageBubbleProps {
   entry: TranscriptEntry
@@ -36,7 +36,7 @@ export function MessageBubble({ entry }: MessageBubbleProps) {
     return (
       <div className="flex justify-center my-2">
         <div className="text-xs text-fg-muted bg-bg-muted px-3 py-1 rounded-full">
-          {entry.content}
+          {decodeErrorText(entry.content)}
         </div>
       </div>
     )
