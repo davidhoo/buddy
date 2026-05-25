@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.2",
+    "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.29",
