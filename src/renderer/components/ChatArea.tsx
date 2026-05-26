@@ -4,6 +4,7 @@ import { MessageBubble } from './MessageBubble'
 import { RunningStatusMessage } from './RunningStatusMessage'
 import { Composer } from './Composer'
 import { renderMarkdown } from '../lib/markdown'
+import { isTaskReadyToStart } from '../lib/taskState'
 import { useT } from '../hooks/useI18n'
 
 interface ChatAreaProps {
@@ -27,7 +28,7 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoSt
   }, [task?.transcript, task?.task_text, task?.state?.status, task?.state?.active_run?.actor])
 
   const isRunning = task?.state?.status?.startsWith('RUNNING_') ?? false
-  const isReady = task?.state?.status === 'READY' && (task?.state?.round ?? 0) === 0
+  const isReady = isTaskReadyToStart(task?.state)
   const taskText = (task?.task_text || '').trim()
   const hasTranscript = (task?.transcript?.length ?? 0) > 0
 

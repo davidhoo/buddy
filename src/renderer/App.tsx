@@ -10,6 +10,7 @@ import { ChatArea } from './components/ChatArea'
 import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
+import { isTaskReadyToStart } from './lib/taskState'
 import type { GlobalSettings } from '../shared/types'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
@@ -220,7 +221,7 @@ export default function App() {
   // Auto-start countdown: when autoStartSeconds > 0 and task is READY, start timer
   useEffect(() => {
     if (autoStartSeconds <= 0 || !selectedTaskId) return
-    const isReady = taskDetail?.state?.status === 'READY' && (taskDetail?.state?.round ?? 0) === 0
+    const isReady = isTaskReadyToStart(taskDetail?.state)
     if (!isReady) {
       // Task not ready yet, wait for next poll
       return
@@ -249,7 +250,7 @@ export default function App() {
         autoStartTimerRef.current = null
       }
     }
-  }, [autoStartSeconds, selectedTaskId, selectedWorkspaceKey, taskDetail?.state?.status, taskDetail?.state?.round, startTask])
+  }, [autoStartSeconds, selectedTaskId, selectedWorkspaceKey, taskDetail?.state?.status, startTask])
 
   // Cancel auto-start if task is no longer READY (e.g. already started by other means)
   useEffect(() => {
