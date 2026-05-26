@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 export interface BuddyPaths {
   dataRoot: string
@@ -18,7 +18,14 @@ export function createBuddyPaths(dataRoot: string): BuddyPaths {
 }
 
 export function workspaceKeyForRepo(repoRoot: string): string {
-  return createHash('sha256').update(repoRoot).digest('hex').slice(0, 12)
+  const root = resolve(repoRoot)
+  const slug =
+    (basename(root) || 'root')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^[._-]+|[._-]+$/g, '')
+      .slice(0, 40) || 'workspace'
+  const digest = createHash('sha256').update(root).digest('hex').slice(0, 12)
+  return `${slug}-${digest}`
 }
 
 export function workspaceDir(paths: BuddyPaths, workspaceKey: string): string {
