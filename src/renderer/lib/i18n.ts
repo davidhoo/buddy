@@ -53,7 +53,7 @@ const en = {
   'common.select': 'Select',
 
   // App / branding
-  'app.brand': 'buddy',
+  'app.brand': 'Buddy',
   'app.tagline': 'Coding agent collaboration desk',
 
   // Time relative
@@ -88,7 +88,7 @@ const en = {
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
   'sidebar.newTask': 'New task',
-  'sidebar.notHealthy': 'buddy service is not running',
+  'sidebar.notHealthy': 'Buddy service is not running',
   'sidebar.notHealthyHint': 'Run in terminal: ',
   'sidebar.loadFailed': 'Load failed: {message}',
   'sidebar.empty': 'No tasks',
@@ -263,7 +263,7 @@ const zhCN: typeof en = {
   'common.copy': '复制',
   'common.select': '选择',
 
-  'app.brand': 'buddy',
+  'app.brand': 'Buddy',
   'app.tagline': 'Coding Agent 协作台',
 
   'time.justNow': '刚刚',
@@ -294,7 +294,7 @@ const zhCN: typeof en = {
   'sidebar.collapse': '收起侧边栏',
   'sidebar.expand': '展开侧边栏',
   'sidebar.newTask': '新建任务',
-  'sidebar.notHealthy': 'buddy 服务未运行',
+  'sidebar.notHealthy': 'Buddy 服务未运行',
   'sidebar.notHealthyHint': '请在终端运行：',
   'sidebar.loadFailed': '加载失败: {message}',
   'sidebar.empty': '暂无任务',
@@ -459,7 +459,7 @@ const zhTW: typeof en = {
   'common.copy': '複製',
   'common.select': '選擇',
 
-  'app.brand': 'buddy',
+  'app.brand': 'Buddy',
   'app.tagline': 'Coding Agent 協作台',
 
   'time.justNow': '剛剛',
@@ -490,7 +490,7 @@ const zhTW: typeof en = {
   'sidebar.collapse': '收合側邊欄',
   'sidebar.expand': '展開側邊欄',
   'sidebar.newTask': '新增任務',
-  'sidebar.notHealthy': 'buddy 服務未執行',
+  'sidebar.notHealthy': 'Buddy 服務未執行',
   'sidebar.notHealthyHint': '請在終端機執行：',
   'sidebar.loadFailed': '載入失敗：{message}',
   'sidebar.empty': '暫無任務',

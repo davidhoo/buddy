@@ -1,5 +1,5 @@
 appId: com.buddy.macos
-productName: buddy
+productName: Buddy
 directories:
   output: release
 files:

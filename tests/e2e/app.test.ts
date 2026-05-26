@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
 
 test('app should launch and show title bar', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('buddy').first()).toBeVisible()
+  await expect(page.getByText('Buddy').first()).toBeVisible()
 })
 
 test('should show sidebar by default', async ({ page }) => {

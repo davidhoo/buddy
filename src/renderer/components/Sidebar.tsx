@@ -318,7 +318,7 @@ function ChatSidebar({
           <div className="px-2 py-4 text-center text-danger text-sm">
             <div className="mb-2">{t('sidebar.notHealthy')}</div>
             <div className="text-xs text-fg-muted">
-              {t('sidebar.notHealthyHint')}<code className="bg-bg-muted px-1 rounded">buddy</code>
+              {t('sidebar.notHealthyHint')}<code className="bg-bg-muted px-1 rounded">Buddy</code>
             </div>
           </div>
         ) : isLoading ? (

@@ -1,5 +1,5 @@
 import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BuddyCoreService } from '../../../src/main/buddy/service'
@@ -9,6 +9,14 @@ describe('BuddyCoreService', () => {
     const service = new BuddyCoreService()
 
     await expect(service.checkHealth()).resolves.toBe(true)
+  })
+
+  it('uses the Buddy Application Support directory by default', async () => {
+    const service = new BuddyCoreService()
+
+    await expect(service.bootstrap()).resolves.toMatchObject({
+      data_root: join(homedir(), 'Library', 'Application Support', 'Buddy')
+    })
   })
 
   it('returns bootstrap with native global CLI settings', async () => {

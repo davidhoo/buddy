@@ -8,6 +8,8 @@ const windowManager = new WindowManager()
 const buddyEvents = new BuddyEventBus()
 const buddyService = new BuddyCoreService({ events: buddyEvents })
 
+app.setName('Buddy')
+
 registerBuddyHandlers(ipcMain, buddyService)
 buddyEvents.subscribe((event) => {
   windowManager.getMainWindow()?.webContents.send('buddy:event', event)

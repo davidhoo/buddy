@@ -120,5 +120,5 @@ export class BuddyCoreService {
 }
 
 function defaultDataRoot(): string {
-  return join(homedir(), 'Library', 'Application Support', 'buddy')
+  return join(homedir(), 'Library', 'Application Support', 'Buddy')
 }

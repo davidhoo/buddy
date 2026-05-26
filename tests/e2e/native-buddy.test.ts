@@ -41,9 +41,9 @@ test.beforeEach(async ({ page }) => {
 test('app boots with native buddy backend', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByText('buddy').first()).toBeVisible()
+  await expect(page.getByText('Buddy').first()).toBeVisible()
   await expect(page.locator('text=新建任务')).toBeVisible()
-  await expect(page.locator('text=buddy 服务未运行')).not.toBeVisible()
+  await expect(page.locator('text=Buddy 服务未运行')).not.toBeVisible()
 })
 
 test('settings keeps CLI launcher configuration visible', async ({ page }) => {
