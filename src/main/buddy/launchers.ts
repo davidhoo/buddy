@@ -32,8 +32,9 @@ export interface LauncherCommand {
 }
 
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
-  const baseCmd = splitCommand(input.command)
+  let baseCmd = splitCommand(input.command)
   const kind = commandKindFor(input.actor, baseCmd)
+  if (!baseCmd[0] && kind !== 'contract') baseCmd = [input.actor]
   const [command, ...prefixArgs] = kind === 'native_codex'
     ? cleanCodexBaseCommand(baseCmd)
     : baseCmd
@@ -167,6 +168,12 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (actor === 'codex' && executable === 'wecode' && baseCmd[1] === 'codex') return 'native_codex'
   if (actor === 'opencode' && executable === 'opencode') return 'native_opencode'
   if (actor === 'kimi' && executable === 'kimi') return 'native_kimi'
+  if (executable === '' || executable === 'wecode') {
+    if (actor === 'claude') return 'native_claude'
+    if (actor === 'codex') return 'native_codex'
+    if (actor === 'opencode') return 'native_opencode'
+    if (actor === 'kimi') return 'native_kimi'
+  }
   return 'contract'
 }
 

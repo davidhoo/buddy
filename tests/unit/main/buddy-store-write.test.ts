@@ -44,8 +44,8 @@ describe('BuddyStore writes', () => {
       seed_claude_session_id: '',
       seed_codex_thread_id: '',
       launchers: {
-        claude: { command: '', env: {}, timeout_seconds: 7200 },
-        codex: { command: '', env: {}, timeout_seconds: 7200 }
+        claude: { command: 'claude', env: {}, timeout_seconds: 7200 },
+        codex: { command: 'codex', env: {}, timeout_seconds: 7200 }
       }
     })
 

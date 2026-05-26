@@ -5,8 +5,8 @@ export const DEFAULT_LAUNCHER_ORDER = ['claude', 'codex'] as const
 export const DEFAULT_LAUNCHER_TIMEOUT_SECONDS = 7200
 
 const DEFAULT_LAUNCHER_COMMANDS: Record<string, string> = {
-  claude: '',
-  codex: ''
+  claude: 'claude',
+  codex: 'codex'
 }
 
 export function defaultLauncherFor(actor: string): Launcher {

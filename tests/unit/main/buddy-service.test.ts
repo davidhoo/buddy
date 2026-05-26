@@ -28,8 +28,8 @@ describe('BuddyCoreService', () => {
       tasks: [],
       global_settings: {
         launchers: {
-          claude: { command: '' },
-          codex: { command: '' }
+          claude: { command: 'claude' },
+          codex: { command: 'codex' }
         }
       }
     })
