@@ -3,7 +3,6 @@ import { TaskDetail } from '../../shared/types'
 import { MessageBubble } from './MessageBubble'
 import { RunningStatusMessage } from './RunningStatusMessage'
 import { Composer } from './Composer'
-import { renderMarkdown } from '../lib/markdown'
 import { isTaskReadyToStart } from '../lib/taskState'
 import { useT } from '../hooks/useI18n'
 
@@ -25,11 +24,10 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoSt
     if (transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
     }
-  }, [task?.transcript, task?.task_text, task?.state?.status, task?.state?.active_run?.actor])
+  }, [task?.transcript, task?.state?.status, task?.state?.active_run?.actor])
 
   const isRunning = task?.state?.status?.startsWith('RUNNING_') ?? false
   const isReady = isTaskReadyToStart(task?.state)
-  const taskText = (task?.task_text || '').trim()
   const hasTranscript = (task?.transcript?.length ?? 0) > 0
 
   return (
@@ -42,7 +40,7 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoSt
               <div className="text-sm">{t('chat.empty.desc')}</div>
             </div>
           </div>
-        ) : !hasTranscript && !taskText ? (
+        ) : !hasTranscript && !isRunning ? (
           <div className="flex items-center justify-center h-full min-h-[60vh]">
             <div className="text-center text-fg-muted">
               <div className="text-lg font-medium mb-2">{t('chat.created.title')}</div>
@@ -51,19 +49,6 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoSt
           </div>
         ) : (
           <>
-            {taskText && (
-              <div className="flex mb-3 justify-start">
-                <div className="message msg-system w-full">
-                  <div className="message-head">
-                    <span className="role">{t('chat.taskBrief')}</span>
-                  </div>
-                  <div
-                    className="message-body"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(taskText) }}
-                  />
-                </div>
-              </div>
-            )}
             {task.transcript.map((entry, index) => (
               <MessageBubble key={index} entry={entry} />
             ))}

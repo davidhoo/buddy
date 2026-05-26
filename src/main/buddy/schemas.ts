@@ -46,7 +46,7 @@ export const taskStateSchema = z.object({
   kimi_session_id: optionalLegacyNullable(z.string()),
   updated_at: z.string().optional(),
   repo_root: z.string().optional(),
-  pending_break: z.object({ actor: z.string().optional() }).nullable().optional(),
+  pending_break: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
   latest_failure: failureSchema.nullable().optional()
 })
 
@@ -81,6 +81,7 @@ export const eventSchema = z.object({
   type: z.string(),
   actor: z.string().optional(),
   ts: z.string(),
+  run_id: z.string().optional(),
   payload: z.record(z.string(), z.unknown())
 })
 

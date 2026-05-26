@@ -6,7 +6,7 @@ export interface ParsedActorLine {
 }
 
 export type BuddyMessage =
-  | { kind: 'break'; reason?: string }
+  | { kind: 'break'; content: string; reason?: string }
   | { kind: 'message'; text: string }
 
 export function parseClaudeStreamLine(line: string): ParsedActorLine {
@@ -102,6 +102,9 @@ export function extractActorOutput(actor: string, rawEvents: string): string {
 
 export function parseBuddyMessage(text: string): BuddyMessage {
   const trimmed = text.trim()
+  const jsonMessage = parseBuddyJsonMessage(trimmed)
+  if (jsonMessage) return jsonMessage
+
   const fields = new Map<string, string>()
   for (const line of trimmed.split(/\r?\n/)) {
     const index = line.indexOf('=')
@@ -109,10 +112,37 @@ export function parseBuddyMessage(text: string): BuddyMessage {
   }
 
   if (fields.get('type') === 'break') {
-    return { kind: 'break', reason: fields.get('reason') }
+    const reason = fields.get('reason')
+    return { kind: 'break', reason, content: reason ?? text }
   }
 
   return { kind: 'message', text }
+}
+
+function parseBuddyJsonMessage(text: string): BuddyMessage | null {
+  const candidates: string[] = []
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  if (fenced) candidates.push(fenced[1].trim())
+  candidates.push(text)
+
+  const embedded = text.match(/\{[^{}]*"type"\s*:\s*"(?:chat|break)"[^{}]*\}/s)
+  if (embedded) candidates.push(embedded[0])
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+      const type = (parsed as { type?: unknown }).type
+      const content = (parsed as { content?: unknown }).content
+      if ((type === 'chat' || type === 'break') && typeof content === 'string') {
+        return type === 'break'
+          ? { kind: 'break', content }
+          : { kind: 'message', text: content }
+      }
+    } catch {}
+  }
+
+  return null
 }
 
 function extractClaudeOutput(rawEvents: string): string {

@@ -38,6 +38,22 @@ function readyTask(round: number): TaskDetail {
 }
 
 describe('ChatArea ready task controls', () => {
+  it('does not render task text as a chat transcript entry', () => {
+    const html = renderToStaticMarkup(
+      <ChatArea
+        task={readyTask(1)}
+        onSendMessage={() => {}}
+        onStartTask={() => {}}
+        onInterrupt={() => {}}
+        autoStartSeconds={0}
+        draft=""
+        onDraftChange={() => {}}
+      />
+    )
+
+    expect(html).not.toContain('Make the user message card wider.')
+  })
+
   it('shows the start control for a newly-created READY task at round 1', () => {
     const html = renderToStaticMarkup(
       <ChatArea

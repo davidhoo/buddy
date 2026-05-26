@@ -43,7 +43,7 @@ export interface TaskState {
   kimi_session_id?: string
   updated_at?: string
   repo_root?: string
-  pending_break?: { actor?: string } | null
+  pending_break?: { actor?: string; round?: number } | null
   latest_failure?: Failure | null
 }
 
@@ -89,6 +89,7 @@ export interface Event {
   type: string
   actor?: string
   ts: string
+  run_id?: string
   payload: Record<string, unknown>
 }
 

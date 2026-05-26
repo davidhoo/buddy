@@ -108,4 +108,15 @@ describe('buddy actor parsers', () => {
       reason: 'done'
     })
   })
+
+  it('unwraps buddy JSON chat and break envelopes', () => {
+    expect(parseBuddyMessage('```json\n{"type":"chat","content":"hello"}\n```')).toMatchObject({
+      kind: 'message',
+      text: 'hello'
+    })
+    expect(parseBuddyMessage('{"type":"break","content":"done"}')).toMatchObject({
+      kind: 'break',
+      content: 'done'
+    })
+  })
 })
