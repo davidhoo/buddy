@@ -231,4 +231,19 @@ describe('Sidebar', () => {
       expect(row).not.toHaveClass('py-1.5')
     }
   })
+
+  it('centers task row content inside the fixed-height hover background', () => {
+    window.localStorage.setItem('buddy.pinnedTaskIds', JSON.stringify(['pinned']))
+
+    renderSidebar([task('pinned'), task('regular')])
+
+    for (const taskId of ['pinned', 'regular']) {
+      const row = screen.getByText(taskId).closest('[title]')
+      expect(row).not.toBeNull()
+
+      const content = row?.firstElementChild
+      expect(content).toHaveClass('h-full')
+      expect(content).toHaveClass('items-center')
+    }
+  })
 })

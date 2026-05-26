@@ -365,7 +365,7 @@ function ChatSidebar({
                           : 'hover:bg-bg-subtle'
                       } ${task.status === 'DONE' ? 'task-done' : ''}`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex h-full items-center gap-2">
                         <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                         <span className={`text-xs truncate flex-1 ${
                           isSelected ? 'text-fg' : 'text-fg-secondary'
@@ -505,7 +505,7 @@ function ChatSidebar({
                               : 'hover:bg-bg-subtle'
                           } ${task.status === 'DONE' ? 'task-done' : ''}`}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex h-full items-center gap-2">
                             <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                             <span className={`text-xs truncate flex-1 ${
                               isSelected ? 'text-fg' : 'text-fg-secondary'
