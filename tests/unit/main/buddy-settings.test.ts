@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -34,6 +34,28 @@ describe('BuddyStore settings and delete', () => {
       countdown_seconds: 45,
       launchers: {
         claude: expect.objectContaining({ command: 'claude --dangerously-skip-permissions' })
+      }
+    })
+  })
+
+  it('reads legacy root global settings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-settings-legacy-'))
+    const store = new BuddyStore(root)
+    await writeFile(join(root, 'global_settings.json'), JSON.stringify({
+      countdown_seconds: 10,
+      launchers: {
+        claude: {
+          command: 'wecode --dangerously-skip-permissions',
+          env: {},
+          timeout_seconds: 7200
+        }
+      }
+    }))
+
+    await expect(store.readGlobalSettings()).resolves.toMatchObject({
+      countdown_seconds: 10,
+      launchers: {
+        claude: expect.objectContaining({ command: 'wecode --dangerously-skip-permissions' })
       }
     })
   })

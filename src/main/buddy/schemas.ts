@@ -19,10 +19,14 @@ const activeRunSchema = z.object({
 
 const countdownSchema = z.object({
   status: z.enum(['running', 'paused', 'elapsed', 'skipped', 'expired']),
-  remaining: z.number(),
+  remaining: z.number().default(0),
   default_next_actor: z.string(),
   deadline: z.string().optional()
 })
+
+function optionalLegacyNullable<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value) => value === null ? undefined : value, schema.optional())
+}
 
 const failureSchema = z.object({
   message: z.string(),
@@ -34,12 +38,12 @@ export const taskStateSchema = z.object({
   status: taskStatusSchema,
   round: z.number(),
   next_actor: z.string(),
-  countdown: countdownSchema.optional(),
+  countdown: optionalLegacyNullable(countdownSchema),
   active_run: activeRunSchema.nullable().optional(),
-  claude_session_id: z.string().optional(),
-  codex_thread_id: z.string().optional(),
-  opencode_session_id: z.string().optional(),
-  kimi_session_id: z.string().optional(),
+  claude_session_id: optionalLegacyNullable(z.string()),
+  codex_thread_id: optionalLegacyNullable(z.string()),
+  opencode_session_id: optionalLegacyNullable(z.string()),
+  kimi_session_id: optionalLegacyNullable(z.string()),
   updated_at: z.string().optional(),
   repo_root: z.string().optional(),
   pending_break: z.object({ actor: z.string().optional() }).nullable().optional(),

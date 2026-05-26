@@ -126,13 +126,19 @@ export class BuddyStore {
 
   async readGlobalSettings(): Promise<GlobalSettings> {
     const path = createBuddyPaths(this.dataRoot).globalSettings
+    const legacyPath = join(this.dataRoot, 'global_settings.json')
     try {
       const parsed = parseGlobalSettings(await readJson(path)) as GlobalSettings
       return normalizeGlobalSettings(parsed)
     } catch (error) {
-      if (isNotFoundError(error)) {
-        return normalizeGlobalSettings()
-      }
+      if (!isNotFoundError(error)) throw error
+    }
+
+    try {
+      const parsed = parseGlobalSettings(await readJson(legacyPath)) as GlobalSettings
+      return normalizeGlobalSettings(parsed)
+    } catch (error) {
+      if (isNotFoundError(error)) return normalizeGlobalSettings()
       throw error
     }
   }
@@ -198,7 +204,19 @@ export class BuddyStore {
     try {
       return await readJson(path) as TaskMeta
     } catch {
-      return {}
+      return this.readLegacyTaskMeta(taskId, workspaceKey)
+    }
+  }
+
+  private async readLegacyTaskMeta(taskId: string, workspaceKey: string): Promise<TaskMeta> {
+    const dir = this.taskDirectory(taskId, workspaceKey)
+    const [taskText, contextText] = await Promise.all([
+      readOptionalText(join(dir, 'task.md')),
+      readOptionalText(join(dir, 'context.md'))
+    ])
+    return {
+      task_text: taskText,
+      context_text: contextText
     }
   }
 
@@ -227,6 +245,14 @@ async function listDirectoryNames(path: string): Promise<string[]> {
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8'))
+}
+
+async function readOptionalText(path: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch {
+    return ''
+  }
 }
 
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
