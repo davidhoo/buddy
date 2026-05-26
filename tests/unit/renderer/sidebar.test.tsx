@@ -166,12 +166,19 @@ describe('Sidebar', () => {
 
     const projectRow = screen.getByRole('button', { name: /repo/ })
     expect(projectRow).toHaveAttribute('aria-expanded', 'true')
+    expect(projectRow.querySelector('.lucide-folder-open')).toBeTruthy()
+    expect(projectRow.querySelector('.lucide-chevron-down, .lucide-chevron-right')).toBeNull()
+    expect(projectRow).not.toHaveClass('focus:ring-1')
+    expect(projectRow).not.toHaveClass('focus:ring-accent')
     expect(screen.getByText('first')).toBeTruthy()
     expect(screen.getByText('second')).toBeTruthy()
 
     fireEvent.click(projectRow)
 
     expect(projectRow).toHaveAttribute('aria-expanded', 'false')
+    expect(projectRow.querySelector('.lucide-folder')).toBeTruthy()
+    expect(projectRow.querySelector('.lucide-folder-open')).toBeNull()
+    expect(projectRow.querySelector('.lucide-chevron-down, .lucide-chevron-right')).toBeNull()
     expect(screen.queryByText('first')).toBeNull()
     expect(screen.queryByText('second')).toBeNull()
 
@@ -199,13 +206,16 @@ describe('Sidebar', () => {
     expect(screen.queryByText('second')).toBeNull()
   })
 
-  it('keeps the selected task project expanded even when the project was persisted collapsed', () => {
+  it('allows the selected task project to stay collapsed when the project was persisted collapsed', () => {
     window.localStorage.setItem('buddy.collapsedProjectKeys', JSON.stringify(['repo']))
 
     renderSidebar([task('first'), task('second')], { selectedTaskId: 'first' })
 
-    expect(screen.getByRole('button', { name: /repo/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('first')).toBeTruthy()
-    expect(screen.getByText('second')).toBeTruthy()
+    const projectRow = screen.getByRole('button', { name: /repo/ })
+    expect(projectRow).toHaveAttribute('aria-expanded', 'false')
+    expect(projectRow.querySelector('.lucide-folder')).toBeTruthy()
+    expect(projectRow.querySelector('.lucide-folder-open')).toBeNull()
+    expect(screen.queryByText('first')).toBeNull()
+    expect(screen.queryByText('second')).toBeNull()
   })
 })

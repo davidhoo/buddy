@@ -9,7 +9,7 @@ Allow clicking a project row in the chat sidebar to collapse or expand that proj
 - Project rows act as disclosure controls.
 - Each project can be expanded or collapsed independently.
 - Collapsed state persists in `localStorage`, matching existing sidebar preferences such as pinned tasks and project names.
-- The currently selected task's project remains expanded so the selected conversation does not disappear after reloads or task updates.
+- A project can be collapsed even when it contains the currently selected task.
 - Existing project row actions keep their behavior:
   - More actions opens the project menu.
   - New task creates a task in that project.
@@ -17,9 +17,11 @@ Allow clicking a project row in the chat sidebar to collapse or expand that proj
 
 ## UI
 
-- Add a chevron indicator before the folder icon.
-- Use `ChevronDown` when expanded and `ChevronRight` when collapsed.
+- Use the folder icon itself as the disclosure indicator.
+- Show an open folder when expanded and a closed folder when collapsed.
+- Do not add a separate chevron before the folder icon.
 - Keep spacing, hover treatment, selected project styling, and task row styling consistent with the current sidebar.
+- Do not show a focus ring or boxed selection outline on project rows.
 
 ## Data Flow
 
@@ -34,3 +36,4 @@ Allow clicking a project row in the chat sidebar to collapse or expand that proj
   - Project rows render as disclosure controls.
   - Clicking a project hides and shows its tasks.
   - Clicking the project action buttons does not toggle the project.
+  - Selected-task projects can stay collapsed.

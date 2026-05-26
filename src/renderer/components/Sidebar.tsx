@@ -1,8 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import {
-  ChevronDown,
   ChevronLeft,
-  ChevronRight,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -416,7 +414,7 @@ function ChatSidebar({
               const hasSelected = workspaceTasks.some(t => t.task_id === selectedTaskId)
               const repoRoot = workspaceTasks[0]?.repo_root || ''
               const isMenuOpen = openMenuRepoRoot === repoRoot
-              const isCollapsed = collapsedProjectKeys.includes(projectKey) && !hasSelected
+              const isCollapsed = collapsedProjectKeys.includes(projectKey)
               const isExpanded = !isCollapsed
               return (
                 <div key={projectKey} className="mb-3">
@@ -432,15 +430,10 @@ function ChatSidebar({
                       }
                     }}
                     title={repoRoot || projectKey}
-                    className={`group flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-bg-subtle cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent ${
+                    className={`group flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-bg-subtle cursor-pointer focus:outline-none ${
                     hasSelected ? 'text-fg font-medium' : 'text-fg-secondary'
                   }`}>
-                    {isExpanded ? (
-                      <ChevronDown size={13} strokeWidth={2} className="flex-shrink-0" />
-                    ) : (
-                      <ChevronRight size={13} strokeWidth={2} className="flex-shrink-0" />
-                    )}
-                    <FolderIcon />
+                    <FolderIcon isOpen={isExpanded} />
                     <span className="truncate flex-1">{projectKey}</span>
                     <div className="relative" ref={isMenuOpen ? menuRef : undefined}>
                       <button
@@ -586,8 +579,10 @@ function ChatSidebar({
   )
 }
 
-function FolderIcon() {
-  return <Folder size={14} strokeWidth={2} className="flex-shrink-0" />
+function FolderIcon({ isOpen }: { isOpen: boolean }) {
+  return isOpen
+    ? <FolderOpen size={14} strokeWidth={2} className="flex-shrink-0" />
+    : <Folder size={14} strokeWidth={2} className="flex-shrink-0" />
 }
 
 function projectName(task: Task, projectNames?: Record<string, string>): string {

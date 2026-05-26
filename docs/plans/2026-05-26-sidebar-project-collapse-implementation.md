@@ -4,7 +4,7 @@
 
 **Goal:** Add expandable and collapsible project sections to the chat sidebar.
 
-**Architecture:** Keep the behavior local to `ChatSidebar`, where task grouping and project row rendering already live. Track collapsed project keys in component state backed by `localStorage`, force the selected task's project open, and render task rows only for expanded projects.
+**Architecture:** Keep the behavior local to `ChatSidebar`, where task grouping and project row rendering already live. Track collapsed project keys in component state backed by `localStorage`; render task rows only for expanded projects, including when a collapsed project contains the selected task.
 
 **Tech Stack:** React 18, TypeScript, Vitest, Testing Library, lucide-react.
 
@@ -40,11 +40,11 @@ Add a project row click handler that toggles the project key. Keep action button
 
 **Step 3: Add visual indicator**
 
-Import `ChevronDown` and `ChevronRight`; render the correct icon before `FolderIcon`.
+Use the existing folder icon slot as the disclosure indicator. Render `FolderOpen` when expanded and `Folder` when collapsed. Do not render a separate chevron.
 
 **Step 4: Hide collapsed tasks**
 
-Skip the task-list rendering block when the project is collapsed, except when the selected task belongs to the project.
+Skip the task-list rendering block when the project is collapsed, even when the selected task belongs to the project.
 
 **Step 5: Run focused test**
 
