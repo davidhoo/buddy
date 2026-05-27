@@ -21,15 +21,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dialog:selectDirectory', async (_event, defaultPath?: string) => {
     const win = windowManager.getMainWindow()
+    const dialogOptions: Electron.OpenDialogOptions = {
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath
+    }
     const result = win
-      ? await dialog.showOpenDialog(win, {
-          properties: ['openDirectory'],
-          defaultPath
-        })
-      : await dialog.showOpenDialog({
-          properties: ['openDirectory'],
-          defaultPath
-        })
+      ? await dialog.showOpenDialog(win, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions)
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
