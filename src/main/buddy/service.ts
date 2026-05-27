@@ -119,8 +119,8 @@ export class BuddyCoreService {
     return gitDiffForCommitMessage(repoRoot)
   }
 
-  generateCommitMessage(repoRoot: string, actorCommand?: string): Promise<string> {
-    return generateCommitMessage(repoRoot, actorCommand)
+  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string> {
+    return generateCommitMessage(repoRoot, actorCommand, lang)
   }
 
   async recoverInterruptedRuns(): Promise<void> {

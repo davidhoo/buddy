@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles } from 'lucide-react'
 import type { GitStatusResult, GitRemote } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT } from '../hooks/useI18n'
+import { useLanguage } from '../hooks/useI18n'
 import { api } from '../lib/api'
 
 interface FileStatusProps {
@@ -102,13 +103,14 @@ interface CommitModalProps {
 
 export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }: CommitModalProps) {
   const t = useT()
+  const lang = useLanguage()
   const [message, setMessage] = useState('')
+  const [isGenerating, setIsGenerating] = useState(true)
+  const [isStaging, setIsStaging] = useState(false)
+  const [isCommitting, setIsCommitting] = useState(false)
   const [selectedRemote, setSelectedRemote] = useState<string>(
     gitStatus?.remotes[0]?.name ?? 'origin'
   )
-  const [isStaging, setIsStaging] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isCommitting, setIsCommitting] = useState(false)
 
   const stageAll = useGitStageAll()
   const commitAndPush = useGitCommitAndPush()
@@ -133,14 +135,19 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
   const handleGenerate = useCallback(async () => {
     setIsGenerating(true)
     try {
-      const result = await api.generateCommitMessage(repoRoot)
+      const result = await api.generateCommitMessage(repoRoot, undefined, lang)
       if (result) setMessage(result)
     } catch {
-      setMessage(`${totalFiles} file${totalFiles > 1 ? 's' : ''} changed`)
+      // fallback
     } finally {
       setIsGenerating(false)
     }
-  }, [repoRoot, totalFiles])
+  }, [repoRoot, lang])
+
+  // 打开时自动生成
+  useEffect(() => {
+    handleGenerate()
+  }, [handleGenerate])
 
   const handleCommit = useCallback(async () => {
     if (!message.trim()) return
@@ -254,9 +261,10 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              placeholder={t('git.commitMessagePlaceholder')}
-              className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg font-mono text-xs resize-none"
+              rows={6}
+              placeholder={isGenerating ? t('git.generating') : t('git.commitMessagePlaceholder')}
+              disabled={isGenerating}
+              className={`w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg font-mono text-xs resize-none ${isGenerating ? 'opacity-60' : ''}`}
             />
           </div>
         </div>

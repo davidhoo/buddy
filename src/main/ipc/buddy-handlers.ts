@@ -25,7 +25,7 @@ export interface BuddyHandlerService {
   gitStageAll(repoRoot: string): Promise<void>
   gitCommitAndPush(repoRoot: string, message: string, remote: string): Promise<unknown>
   gitDiffForCommitMessage(repoRoot: string): Promise<string>
-  generateCommitMessage(repoRoot: string, actorCommand?: string): Promise<string>
+  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string>
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
@@ -76,7 +76,7 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:gitDiffForCommitMessage', (_event, repoRoot: string) =>
     service.gitDiffForCommitMessage(repoRoot)
   )
-  ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string) =>
-    service.generateCommitMessage(repoRoot, actorCommand)
+  ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string) =>
+    service.generateCommitMessage(repoRoot, actorCommand, lang)
   )
 }

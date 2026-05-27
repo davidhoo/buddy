@@ -45,6 +45,6 @@ export const api = {
     buddy().gitCommitAndPush(repoRoot, message, remote),
   gitDiffForCommitMessage: (repoRoot: string) =>
     buddy().gitDiffForCommitMessage(repoRoot),
-  generateCommitMessage: (repoRoot: string, actorCommand?: string) =>
-    buddy().generateCommitMessage(repoRoot, actorCommand)
+  generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
+    buddy().generateCommitMessage(repoRoot, actorCommand, lang)
 }

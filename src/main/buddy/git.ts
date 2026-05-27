@@ -132,12 +132,23 @@ export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
   }
 }
 
-export async function generateCommitMessage(cwd: string, actorCommand?: string): Promise<string> {
+export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string): Promise<string> {
   const diffSummary = await gitDiffForCommitMessage(cwd)
   if (!diffSummary.trim()) return ''
 
   const command = actorCommand?.trim() || 'claude'
-  const prompt = `Generate a concise git commit message for the following changes. Output ONLY the commit message text, no explanation, no quotes, no markdown.\n\n${diffSummary}`
+  const langInstruction = lang && lang !== 'en'
+    ? `Write the commit message in ${lang === 'zh-CN' ? 'Simplified Chinese' : lang === 'zh-TW' ? 'Traditional Chinese' : 'English'}.`
+    : ''
+  const prompt = `Generate a git commit message for the following changes. Rules:
+- Use the conventional commits format: type(scope): description
+- First line is a concise summary (imperative mood, under 72 chars)
+- If the changes are non-trivial, add a blank line then a bullet-point body explaining what and why
+- Be specific: mention file names, function names, or key concepts that changed
+- Do not add Co-Authored-By or other metadata
+${langInstruction}
+
+${diffSummary}`
 
   return new Promise((resolve) => {
     const child = spawn(command, ['-p', '--output-format', 'text', '--input-format', 'text'], {
