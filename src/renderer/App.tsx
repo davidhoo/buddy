@@ -634,7 +634,7 @@ function CreateTaskModal({
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-4 py-1.5 text-xs bg-accent text-fg-inverse rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-1.5 text-xs bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('modal.create.submit')}
           </button>

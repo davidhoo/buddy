@@ -685,7 +685,7 @@ function RenameDialog({
             <button
               type="submit"
               disabled={!name.trim()}
-              className="px-3 py-1.5 text-sm bg-accent text-fg-inverse rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50"
             >
               {t('common.confirm')}
             </button>

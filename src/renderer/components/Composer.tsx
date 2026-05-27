@@ -145,7 +145,7 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
               className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
                 showStop
                   ? 'bg-danger hover:bg-danger-hover text-fg-inverse'
-                  : 'bg-accent text-fg-inverse hover:bg-accent-hover'
+                  : 'bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover'
               }`}
             >
               {showStop ? (

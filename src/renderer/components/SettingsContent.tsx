@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Monitor, Moon, Sun } from 'lucide-react'
-import { useTheme, Theme } from '../hooks/useTheme'
+import { useTheme, ThemeMode } from '../hooks/useTheme'
+import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
 import { useUpdateGlobalSettings } from '../hooks/useBuddy'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
@@ -251,7 +252,7 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
           type="button"
           onClick={() => onSaveCommand(draft)}
           disabled={!dirty}
-          className="ml-auto px-3 py-1 text-xs font-medium rounded-md bg-accent text-fg-inverse hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="ml-auto px-3 py-1 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {t('common.save')}
         </button>
@@ -287,27 +288,73 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
 
 function AppearanceSettings() {
   const t = useT()
-  const { theme, setTheme } = useTheme()
+  const {
+    mode,
+    themeId,
+    custom,
+    resolvedMode,
+    setMode,
+    setThemeId,
+    setCustom,
+    resetCustom,
+  } = useTheme()
 
-  const themeOptions: { value: Theme; label: string; description: string }[] = [
+  const availableThemes = useMemo(() => getThemesByType(resolvedMode), [resolvedMode])
+  const currentBaseTheme = useMemo(() => {
+    const found = getThemeById(themeId)
+    if (found && found.type === resolvedMode) return found
+    return availableThemes[0]
+  }, [themeId, resolvedMode, availableThemes])
+
+  const handleSelectTheme = (id: string) => {
+    setThemeId(id)
+  }
+
+  const handleColorChange = (key: CustomColorKey, value: string) => {
+    setCustom({ [key]: value } as Partial<Pick<BuddyTheme, CustomColorKey>>)
+  }
+
+  const handleResetColor = (key: CustomColorKey) => {
+    const next = { ...custom }
+    delete (next as Record<string, unknown>)[key]
+    setCustom(next)
+  }
+
+  const handleContrastChange = (value: number) => {
+    setCustom({ contrast: value })
+  }
+
+  const themeOptions: { value: ThemeMode; label: string; description: string }[] = [
     { value: 'light', label: t('settings.appearance.theme.light.label'), description: t('settings.appearance.theme.light.desc') },
     { value: 'dark', label: t('settings.appearance.theme.dark.label'), description: t('settings.appearance.theme.dark.desc') },
     { value: 'system', label: t('settings.appearance.theme.system.label'), description: t('settings.appearance.theme.system.desc') },
   ]
 
+  type CustomColorKey = 'surface' | 'ink' | 'accent' | 'success' | 'danger'
+  const colorKeys: Array<{ key: CustomColorKey; labelKey: string }> = [
+    { key: 'surface', labelKey: 'settings.appearance.custom.surface' },
+    { key: 'ink', labelKey: 'settings.appearance.custom.ink' },
+    { key: 'accent', labelKey: 'settings.appearance.custom.accent' },
+    { key: 'success', labelKey: 'settings.appearance.custom.success' },
+    { key: 'danger', labelKey: 'settings.appearance.custom.danger' },
+  ]
+
+  const currentContrast = custom.contrast ?? currentBaseTheme.contrast
+
   return (
     <div className="space-y-10">
+      {/* Theme Mode */}
       <SettingsSection title={t('settings.appearance.theme.title')} description={t('settings.appearance.theme.desc')}>
         <div className="grid grid-cols-3 gap-3">
           {themeOptions.map((opt) => {
-            const active = theme === opt.value
+            const active = mode === opt.value
             return (
               <button
                 key={opt.value}
-                onClick={() => setTheme(opt.value)}
+                onClick={() => setMode(opt.value)}
                 className={`relative p-4 rounded-xl border bg-bg-elevated text-left transition-colors ${
                   active
-                    ? 'border-accent ring-1 ring-accent'
+                    ? 'border-accent-primary ring-1 ring-accent-primary'
                     : 'border-border hover:border-fg-muted'
                 }`}
               >
@@ -318,7 +365,7 @@ function AppearanceSettings() {
                 <div className="text-xs text-fg-muted">{opt.description}</div>
                 <div
                   className={`absolute top-3 right-3 w-4 h-4 rounded-full border-2 ${
-                    active ? 'border-accent bg-accent' : 'border-border'
+                    active ? 'border-accent-primary bg-accent-primary' : 'border-border'
                   }`}
                 >
                   {active && (
@@ -330,11 +377,98 @@ function AppearanceSettings() {
           })}
         </div>
       </SettingsSection>
+
+      {/* Color Scheme */}
+      <SettingsSection title={t('settings.appearance.scheme.title')} description={t('settings.appearance.scheme.desc')}>
+        <div className="grid grid-cols-4 gap-3">
+          {availableThemes.map((theme) => {
+            const active = themeId === theme.id
+            return (
+              <button
+                key={theme.id}
+                onClick={() => handleSelectTheme(theme.id)}
+                className={`relative p-3 rounded-xl border text-left transition-colors ${
+                  active
+                    ? 'border-accent-primary ring-1 ring-accent-primary'
+                    : 'border-border hover:border-fg-muted'
+                }`}
+                style={{ backgroundColor: theme.surface }}
+              >
+                <div className="h-8 rounded-md mb-2 flex items-end gap-1 px-1 pb-1">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.accent }} />
+                  <div className="flex-1 h-0.5 rounded" style={{ backgroundColor: theme.ink }} />
+                </div>
+                <div className="text-xs font-medium truncate" style={{ color: theme.ink }}>
+                  {theme.name}
+                </div>
+                {active && (
+                  <div className="absolute top-2 right-2 w-3 h-3 rounded-full border-2 flex items-center justify-center"
+                    style={{ borderColor: theme.accent, backgroundColor: theme.accent }}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: theme.surface }} />
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </SettingsSection>
+
+      {/* Custom Colors */}
+      <SettingsSection title={t('settings.appearance.custom.title')} description={t('settings.appearance.custom.desc')}>
+        <div className="rounded-xl border border-border bg-bg-elevated divide-y divide-border-subtle overflow-hidden">
+          {colorKeys.map(({ key, labelKey }) => {
+            const value = (custom[key] as string | undefined) ?? (currentBaseTheme[key] as string)
+            const isCustom = custom[key] !== undefined
+            return (
+              <div key={key} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="text-sm text-fg">{t(labelKey as any)}</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={value}
+                    onChange={(e) => handleColorChange(key, e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent"
+                  />
+                  <span className="text-xs font-mono text-fg-muted w-16">{value}</span>
+                  {isCustom && (
+                    <button
+                      onClick={() => handleResetColor(key)}
+                      className="text-xs text-accent hover:text-accent-hover underline"
+                    >
+                      {t('settings.appearance.custom.reset')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </SettingsSection>
+
+      {/* Contrast */}
+      <SettingsSection title={t('settings.appearance.contrast.title')} description={t('settings.appearance.contrast.desc')}>
+        <div className="px-1">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={currentContrast}
+            onChange={(e) => handleContrastChange(Number(e.target.value))}
+            className="w-full accent-accent"
+          />
+          <div className="flex justify-between text-xs text-fg-muted mt-1">
+            <span>{t('settings.appearance.contrast.low')}</span>
+            <span className="font-mono">{currentContrast}</span>
+            <span>{t('settings.appearance.contrast.high')}</span>
+          </div>
+        </div>
+      </SettingsSection>
     </div>
   )
 }
 
-function ThemeIcon({ theme, active }: { theme: Theme; active: boolean }) {
+function ThemeIcon({ theme, active }: { theme: ThemeMode; active: boolean }) {
   const color = active ? 'var(--accent)' : 'var(--fg-muted)'
   if (theme === 'light') {
     return <Sun size={16} color={color} strokeWidth={2} />
@@ -429,17 +563,16 @@ function EditableNumber({ value, min, max, onSave }: {
 }
 
 function ActorBadge({ actor }: { actor: string }) {
-  const colors: Record<string, string> = {
-    claude: '#8b6dba',
-    codex: '#4a9bb5',
-    opencode: '#d97706',
-    kimi: '#2e7d32',
+  const map: Record<string, string> = {
+    claude: 'var(--actor-claude)',
+    codex: 'var(--actor-codex)',
+    opencode: 'var(--actor-opencode)',
+    kimi: 'var(--actor-kimi)',
   }
-  const color = colors[actor] ?? 'var(--fg-muted)'
   return (
     <div
       className="w-2.5 h-2.5 rounded-full shrink-0"
-      style={{ backgroundColor: color }}
+      style={{ backgroundColor: map[actor] ?? 'var(--fg-muted)' }}
     />
   )
 }

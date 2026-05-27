@@ -167,7 +167,7 @@ export function StatusBar({
                 </button>
                 <button
                   onClick={onSkipCountdown}
-                  className="px-2 py-1 text-xs bg-accent text-fg-inverse rounded hover:bg-accent-hover"
+                  className="px-2 py-1 text-xs bg-accent-primary text-fg-inverse rounded hover:bg-accent-primary-hover"
                 >
                   {t('common.skip')}
                 </button>
