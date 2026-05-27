@@ -8,7 +8,7 @@ export const LANGUAGE_OPTIONS: Array<{ value: LanguagePref; label: string }> = [
   { value: 'en', label: 'English' }
 ]
 
-export type SendShortcut = 'enter' | 'shift-enter'
+export type SendShortcut = 'enter' | 'shift-enter' | 'cmd-enter'
 
 export function detectLanguage(): Language {
   const candidates = [
@@ -116,18 +116,21 @@ const en = {
   // Settings tabs
   'settings.tab.general': 'General',
   'settings.tab.appearance': 'Appearance',
+  'settings.tab.keyboard': 'Keyboard Shortcuts',
 
   // Settings — General
   'settings.general.section.title': 'General',
   'settings.general.section.desc': 'Language and message sending preferences.',
   'settings.general.language.title': 'Language',
   'settings.general.language.desc': 'Choose the interface language. "Auto" follows your system.',
-  'settings.general.send.title': 'Send with',
-  'settings.general.send.desc': 'Choose how to send a message in the composer.',
+  'settings.general.send.title': 'Quick send',
+  'settings.general.send.desc': 'Choose whether Enter, Shift + Enter, or ⌘Enter sends from the composer.',
   'settings.general.send.enter': 'Enter to send',
   'settings.general.send.enterHint': 'Shift + Enter inserts a new line.',
   'settings.general.send.shiftEnter': 'Shift + Enter to send',
   'settings.general.send.shiftEnterHint': 'Enter inserts a new line.',
+  'settings.general.send.cmdEnter': '⌘ Enter to send',
+  'settings.general.send.cmdEnterHint': 'Enter and Shift + Enter insert new lines.',
 
   // Settings — CLI
   'settings.cli.title': 'CLI configuration',
@@ -195,6 +198,7 @@ const en = {
   'composer.hint.running': 'Click ■ to interrupt',
   'composer.hint.enter': 'Enter to send, Shift+Enter for new line',
   'composer.hint.shiftEnter': 'Enter for new line, Shift+Enter to send',
+  'composer.hint.cmdEnter': 'Enter for new line, ⌘Enter to send',
   'composer.autoStart': 'Auto-starting in {n}s…',
   'composer.nextHandoff': 'Next handoff',
   'composer.button.interrupt': 'Interrupt',
@@ -278,7 +282,27 @@ const en = {
   'modal.create.sameActorError': 'Implementer and reviewer cannot be the same role.',
   'modal.create.submit': 'Create task',
   'modal.create.failed': 'Create failed: {message}',
-  'modal.create.taskBriefDefault': '# Goal\n\nDescribe the task to complete.\n\n# Context & constraints\n\nProject background, constraints, etc.\n\n# Acceptance criteria\n- '
+  'modal.create.taskBriefDefault': '# Goal\n\nDescribe the task to complete.\n\n# Context & constraints\n\nProject background, constraints, etc.\n\n# Acceptance criteria\n- ',
+
+  // Shortcuts
+  'shortcuts.search': 'Search shortcuts…',
+  'shortcuts.resetAll': 'Reset All',
+  'shortcuts.resetAllConfirm': 'Reset all shortcuts to defaults?',
+  'shortcuts.conflict': 'Conflicts with: {name}',
+  'shortcuts.recordHint': 'Press new shortcut…',
+  'shortcuts.resetToDefault': 'Reset',
+  'shortcuts.group.application': 'Application',
+  'shortcuts.group.navigation': 'Navigation',
+  'shortcuts.newTask': 'New Task',
+  'shortcuts.openSettings': 'Open Settings',
+  'shortcuts.toggleSidebar': 'Toggle Sidebar',
+  'shortcuts.toggleStatusBar': 'Toggle Status Bar',
+  'shortcuts.interrupt': 'Interrupt Task',
+  'shortcuts.showShortcuts': 'Show Keyboard Shortcuts',
+  'shortcuts.selectTaskN': 'Select Task {n}',
+  'shortcuts.nextTask': 'Next Task',
+  'shortcuts.prevTask': 'Previous Task',
+  'shortcuts.escape': 'Close Dialog / Back to Chat',
 }
 
 // Simplified Chinese — preserves the original wording in the codebase.
@@ -360,17 +384,20 @@ const zhCN: typeof en = {
 
   'settings.tab.general': '常规',
   'settings.tab.appearance': '外观',
+  'settings.tab.keyboard': '键盘快捷键',
 
   'settings.general.section.title': '常规',
   'settings.general.section.desc': '语言与发送方式偏好。',
   'settings.general.language.title': '界面语言',
   'settings.general.language.desc': '选择应用界面的语言。「自动检测」会跟随系统。',
-  'settings.general.send.title': '发送方式',
-  'settings.general.send.desc': '选择发送消息时使用的快捷键。',
+  'settings.general.send.title': '快捷发送方式',
+  'settings.general.send.desc': '选择使用 Enter、Shift + Enter 或 ⌘Enter 发送。',
   'settings.general.send.enter': 'Enter 发送',
   'settings.general.send.enterHint': 'Shift + Enter 换行。',
   'settings.general.send.shiftEnter': 'Shift + Enter 发送',
   'settings.general.send.shiftEnterHint': 'Enter 换行。',
+  'settings.general.send.cmdEnter': '⌘Enter 发送',
+  'settings.general.send.cmdEnterHint': 'Enter 和 Shift + Enter 都换行。',
 
   'settings.cli.title': 'CLI 配置',
   'settings.cli.desc': '配置默认的启动命令和协作参数。新建任务时会使用这些设置作为默认值。',
@@ -432,6 +459,7 @@ const zhCN: typeof en = {
   'composer.hint.running': '点击 ■ 打断当前运行',
   'composer.hint.enter': 'Enter 发送，Shift+Enter 换行',
   'composer.hint.shiftEnter': 'Enter 换行，Shift+Enter 发送',
+  'composer.hint.cmdEnter': 'Enter 换行，⌘Enter 发送',
   'composer.autoStart': '{n} 秒后自动开始…',
   'composer.nextHandoff': '下一轮承接方',
   'composer.button.interrupt': '打断',
@@ -512,7 +540,26 @@ const zhCN: typeof en = {
   'modal.create.sameActorError': '执行者和审查者不能是同一个角色。',
   'modal.create.submit': '创建任务',
   'modal.create.failed': '创建失败：{message}',
-  'modal.create.taskBriefDefault': '# 目标\n\n描述要完成的任务。\n\n# 背景与约束\n\n项目背景、约束等。\n\n# 验收标准\n- '
+  'modal.create.taskBriefDefault': '# 目标\n\n描述要完成的任务。\n\n# 背景与约束\n\n项目背景、约束等。\n\n# 验收标准\n- ',
+
+  'shortcuts.search': '搜索快捷键…',
+  'shortcuts.resetAll': '全部恢复默认',
+  'shortcuts.resetAllConfirm': '确定将所有快捷键恢复为默认值？',
+  'shortcuts.conflict': '与「{name}」冲突',
+  'shortcuts.recordHint': '按下新快捷键…',
+  'shortcuts.resetToDefault': '恢复默认',
+  'shortcuts.group.application': '应用',
+  'shortcuts.group.navigation': '导航',
+  'shortcuts.newTask': '新建任务',
+  'shortcuts.openSettings': '打开设置',
+  'shortcuts.toggleSidebar': '切换侧边栏',
+  'shortcuts.toggleStatusBar': '切换状态栏',
+  'shortcuts.interrupt': '中断任务',
+  'shortcuts.showShortcuts': '显示键盘快捷键',
+  'shortcuts.selectTaskN': '选择任务 {n}',
+  'shortcuts.nextTask': '下一个任务',
+  'shortcuts.prevTask': '上一个任务',
+  'shortcuts.escape': '关闭对话框 / 返回聊天',
 }
 
 // Traditional Chinese
@@ -599,12 +646,14 @@ const zhTW: typeof en = {
   'settings.general.section.desc': '語言與訊息傳送偏好。',
   'settings.general.language.title': '介面語言',
   'settings.general.language.desc': '選擇應用介面的語言。「自動偵測」會跟隨系統。',
-  'settings.general.send.title': '傳送方式',
-  'settings.general.send.desc': '選擇傳送訊息時使用的快速鍵。',
+  'settings.general.send.title': '快速傳送方式',
+  'settings.general.send.desc': '選擇使用 Enter、Shift + Enter 或 ⌘Enter 傳送。',
   'settings.general.send.enter': 'Enter 傳送',
   'settings.general.send.enterHint': 'Shift + Enter 換行。',
   'settings.general.send.shiftEnter': 'Shift + Enter 傳送',
   'settings.general.send.shiftEnterHint': 'Enter 換行。',
+  'settings.general.send.cmdEnter': '⌘Enter 傳送',
+  'settings.general.send.cmdEnterHint': 'Enter 和 Shift + Enter 都換行。',
 
   'settings.cli.title': 'CLI 設定',
   'settings.cli.desc': '設定預設的啟動指令與協作參數。新增任務時會使用這些設定作為預設值。',
@@ -667,6 +716,7 @@ const zhTW: typeof en = {
   'composer.hint.running': '點擊 ■ 中斷目前執行',
   'composer.hint.enter': 'Enter 傳送，Shift+Enter 換行',
   'composer.hint.shiftEnter': 'Enter 換行，Shift+Enter 傳送',
+  'composer.hint.cmdEnter': 'Enter 換行，⌘Enter 傳送',
   'composer.autoStart': '{n} 秒後自動開始…',
   'composer.nextHandoff': '下一輪承接方',
   'composer.button.interrupt': '中斷',
@@ -747,7 +797,28 @@ const zhTW: typeof en = {
   'modal.create.sameActorError': '執行者與審查者不能是同一個角色。',
   'modal.create.submit': '建立任務',
   'modal.create.failed': '建立失敗：{message}',
-  'modal.create.taskBriefDefault': '# 目標\n\n描述要完成的任務。\n\n# 背景與限制\n\n專案背景、限制等。\n\n# 驗收標準\n- '
+  'modal.create.taskBriefDefault': '# 目標\n\n描述要完成的任務。\n\n# 背景與限制\n\n專案背景、限制等。\n\n# 驗收標準\n- ',
+
+  // Settings - Keyboard shortcuts tab
+  'settings.tab.keyboard': '鍵盤快速鍵',
+  'shortcuts.search': '搜尋快速鍵…',
+  'shortcuts.resetAll': '全部恢復預設',
+  'shortcuts.resetAllConfirm': '確定將所有快速鍵恢復為預設值？',
+  'shortcuts.conflict': '與「{name}」衝突',
+  'shortcuts.recordHint': '按下新快速鍵…',
+  'shortcuts.resetToDefault': '恢復預設',
+  'shortcuts.group.application': '應用',
+  'shortcuts.group.navigation': '導航',
+  'shortcuts.newTask': '新增任務',
+  'shortcuts.openSettings': '開啟設定',
+  'shortcuts.toggleSidebar': '切換側邊欄',
+  'shortcuts.toggleStatusBar': '切換狀態列',
+  'shortcuts.interrupt': '中斷任務',
+  'shortcuts.showShortcuts': '顯示鍵盤快速鍵',
+  'shortcuts.selectTaskN': '選擇任務 {n}',
+  'shortcuts.nextTask': '下一個任務',
+  'shortcuts.prevTask': '上一個任務',
+  'shortcuts.escape': '關閉對話框 / 返回聊天',
 }
 
 const dictionaries: Record<Language, typeof en> = {

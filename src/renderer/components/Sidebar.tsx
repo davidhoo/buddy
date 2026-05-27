@@ -4,6 +4,7 @@ import {
   Ellipsis,
   Folder,
   FolderOpen,
+  Keyboard,
   PanelLeft,
   Pin,
   Settings as SettingsIcon,
@@ -17,6 +18,7 @@ import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
+import { projectNameForTask, readStringArraySetting, writeStringArraySetting } from '../lib/taskList'
 
 import type { SettingsTab } from './SettingsContent'
 
@@ -30,21 +32,6 @@ const STATUS_KEYS: Record<TaskStatus, TranslationKey> = {
   PAUSED: 'status.PAUSED',
   FAILED: 'status.FAILED',
   DONE: 'status.DONE',
-}
-
-function readStringArraySetting(key: string): string[] {
-  try {
-    if (typeof window === 'undefined') return []
-    const parsed = JSON.parse(window.localStorage?.getItem(key) || '[]')
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : []
-  } catch { return [] }
-}
-
-function writeStringArraySetting(key: string, value: string[]) {
-  try {
-    if (typeof window === 'undefined') return
-    window.localStorage?.setItem(key, JSON.stringify(value))
-  } catch {}
 }
 
 function statusText(status: TaskStatus, t: TFunction): string {
@@ -196,6 +183,13 @@ function SettingsSidebar({
           active={settingsTab === 'appearance'}
           onClick={() => onSelectSettingsTab('appearance')}
         />
+
+        <SettingsMenuItem
+          label={t('settings.tab.keyboard')}
+          icon={<Keyboard size={15} strokeWidth={1.7} />}
+          active={settingsTab === 'keyboard'}
+          onClick={() => onSelectSettingsTab('keyboard')}
+        />
       </div>
     </>
   )
@@ -308,7 +302,7 @@ function ChatSidebar({
   }, [openMenuRepoRoot])
 
   const groupedTasks = unpinnedTasks.reduce<Record<string, Task[]>>((acc, task) => {
-    const key = projectName(task, projectNames)
+    const key = projectNameForTask(task, projectNames)
     if (!acc[key]) acc[key] = []
     acc[key].push(task)
     return acc
@@ -363,7 +357,7 @@ function ChatSidebar({
                 {pinnedTasks.map((task) => {
                   const isSelected = selectedTaskId === task.task_id
                   const isRunning = statusClass(task.status) === 'running'
-                  const proj = projectName(task, projectNames)
+                  const proj = projectNameForTask(task, projectNames)
                   return (
                     <div
                       key={task.task_id}
@@ -603,18 +597,6 @@ function FolderIcon({ isOpen }: { isOpen: boolean }) {
   return isOpen
     ? <FolderOpen size={14} strokeWidth={2} className="flex-shrink-0" />
     : <Folder size={14} strokeWidth={2} className="flex-shrink-0" />
-}
-
-function projectName(task: Task, projectNames?: Record<string, string>): string {
-  if (task.repo_root && projectNames?.[task.repo_root]) {
-    return projectNames[task.repo_root]
-  }
-  if (task.repo_root) {
-    const basename = task.repo_root.replace(/\/+$/, '').split('/').pop()
-    if (basename) return basename
-  }
-  const key = task.workspace_key || 'default'
-  return key.replace(/-[a-f0-9]{8,}$/i, '')
 }
 
 function formatRelativeTime(iso: string, t: TFunction): string {

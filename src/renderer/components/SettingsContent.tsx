@@ -1,14 +1,29 @@
-import { useEffect, useState, useMemo } from 'react'
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { Monitor, Moon, RotateCcw, Search, Sun } from 'lucide-react'
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
 import { useUpdateGlobalSettings } from '../hooks/useBuddy'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
+import {
+  type ShortcutId,
+  type KeyBinding,
+  type ShortcutDef,
+  SHORTCUT_DEFS,
+  getShortcutGroups,
+  loadBindings,
+  saveBinding,
+  resetBinding,
+  resetAllBindings,
+  findConflict,
+  formatBinding,
+  eventToBinding,
+  bindingsEqual,
+} from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 
-export type SettingsTab = 'general' | 'appearance'
+export type SettingsTab = 'general' | 'appearance' | 'keyboard'
 
 interface SettingsContentProps {
   tab: SettingsTab
@@ -62,15 +77,21 @@ function HintWithCode({ template }: { template: string }) {
 
 export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
   const t = useT()
-  const pageTitle = tab === 'general' ? t('settings.tab.general') : t('settings.tab.appearance')
+  const pageTitle = tab === 'general'
+    ? t('settings.tab.general')
+    : tab === 'appearance'
+      ? t('settings.tab.appearance')
+      : t('settings.tab.keyboard')
   return (
     <div className="flex-1 overflow-y-auto bg-bg-elevated">
       <div className="max-w-4xl mx-auto px-10 py-10">
         <h1 className="text-2xl font-semibold mb-8">{pageTitle}</h1>
         {tab === 'general' ? (
           <GeneralSettings globalSettings={globalSettings} />
-        ) : (
+        ) : tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : (
+          <KeyboardSettings />
         )}
       </div>
     </div>
@@ -93,6 +114,11 @@ function GeneralSection() {
       value: 'enter',
       label: t('settings.general.send.enter'),
       desc: t('settings.general.send.enterHint')
+    },
+    {
+      value: 'cmd-enter',
+      label: t('settings.general.send.cmdEnter'),
+      desc: t('settings.general.send.cmdEnterHint')
     }
   ]
 
@@ -352,11 +378,10 @@ function AppearanceSettings() {
               <button
                 key={opt.value}
                 onClick={() => setMode(opt.value)}
-                className={`relative p-4 rounded-xl border bg-bg-elevated text-left transition-colors ${
-                  active
-                    ? 'border-accent-primary ring-1 ring-accent-primary'
-                    : 'border-border hover:border-fg-muted'
-                }`}
+                className={`relative p-4 rounded-xl border bg-bg-elevated text-left transition-colors ${active
+                  ? 'border-accent-primary ring-1 ring-accent-primary'
+                  : 'border-border hover:border-fg-muted'
+                  }`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <ThemeIcon theme={opt.value} active={active} />
@@ -364,9 +389,8 @@ function AppearanceSettings() {
                 </div>
                 <div className="text-xs text-fg-muted">{opt.description}</div>
                 <div
-                  className={`absolute top-3 right-3 w-4 h-4 rounded-full border-2 ${
-                    active ? 'border-accent-primary bg-accent-primary' : 'border-border'
-                  }`}
+                  className={`absolute top-3 right-3 w-4 h-4 rounded-full border-2 ${active ? 'border-accent-primary bg-accent-primary' : 'border-border'
+                    }`}
                 >
                   {active && (
                     <div className="absolute inset-0 m-auto w-1.5 h-1.5 rounded-full bg-fg-inverse" />
@@ -387,11 +411,10 @@ function AppearanceSettings() {
               <button
                 key={theme.id}
                 onClick={() => handleSelectTheme(theme.id)}
-                className={`relative p-2 rounded-lg border text-left transition-colors ${
-                  active
-                    ? 'border-accent-primary ring-1 ring-accent-primary'
-                    : 'border-border hover:border-fg-muted'
-                }`}
+                className={`relative p-2 rounded-lg border text-left transition-colors ${active
+                  ? 'border-accent-primary ring-1 ring-accent-primary'
+                  : 'border-border hover:border-fg-muted'
+                  }`}
                 style={{ backgroundColor: theme.surface }}
               >
                 <div className="h-6 rounded mb-1.5 flex items-end gap-1 px-0.5 pb-0.5">
@@ -464,6 +487,191 @@ function AppearanceSettings() {
           </div>
         </div>
       </SettingsSection>
+    </div>
+  )
+}
+
+function KeyboardSettings() {
+  const t = useT()
+  const [query, setQuery] = useState('')
+  const [bindings, setBindings] = useState(() => loadBindings())
+  const [recordingId, setRecordingId] = useState<ShortcutId | null>(null)
+  const [conflictId, setConflictId] = useState<ShortcutId | null>(null)
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const groups = getShortcutGroups()
+  const visibleDefs = SHORTCUT_DEFS.filter(def => !def.hidden)
+
+  const handleSaveBinding = useCallback((id: ShortcutId, binding: KeyBinding) => {
+    // Check conflict
+    const conflict = findConflict(binding, id)
+    if (conflict) {
+      setConflictId(conflict)
+      return
+    }
+    setConflictId(null)
+    const newMap = saveBinding(id, binding)
+    setBindings(newMap)
+    setRecordingId(null)
+  }, [])
+
+  const handleResetBinding = useCallback((id: ShortcutId) => {
+    const newMap = resetBinding(id)
+    setBindings(newMap)
+    setConflictId(null)
+  }, [])
+
+  const handleResetAll = useCallback(() => {
+    if (!window.confirm(t('shortcuts.resetAllConfirm'))) return
+    const newMap = resetAllBindings()
+    setBindings(newMap)
+    setConflictId(null)
+    setRecordingId(null)
+  }, [t])
+
+  // Filter shortcuts by search query
+  const filteredDefs = normalizedQuery
+    ? visibleDefs.filter(def => {
+      const label = t(def.labelKey as Parameters<TFunction>[0]).toLowerCase()
+      const keys = formatBinding(bindings[def.id]).toLowerCase()
+      const groupLabel = t(groups.find(g => g.group === def.group)?.labelKey as Parameters<TFunction>[0]).toLowerCase()
+      return label.includes(normalizedQuery) || keys.includes(normalizedQuery) || groupLabel.includes(normalizedQuery)
+    })
+    : visibleDefs
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search
+            size={15}
+            strokeWidth={2}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('shortcuts.search')}
+            className="w-full h-10 pl-9 pr-3 text-sm bg-bg border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+          />
+        </div>
+        <button
+          onClick={handleResetAll}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-bg-subtle transition-colors"
+        >
+          <RotateCcw size={12} />
+          {t('shortcuts.resetAll')}
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-border bg-bg-elevated overflow-hidden">
+        {groups.map(({ group, labelKey }) => {
+          const groupDefs = filteredDefs.filter(d => d.group === group)
+          if (groupDefs.length === 0) return null
+          return (
+            <div key={group}>
+              <div className="px-4 pt-4 pb-2 text-xs font-medium text-fg-muted bg-bg-elevated border-t border-border-subtle first:border-t-0">
+                {t(labelKey as Parameters<TFunction>[0])}
+              </div>
+              {groupDefs.map(def => (
+                <ShortcutRow
+                  key={def.id}
+                  def={def}
+                  binding={bindings[def.id]}
+                  isRecording={recordingId === def.id}
+                  conflictId={recordingId === def.id ? conflictId : null}
+                  isModified={!bindingsEqual(bindings[def.id], def.defaultBinding)}
+                  onStartRecording={() => { setRecordingId(def.id); setConflictId(null) }}
+                  onSave={handleSaveBinding}
+                  onReset={handleResetBinding}
+                  onCancelRecording={() => { setRecordingId(null); setConflictId(null) }}
+                  t={t}
+                />
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ShortcutRow({ def, binding, isRecording, conflictId, isModified, onStartRecording, onSave, onReset, onCancelRecording, t }: {
+  def: ShortcutDef
+  binding: KeyBinding
+  isRecording: boolean
+  conflictId: ShortcutId | null
+  isModified: boolean
+  onStartRecording: () => void
+  onSave: (id: ShortcutId, binding: KeyBinding) => void
+  onReset: (id: ShortcutId) => void
+  onCancelRecording: () => void
+  t: TFunction
+}) {
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isRecording) return
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        onCancelRecording()
+        return
+      }
+      const newBinding = eventToBinding(e)
+      if (newBinding) {
+        onSave(def.id, newBinding)
+      }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [isRecording, def.id, onSave, onCancelRecording])
+
+  const conflictLabel = conflictId
+    ? t((SHORTCUT_DEFS.find(d => d.id === conflictId)?.labelKey ?? conflictId) as Parameters<TFunction>[0])
+    : null
+
+  return (
+    <div
+      ref={rowRef}
+      className={`grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 px-4 py-3 border-t border-border-subtle items-center ${isRecording ? 'bg-bg-subtle' : ''
+        }`}
+    >
+      <div className="min-w-0">
+        <div className="text-sm text-fg">{t(def.labelKey as Parameters<TFunction>[0])}</div>
+        {isRecording && (
+          <div className="text-xs text-accent mt-0.5">{t('shortcuts.recordHint')}</div>
+        )}
+        {conflictId && conflictLabel && (
+          <div className="text-xs text-danger mt-0.5">
+            {t('shortcuts.conflict', { name: conflictLabel })}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center">
+        <button
+          onClick={def.readonly ? undefined : onStartRecording}
+          className={`rounded-md border px-2.5 py-1 text-xs font-mono transition-colors ${isRecording
+            ? 'border-accent bg-accent/10 text-accent'
+            : 'border-border-subtle bg-bg-muted text-fg-secondary shadow-sm hover:border-fg-muted'
+            } ${def.readonly ? 'cursor-default' : 'cursor-pointer'}`}
+        >
+          {formatBinding(binding)}
+        </button>
+      </div>
+      <div className="flex items-center">
+        {isModified && !def.readonly && (
+          <button
+            onClick={() => onReset(def.id)}
+            title={t('shortcuts.resetToDefault')}
+            className="p-1 rounded hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+          >
+            <RotateCcw size={12} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -554,7 +762,7 @@ function EditableNumber({ value, min, max, onSave }: {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         if (e.key === 'Escape') {
           setDraft(String(value))
-          ;(e.target as HTMLInputElement).blur()
+            ; (e.target as HTMLInputElement).blur()
         }
       }}
       className="w-20 px-2 py-1 text-sm text-fg font-mono text-right bg-transparent border border-transparent hover:border-border focus:border-accent focus:bg-bg rounded outline-none transition-colors"
