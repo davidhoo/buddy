@@ -261,7 +261,13 @@ export class BuddyRunner {
       }
 
       if (result.exitCode !== 0) {
-        throw new Error(stderrLines.join('\n') || `Actor exited with ${result.exitCode}`)
+        const parts: string[] = []
+        const stderrText = stderrLines.join('\n').trim()
+        if (stderrText) parts.push(stderrText)
+        const eventError = parsedLines.filter((l) => l.rawType === 'error' && l.text).map((l) => l.text).join('\n')
+        if (eventError) parts.push(eventError)
+        if (outputText.trim()) parts.push(outputText.trim())
+        throw new Error(parts.join('\n\n') || `Actor exited with ${result.exitCode}`)
       }
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)
