@@ -271,6 +271,15 @@ body {
   opacity: 0.6;
 }
 
+/* Unread indicator */
+.unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  flex-shrink: 0;
+}
+
 /* ===== Running status card ===== */
 .message.running-status {
   animation: buddy-breathe 1.9s ease-in-out infinite;

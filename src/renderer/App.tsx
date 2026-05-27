@@ -13,7 +13,7 @@ import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart } from './lib/taskState'
-import { readStringArraySetting, visibleTasksForShortcuts } from './lib/taskList'
+import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead } from './lib/taskList'
 import type { GlobalSettings } from '../shared/types'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
@@ -69,6 +69,7 @@ export default function App() {
   const handleSelectTask = useCallback((taskId: string, workspaceKey: string) => {
     setSelectedTaskId(taskId)
     setSelectedWorkspaceKey(workspaceKey)
+    markTaskAsRead(taskId)
   }, [])
 
   const handleDeleteTask = useCallback(async (taskId: string, workspaceKey: string) => {
@@ -133,6 +134,7 @@ export default function App() {
       }
       setSelectedTaskId(result.task)
       setSelectedWorkspaceKey(result.workspace_key)
+      markTaskAsRead(result.task)
       setShowCreateModal(false)
       setPendingRepoRoot(null)
       // Auto-start immediately if task has real text

@@ -18,7 +18,7 @@ import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
-import { projectNameForTask, readStringArraySetting, writeStringArraySetting } from '../lib/taskList'
+import { projectNameForTask, readStringArraySetting, writeStringArraySetting, isTaskUnread } from '../lib/taskList'
 
 import type { SettingsTab } from './SettingsContent'
 
@@ -357,6 +357,7 @@ function ChatSidebar({
                 {pinnedTasks.map((task) => {
                   const isSelected = selectedTaskId === task.task_id
                   const isRunning = statusClass(task.status) === 'running'
+                  const unread = isTaskUnread(task, selectedTaskId)
                   const proj = projectNameForTask(task, projectNames)
                   return (
                     <div
@@ -372,11 +373,12 @@ function ChatSidebar({
                       <div className="flex h-full items-center gap-2">
                         <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                         <span className={`text-xs truncate flex-1 ${
-                            isSelected ? 'text-fg' : 'text-fg-secondary'
+                            isSelected ? 'text-fg' : unread ? 'text-fg font-medium' : 'text-fg-secondary'
                         }`}>
                           {task.task_id}
                         </span>
                         <span className="text-xs text-fg-muted truncate max-w-[60px]">{proj}</span>
+                        {unread && <span className="unread-dot" />}
                         <span className={`task-status-text status-text-${statusClass(task.status)}`}>
                           {statusText(task.status, t)}
                         </span>
@@ -499,6 +501,7 @@ function ChatSidebar({
                       {(expandedTaskProjects.has(projectKey) ? workspaceTasks : workspaceTasks.slice(0, 10)).map((task) => {
                       const isSelected = selectedTaskId === task.task_id
                       const isRunning = statusClass(task.status) === 'running'
+                      const unread = isTaskUnread(task, selectedTaskId)
                       return (
                         <div
                           key={task.task_id}
@@ -513,10 +516,11 @@ function ChatSidebar({
                           <div className="flex h-full items-center gap-2">
                             <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                             <span className={`text-xs truncate flex-1 ${
-                          isSelected ? 'text-fg' : 'text-fg-secondary'
+                          isSelected ? 'text-fg' : unread ? 'text-fg font-medium' : 'text-fg-secondary'
                             }`}>
                               {task.task_id}
                             </span>
+                            {unread && <span className="unread-dot" />}
                             <span className={`task-status-text status-text-${statusClass(task.status)}`}>
                               {statusText(task.status, t)}
                             </span>

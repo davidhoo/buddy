@@ -15,6 +15,41 @@ export function writeStringArraySetting(key: string, value: string[]) {
   } catch {}
 }
 
+// --- Unread state ---
+
+type TaskReadState = Record<string, string> // taskId → ISO timestamp of last read
+
+function readTaskReadState(): TaskReadState {
+  try {
+    if (typeof window === 'undefined') return {}
+    const parsed = JSON.parse(window.localStorage?.getItem('buddy.taskReadState') || '{}')
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch { return {} }
+}
+
+function writeTaskReadState(state: TaskReadState) {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage?.setItem('buddy.taskReadState', JSON.stringify(state))
+  } catch {}
+}
+
+export function markTaskAsRead(taskId: string) {
+  const state = readTaskReadState()
+  state[taskId] = new Date().toISOString()
+  writeTaskReadState(state)
+}
+
+export function isTaskUnread(task: Task, selectedTaskId: string | null): boolean {
+  if (task.task_id === selectedTaskId) return false
+  const state = readTaskReadState()
+  const lastRead = state[task.task_id]
+  if (!lastRead) return true
+  const updatedAt = task.updated_at
+  if (!updatedAt) return false
+  return updatedAt > lastRead
+}
+
 export function projectNameForTask(task: Task, projectNames?: Record<string, string>): string {
   if (task.repo_root && projectNames?.[task.repo_root]) {
     return projectNames[task.repo_root]
