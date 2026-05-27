@@ -212,7 +212,7 @@ function SettingsMenuItem({ label, icon, active, onClick }: {
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors ${
         active
-          ? 'bg-bg-muted text-fg font-medium'
+          ? 'bg-bg-subtle text-fg'
           : 'text-fg-secondary hover:text-fg hover:bg-bg-subtle'
       }`}
     >
@@ -371,14 +371,14 @@ function ChatSidebar({
                       title={`${task.task_id}\n${task.workspace_key}`}
                       className={`group/task w-full h-7 text-left px-3 ml-2 rounded-md mb-0.5 transition-colors cursor-pointer ${
                         isSelected
-                          ? 'bg-bg-muted'
+                          ? 'bg-bg-subtle'
                           : 'hover:bg-bg-subtle'
                       } ${task.status === 'DONE' ? 'task-done' : ''}`}
                     >
                       <div className="flex h-full items-center gap-2">
                         <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                         <span className={`text-xs truncate flex-1 ${
-                          isSelected ? 'text-fg' : 'text-fg-secondary'
+                            isSelected ? 'text-fg' : 'text-fg-secondary'
                         }`}>
                           {task.task_id}
                         </span>
@@ -512,14 +512,14 @@ function ChatSidebar({
                           title={`${task.task_id}\n${task.workspace_key}`}
                           className={`group/task w-full h-7 text-left px-3 ml-2 rounded-md mb-0.5 transition-colors cursor-pointer ${
                             isSelected
-                              ? 'bg-bg-muted'
+                              ? 'bg-bg-subtle'
                               : 'hover:bg-bg-subtle'
                           } ${task.status === 'DONE' ? 'task-done' : ''}`}
                         >
                           <div className="flex h-full items-center gap-2">
                             <span className={`status-dot status-dot-${statusClass(task.status)} ${isRunning ? 'status-dot-pulse' : ''}`} />
                             <span className={`text-xs truncate flex-1 ${
-                              isSelected ? 'text-fg' : 'text-fg-secondary'
+                          isSelected ? 'text-fg' : 'text-fg-secondary'
                             }`}>
                               {task.task_id}
                             </span>

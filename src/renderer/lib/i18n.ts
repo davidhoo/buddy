@@ -187,6 +187,7 @@ const en = {
   'chat.created.title': 'Task created',
   'chat.created.desc': 'Click "Start" below to let AI begin.',
   'chat.taskBrief': 'Task brief',
+  'chat.scrollToBottom': 'Scroll to bottom',
 
   // Composer
   'composer.placeholder.idle': 'Instructions for the next round.\nFor example: don\'t touch config files yet, only review next round.',
@@ -403,7 +404,7 @@ const zhCN: typeof en = {
   'chat.created.title': '任务已创建',
   'chat.created.desc': '点击下方"开始"让 AI 开始工作',
   'chat.taskBrief': '任务说明',
-
+  'chat.scrollToBottom': '滚动到底部',
   'composer.placeholder.idle': '给下一轮的补充指令\n例如：先别改配置文件，下一轮只做审验。',
   'composer.placeholder.running': '可先输入补充指令，打断后再发送',
   'composer.hint.running': '点击 ■ 打断当前运行',
@@ -615,6 +616,7 @@ const zhTW: typeof en = {
   'chat.created.title': '任務已建立',
   'chat.created.desc': '點擊下方「開始」讓 AI 開始工作',
   'chat.taskBrief': '任務說明',
+  'chat.scrollToBottom': '捲動到底部',
 
   'composer.placeholder.idle': '給下一輪的補充指示\n例如：先別改設定檔，下一輪只審查。',
   'composer.placeholder.running': '可先輸入補充指示，中斷後再傳送',

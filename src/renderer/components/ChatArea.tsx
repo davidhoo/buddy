@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { TaskDetail } from '../../shared/types'
 import { MessageBubble } from './MessageBubble'
 import { RunningStatusMessage } from './RunningStatusMessage'
@@ -20,9 +20,39 @@ interface ChatAreaProps {
 export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoStartSeconds, draft, onDraftChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const userScrolledUp = useRef(false)
+
+  const isNearBottom = useCallback(() => {
+    const el = transcriptRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    const near = isNearBottom()
+    userScrolledUp.current = !near
+    setShowScrollBtn(!near)
+  }, [isNearBottom])
+
+  const scrollToBottom = useCallback(() => {
+    const el = transcriptRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      userScrolledUp.current = false
+      setShowScrollBtn(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (transcriptRef.current) {
+    const el = transcriptRef.current
+    if (!el) return
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
+
+  useEffect(() => {
+    if (transcriptRef.current && !userScrolledUp.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
     }
   }, [task?.transcript, task?.state?.status, task?.state?.active_run?.actor])
@@ -79,6 +109,22 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, autoSt
           </>
         )}
       </div>
+
+      {showScrollBtn && (
+        <div className="flex justify-center -mt-2 mb-1 relative z-10">
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label={t('chat.scrollToBottom')}
+            title={t('chat.scrollToBottom')}
+            className="w-8 h-8 rounded-full bg-bg-elevated border border-border-primary shadow-md flex items-center justify-center text-fg-muted hover:text-fg-primary hover:border-accent transition-colors cursor-pointer"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
 
       <Composer
         onSend={onSendMessage}
