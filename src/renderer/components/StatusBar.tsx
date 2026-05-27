@@ -25,8 +25,6 @@ interface StatusBarProps {
   taskSettings: TaskSettings | null
   events: Event[]
   latestFailure: Failure | null
-  onSkipCountdown: () => void
-  onPauseCountdown: () => void
   onInterrupt: () => void
   onRetry: () => void
   onResume: () => void
@@ -41,7 +39,7 @@ interface CompactStatusInfo {
 
 function compactStatusInfo(status: TaskStatus | null | undefined): CompactStatusInfo | null {
   if (!status) return null
-  if (status.startsWith('RUNNING_') || status === 'COUNTDOWN') {
+  if (status.startsWith('RUNNING_')) {
     return { cls: 'running', labelKey: 'titleBar.status.running', pulse: true }
   }
   if (status === 'PAUSED') return { cls: 'paused', labelKey: 'status.PAUSED', pulse: false }
@@ -65,8 +63,6 @@ export function StatusBar({
   taskSettings,
   events,
   latestFailure,
-  onSkipCountdown,
-  onPauseCountdown,
   onInterrupt: _onInterrupt,
   onRetry,
   onResume,
@@ -75,7 +71,7 @@ export function StatusBar({
   const t = useT()
   const lang = useLanguage()
   void _onInterrupt
-  // 1s tick 让耗时/倒计时随时间走
+  // 1s tick 让耗时随时间走
   const [, setTick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000)
@@ -88,8 +84,6 @@ export function StatusBar({
   const [commitFeedback, setCommitFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   if (!isOpen) return null
-
-  const isCountdown = taskState?.status === 'COUNTDOWN' && taskState?.countdown?.status === 'running'
 
   const { participants } = taskActors(taskSettings)
   const activeRun = taskState?.active_run || null
@@ -147,40 +141,6 @@ export function StatusBar({
               />
             ))}
           </div>
-
-          {/* 倒计时 */}
-          {isCountdown && taskState?.countdown && (
-            <div className="mt-3 p-3 rounded-lg bg-bg-subtle flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium">
-                  {t('statusBar.continueIn', {
-                    n: taskState.countdown.deadline
-                      ? Math.max(0, Math.ceil((new Date(taskState.countdown.deadline).getTime() - Date.now()) / 1000))
-                      : Math.max(0, Math.ceil(taskState.countdown.remaining ?? 0))
-                  })}
-                </div>
-                <div className="text-xs text-fg-secondary mt-0.5">
-                  {t('statusBar.nextRound', {
-                    actor: actorLabel(taskState.countdown.default_next_actor || taskState.next_actor, t)
-                  })}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={onPauseCountdown}
-                  className="px-2 py-1 text-xs bg-bg-muted text-fg rounded hover:bg-bg-subtle"
-                >
-                  {t('common.pause')}
-                </button>
-                <button
-                  onClick={onSkipCountdown}
-                  className="px-2 py-1 text-xs bg-accent-primary text-fg-inverse rounded hover:bg-accent-primary-hover"
-                >
-                  {t('common.skip')}
-                </button>
-              </div>
-            </div>
-          )}
 
         </section>
 

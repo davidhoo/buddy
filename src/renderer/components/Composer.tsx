@@ -26,14 +26,10 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
 
   // 计算真正的"下一轮承接方"
   // 运行中 → 取当前运行 actor 的另一方
-  // 倒计时进行中 → 用 countdown.default_next_actor
   // 其他状态 → 用 next_actor || impl
   const computedNext = (() => {
     if (isRunning && taskState?.active_run?.actor) {
       return participants.find(a => a !== taskState.active_run!.actor) || impl
-    }
-    if (taskState?.status === 'COUNTDOWN' && taskState?.countdown?.status === 'running' && taskState.countdown.default_next_actor) {
-      return taskState.countdown.default_next_actor
     }
     return taskState?.next_actor || impl
   })()

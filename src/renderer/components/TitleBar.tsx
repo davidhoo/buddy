@@ -26,7 +26,7 @@ interface CompactStatusInfo {
 
 function compactStatusInfo(status: TaskStatus | null | undefined): CompactStatusInfo | null {
   if (!status) return null
-  if (status.startsWith('RUNNING_') || status === 'COUNTDOWN') {
+  if (status.startsWith('RUNNING_')) {
     return { cls: 'running', labelKey: 'titleBar.status.running', pulse: true }
   }
   if (status === 'PAUSED') return { cls: 'paused', labelKey: 'status.PAUSED', pulse: false }

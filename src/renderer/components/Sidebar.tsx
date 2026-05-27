@@ -28,7 +28,7 @@ const STATUS_KEYS: Record<TaskStatus, TranslationKey> = {
   RUNNING_CODEX: 'status.RUNNING_CODEX',
   RUNNING_OPENCODE: 'status.RUNNING_OPENCODE',
   RUNNING_KIMI: 'status.RUNNING_KIMI',
-  COUNTDOWN: 'status.COUNTDOWN',
+  COUNTDOWN: 'status.READY',
   PAUSED: 'status.PAUSED',
   FAILED: 'status.FAILED',
   DONE: 'status.DONE',
@@ -39,7 +39,7 @@ function statusText(status: TaskStatus, t: TFunction): string {
 }
 
 function statusClass(status: TaskStatus): string {
-  if (status === 'COUNTDOWN' || status === 'READY') return 'ready'
+  if (status === 'READY') return 'ready'
   if (status.startsWith('RUNNING_')) return 'running'
   if (status === 'FAILED') return 'danger'
   if (status === 'PAUSED') return 'paused'

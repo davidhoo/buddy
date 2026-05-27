@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useSkipCountdown, usePauseCountdown, useInterrupt, useDeleteTask } from './hooks/useBuddy'
+import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT } from './hooks/useI18n'
 import type { TFunction } from './hooks/useI18n'
@@ -29,7 +29,6 @@ export default function App() {
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
-  const autoSkipCountdownRef = useRef<string | null>(null)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [projectNames, setProjectNames] = useState<Record<string, string>>(() => {
@@ -55,8 +54,6 @@ export default function App() {
   const deleteTask = useDeleteTask()
   const sendMessage = useSendMessage()
   const startTask = useStartTask()
-  const skipCountdown = useSkipCountdown()
-  const pauseCountdown = usePauseCountdown()
   const interrupt = useInterrupt()
 
   const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
@@ -191,26 +188,6 @@ export default function App() {
     })
   }, [selectedTaskId, selectedWorkspaceKey, startTask])
 
-  const handleSkipCountdown = useCallback(() => {
-    if (!selectedTaskId) return
-    skipCountdown.mutate({
-      taskId: selectedTaskId,
-      data: {
-        workspace_key: selectedWorkspaceKey ?? undefined
-      }
-    })
-  }, [selectedTaskId, selectedWorkspaceKey, skipCountdown])
-
-  const handlePauseCountdown = useCallback(() => {
-    if (!selectedTaskId) return
-    pauseCountdown.mutate({
-      taskId: selectedTaskId,
-      data: {
-        workspace_key: selectedWorkspaceKey ?? undefined
-      }
-    })
-  }, [selectedTaskId, selectedWorkspaceKey, pauseCountdown])
-
   const handleInterrupt = useCallback(() => {
     if (!selectedTaskId) return
     interrupt.mutate({
@@ -266,34 +243,6 @@ export default function App() {
   }), [handleOpenCreateModal, handleInterrupt, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
 
   useKeyboardShortcuts(shortcutActions)
-
-  // Auto-skip countdown when its deadline elapses so the next actor runs without manual click
-  useEffect(() => {
-    if (!selectedTaskId) return
-    const status = taskDetail?.state?.status
-    const countdown = taskDetail?.state?.countdown
-    if (status !== 'COUNTDOWN' || countdown?.status !== 'running' || !countdown.deadline) return
-
-    const countdownKey = `${selectedWorkspaceKey ?? ''}:${selectedTaskId}:${countdown.deadline}`
-    const remainingMs = Math.max(0, new Date(countdown.deadline).getTime() - Date.now())
-    const timer = setTimeout(() => {
-      if (autoSkipCountdownRef.current === countdownKey) return
-      autoSkipCountdownRef.current = countdownKey
-      skipCountdown.mutate({
-        taskId: selectedTaskId,
-        data: { workspace_key: selectedWorkspaceKey ?? undefined }
-      })
-    }, remainingMs)
-
-    return () => clearTimeout(timer)
-  }, [
-    selectedTaskId,
-    selectedWorkspaceKey,
-    taskDetail?.state?.status,
-    taskDetail?.state?.countdown?.status,
-    taskDetail?.state?.countdown?.deadline,
-    skipCountdown
-  ])
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth(prev => {
@@ -383,8 +332,6 @@ export default function App() {
                 taskSettings={taskDetail?.settings ?? null}
                 events={taskDetail?.events ?? []}
                 latestFailure={taskDetail?.latest_failure ?? null}
-                onSkipCountdown={handleSkipCountdown}
-                onPauseCountdown={handlePauseCountdown}
                 onInterrupt={handleInterrupt}
                 onRetry={() => handleStartTask()}
                 onResume={() => handleStartTask()}
