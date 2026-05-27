@@ -68,6 +68,19 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
     // 让 IME 组合输入正常完成 (Chinese/Japanese 输入法)
     const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (ne.isComposing || ne.keyCode === 229) return
+    // Cmd+Enter always sends/starts (regardless of send mode)
+    if (e.metaKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (isRunning) return
+      if (draft.trim()) {
+        handleSend()
+      } else if (isReady) {
+        onStart(nextActor)
+      }
+      return
+    }
+    if (shortcut === 'cmd-enter') return
     const shouldSend = shortcut === 'enter' ? !e.shiftKey : e.shiftKey
     if (!shouldSend) return
     e.preventDefault()
@@ -85,7 +98,7 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
   const placeholder = isRunning
     ? t('composer.placeholder.running')
     : t('composer.placeholder.idle')
-  const sendHint = shortcut === 'enter' ? t('composer.hint.enter') : t('composer.hint.shiftEnter')
+  const sendHint = shortcut === 'enter' ? t('composer.hint.enter') : shortcut === 'shift-enter' ? t('composer.hint.shiftEnter') : t('composer.hint.cmdEnter')
 
   return (
     <div className="px-4 pb-4 pt-2">

@@ -1,9 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useSkipCountdown, usePauseCountdown, useInterrupt, useDeleteTask } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT } from './hooks/useI18n'
 import type { TFunction } from './hooks/useI18n'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import type { ShortcutActions } from './hooks/useKeyboardShortcuts'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { ChatArea } from './components/ChatArea'
@@ -11,6 +13,7 @@ import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart } from './lib/taskState'
+import { readStringArraySetting, visibleTasksForShortcuts } from './lib/taskList'
 import type { GlobalSettings } from '../shared/types'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
@@ -218,6 +221,54 @@ export default function App() {
       workspaceKey: selectedWorkspaceKey ?? undefined
     })
   }, [selectedTaskId, selectedWorkspaceKey, interrupt])
+
+  const selectVisibleTaskByOffset = useCallback((offset: number) => {
+    const visibleTasks = visibleTasksForShortcuts(
+      tasks,
+      projectNames,
+      readStringArraySetting('buddy.pinnedTaskIds'),
+      readStringArraySetting('buddy.collapsedProjectKeys')
+    )
+    if (visibleTasks.length === 0) return
+    const currentIndex = visibleTasks.findIndex(task => task.task_id === selectedTaskId)
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = Math.max(0, Math.min(visibleTasks.length - 1, baseIndex + offset))
+    const next = visibleTasks[nextIndex]
+    if (next) handleSelectTask(next.task_id, next.workspace_key)
+  }, [handleSelectTask, projectNames, selectedTaskId, tasks])
+
+  const selectVisibleTaskBySlot = useCallback((slot: number) => {
+    const visibleTasks = visibleTasksForShortcuts(
+      tasks,
+      projectNames,
+      readStringArraySetting('buddy.pinnedTaskIds'),
+      readStringArraySetting('buddy.collapsedProjectKeys')
+    )
+    const next = visibleTasks[slot - 1]
+    if (next) handleSelectTask(next.task_id, next.workspace_key)
+  }, [handleSelectTask, projectNames, tasks])
+
+  const shortcutActions: ShortcutActions = useMemo(() => ({
+    onNewTask: () => handleOpenCreateModal(),
+    onOpenSettings: () => { setView('settings'); setSettingsTab('general') },
+    onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
+    onToggleStatusBar: () => setIsStatusBarOpen(prev => !prev),
+    onSelectTaskByIndex: (index: number) => selectVisibleTaskBySlot(index + 1),
+    onNextTask: () => selectVisibleTaskByOffset(1),
+    onPrevTask: () => selectVisibleTaskByOffset(-1),
+    onInterrupt: handleInterrupt,
+    onEscape: () => {
+      if (showCreateModal) {
+        setShowCreateModal(false)
+        setPendingRepoRoot(null)
+      } else if (view === 'settings') {
+        setView('chat')
+      }
+    },
+    onShowShortcuts: () => { setView('settings'); setSettingsTab('keyboard') },
+  }), [handleOpenCreateModal, handleInterrupt, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
+
+  useKeyboardShortcuts(shortcutActions)
 
   // Auto-start countdown: when autoStartSeconds > 0 and task is READY, start timer
   useEffect(() => {
