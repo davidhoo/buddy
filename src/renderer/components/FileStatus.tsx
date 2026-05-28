@@ -56,9 +56,9 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit }: Fil
     )
   }
 
-  const totalInsertions = gitStatus.files.reduce((s, f) => s + f.insertions, 0)
-  const totalDeletions = gitStatus.files.reduce((s, f) => s + f.deletions, 0)
-  const totalFiles = gitStatus.files.length
+  const totalInsertions = (gitStatus.files ?? []).reduce((s, f) => s + f.insertions, 0)
+  const totalDeletions = (gitStatus.files ?? []).reduce((s, f) => s + f.deletions, 0)
+  const totalFiles = (gitStatus.files ?? []).length || ((gitStatus.diff?.filesChanged ?? 0) + (gitStatus.staged?.filesChanged ?? 0) + gitStatus.untracked)
   const hasChanges = totalFiles > 0
 
   return (
@@ -149,9 +149,9 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const totalInsertions = gitStatus?.files.reduce((s, f) => s + f.insertions, 0) ?? 0
-  const totalDeletions = gitStatus?.files.reduce((s, f) => s + f.deletions, 0) ?? 0
-  const totalFiles = gitStatus?.files.length ?? 0
+  const totalInsertions = (gitStatus?.files ?? []).reduce((s, f) => s + f.insertions, 0)
+  const totalDeletions = (gitStatus?.files ?? []).reduce((s, f) => s + f.deletions, 0)
+  const totalFiles = (gitStatus?.files ?? []).length || ((gitStatus?.diff?.filesChanged ?? 0) + (gitStatus?.staged?.filesChanged ?? 0) + (gitStatus?.untracked ?? 0))
   const hasUnstaged = (gitStatus?.diff?.filesChanged ?? 0) > 0 || (gitStatus?.untracked ?? 0) > 0
   const hasStaged = (gitStatus?.staged?.filesChanged ?? 0) > 0
 
@@ -287,7 +287,7 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
           </div>
 
           {/* 文件列表 */}
-          {gitStatus && gitStatus.files.length > 0 && (
+          {gitStatus && gitStatus.files && gitStatus.files.length > 0 && (
             <div className="border border-border rounded-lg overflow-hidden">
               <div className="max-h-52 overflow-y-auto">
                 <table className="w-full text-xs">
