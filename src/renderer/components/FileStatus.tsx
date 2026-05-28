@@ -295,8 +295,7 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
                     <tr className="bg-bg-subtle text-fg-secondary">
                       <th className="px-3 py-1.5 text-left font-medium w-20">{t('git.statusColumn')}</th>
                       <th className="px-3 py-1.5 text-left font-medium">{t('git.fileColumn')}</th>
-                      <th className="px-2 py-1.5 text-right font-medium w-12">+</th>
-                      <th className="px-2 py-1.5 text-right font-medium w-12">-</th>
+                      <th className="px-2 py-1.5 text-center font-medium" colSpan={2}>+/-</th>
                     </tr>
                   </thead>
                   <tbody>
