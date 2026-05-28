@@ -1,18 +1,13 @@
 stages:
   - test
-  - build
   - package
-  - upload
-  - release
-  - deploy
 
 variables:
-  ELECTRON_CACHE: $CI_PROJECT_DIR/.cache/electron
-  ELECTRON_BUILDER_CACHE: $CI_PROJECT_DIR/.cache/electron-builder
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
   pnpm_version: "11"
 
 # -------------------------------------------------------
-# Cache: pnpm store + electron caches
+# Cache: pnpm store
 # -------------------------------------------------------
 .pnpm_cache: &pnpm_cache
   cache:
@@ -21,8 +16,6 @@ variables:
         - pnpm-lock.yaml
     paths:
       - .pnpm-store
-      - .cache/electron
-      - .cache/electron-builder
 
 .pnpm_before: &pnpm_before
   before_script:
@@ -42,11 +35,11 @@ variables:
   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # -------------------------------------------------------
-# Test (runs on MRs and default branch)
+# Test (runs on MRs and default branch, Docker runner)
 # -------------------------------------------------------
 typecheck:
   stage: test
-  tags: [macos]
+  image: node:22-slim
   <<: *pnpm_cache
   <<: *pnpm_before
   rules: *rule_merge
@@ -55,7 +48,7 @@ typecheck:
 
 unit-test:
   stage: test
-  tags: [macos]
+  image: node:22-slim
   <<: *pnpm_cache
   <<: *pnpm_before
   rules: *rule_merge
@@ -63,53 +56,12 @@ unit-test:
     - pnpm test
 
 # -------------------------------------------------------
-# Build (compile main / preload / renderer)
-# -------------------------------------------------------
-compile:
-  stage: build
-  tags: [macos]
-  <<: *pnpm_cache
-  <<: *pnpm_before
-  rules: *rule_release
-  script:
-    - pnpm build
-  artifacts:
-    paths:
-      - out/
-    expire_in: 1 day
-
-# -------------------------------------------------------
-# Package: unsigned DMG
-# -------------------------------------------------------
-package:macos:
-  stage: package
-  tags: [macos]
-  <<: *pnpm_cache
-  <<: *pnpm_before
-  rules: *rule_release
-  needs: [compile]
-  script:
-    - rm -rf release
-    - CUSTOM_DMGBUILD_PATH="$(sh scripts/prepare-dmgbuild.sh)"
-      CSC_IDENTITY_AUTO_DISCOVERY=false
-      pnpm exec electron-builder --mac --publish never -c.mac.notarize=false
-    - find release -maxdepth 2 -type d -name '*.app' | head -1 | grep -q . || { echo "No .app bundle found" >&2; exit 1; }
-    - find release -maxdepth 1 -type f -name '*.dmg' | head -1 | grep -q . || { echo "No .dmg found" >&2; exit 1; }
-    - find release -maxdepth 1 -type f -name '*.dmg' -exec hdiutil verify {} \;
-  artifacts:
-    paths:
-      - release/*.dmg
-      - release/*.zip
-    expire_in: 30 days
-
-# -------------------------------------------------------
-# Package: source archive
+# Package: source archive (tag only, Docker runner)
 # -------------------------------------------------------
 package:source:
   stage: package
   image: registry-origin.api.weibo.com/mapi/v7-ci:latest
   rules: *rule_release
-  needs: []
   script:
     - mkdir -p release-src
     - git archive --format=tar --prefix="buddy-macos-${CI_COMMIT_TAG}/" HEAD | gzip > "release-src/buddy-macos-${CI_COMMIT_TAG}-source.tar.gz"
@@ -118,96 +70,3 @@ package:source:
     paths:
       - release-src/
     expire_in: 30 days
-
-# -------------------------------------------------------
-# Upload artifacts to Generic Package Registry
-# -------------------------------------------------------
-upload:artifacts:
-  stage: upload
-  image: alpine:latest
-  rules: *rule_release
-  needs:
-    - package:macos
-    - package:source
-  before_script:
-    - apk add --no-cache curl
-  script:
-    - PACKAGE_VERSION="${CI_COMMIT_TAG#v}"
-    - |
-      for f in release/*.dmg release/*.zip; do
-        [ -f "$f" ] || continue
-        basename="$(basename "$f")"
-        echo "Uploading $basename to Generic Package Registry..."
-        curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --upload-file "$f" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${PACKAGE_VERSION}/${basename}"
-      done
-    - |
-      for f in release-src/*; do
-        [ -f "$f" ] || continue
-        basename="$(basename "$f")"
-        echo "Uploading $basename to Generic Package Registry..."
-        curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --upload-file "$f" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${PACKAGE_VERSION}/${basename}"
-      done
-
-# -------------------------------------------------------
-# GitLab Release
-# -------------------------------------------------------
-create-release:
-  stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  rules: *rule_release
-  needs:
-    - job: upload:artifacts
-      artifacts: true
-  script:
-    - echo "Creating release for $CI_COMMIT_TAG"
-  release:
-    tag_name: $CI_COMMIT_TAG
-    name: "Buddy $CI_COMMIT_TAG"
-    description: "Release $CI_COMMIT_TAG"
-    assets:
-      links:
-        - name: "macOS DMG (arm64)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/Buddy-${CI_COMMIT_TAG#v}-arm64.dmg"
-          link_type: package
-        - name: "macOS DMG (x64)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/Buddy-${CI_COMMIT_TAG#v}.dmg"
-          link_type: package
-        - name: "macOS ZIP (arm64)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/Buddy-${CI_COMMIT_TAG#v}-arm64-mac.zip"
-          link_type: package
-        - name: "macOS ZIP (x64)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/Buddy-${CI_COMMIT_TAG#v}-mac.zip"
-          link_type: package
-        - name: "Source (.tar.gz)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/buddy-macos-${CI_COMMIT_TAG}-source.tar.gz"
-          link_type: package
-        - name: "Source (.zip)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/buddy-macos/${CI_COMMIT_TAG#v}/buddy-macos-${CI_COMMIT_TAG}-source.zip"
-          link_type: package
-
-# -------------------------------------------------------
-# Deploy: rsync to internal update server
-# -------------------------------------------------------
-deploy:updates:
-  stage: deploy
-  tags: [macos]
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-      when: manual
-  needs:
-    - job: package:macos
-      artifacts: true
-  before_script:
-    - echo "$RSYNC_PASS" > /tmp/rsyncd.pass && chmod 600 /tmp/rsyncd.pass
-  script:
-    - PACKAGE_VERSION="${CI_COMMIT_TAG#v}"
-    # Upload ZIPs first (arm64 + x64)
-    - find release -maxdepth 1 -name '*.zip' -exec rsync -avz --password-file=/tmp/rsyncd.pass {} buddyweb@10.185.10.105::buddyweb-releases/ \;
-    # Upload latest-mac.yml last (atomic commit point)
-    - find release -maxdepth 1 -name 'latest-mac.yml' -exec rsync -avz --password-file=/tmp/rsyncd.pass {} buddyweb@10.185.10.105::buddyweb-releases/ \;
-  after_script:
-    - rm -f /tmp/rsyncd.pass
