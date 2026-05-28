@@ -95,7 +95,7 @@ export function useSendMessage() {
       data
     }: {
       taskId: string
-      data: { actor?: string; message?: string; workspace_key?: string }
+      data: { actor?: string; message?: string; workspace_key?: string; attachmentMeta?: import('../../shared/types').AttachmentMeta[] }
     }) => api.sendMessage(taskId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task'] })
@@ -153,8 +153,8 @@ export function useEnqueueInstruction() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ taskId, workspaceKey, content }: { taskId: string; workspaceKey: string; content: string }) =>
-      api.enqueueInstruction(taskId, workspaceKey, content),
+    mutationFn: ({ taskId, workspaceKey, content, attachments }: { taskId: string; workspaceKey: string; content: string; attachments?: import('../../shared/types').AttachmentMeta[] }) =>
+      api.enqueueInstruction(taskId, workspaceKey, content, attachments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task'] })
     }

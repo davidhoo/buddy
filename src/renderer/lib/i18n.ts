@@ -211,6 +211,8 @@ const en = {
   'composer.button.send': 'Send',
   'composer.button.enqueue': 'Queue instruction',
   'composer.hint.enqueue': '⏎ Enter to queue instruction',
+  'composer.attachment.remove': 'Remove',
+  'composer.attachment.image': 'Image',
 
   // Instruction Queue
   'queue.interruptAndInsert': 'Interrupt & insert',
@@ -319,6 +321,7 @@ const en = {
   'shortcuts.openSettings': 'Open Settings',
   'shortcuts.toggleSidebar': 'Toggle Sidebar',
   'shortcuts.toggleStatusBar': 'Toggle Status Bar',
+  'shortcuts.commitAndPush': 'Commit & Push',
   'shortcuts.interrupt': 'Interrupt Task',
   'shortcuts.showShortcuts': 'Show Keyboard Shortcuts',
   'shortcuts.selectTaskN': 'Select Task {n}',
@@ -494,6 +497,8 @@ const zhCN: typeof en = {
   'composer.button.send': '发送',
   'composer.button.enqueue': '加入指令队列',
   'composer.hint.enqueue': '⏎ Enter 加入指令队列',
+  'composer.attachment.remove': '移除',
+  'composer.attachment.image': '图片',
 
   'queue.interruptAndInsert': '打断并插入',
   'queue.edit': '编辑',
@@ -597,6 +602,7 @@ const zhCN: typeof en = {
   'shortcuts.openSettings': '打开设置',
   'shortcuts.toggleSidebar': '切换侧边栏',
   'shortcuts.toggleStatusBar': '切换状态栏',
+  'shortcuts.commitAndPush': '提交并推送',
   'shortcuts.interrupt': '中断任务',
   'shortcuts.showShortcuts': '显示键盘快捷键',
   'shortcuts.selectTaskN': '选择任务 {n}',
@@ -772,6 +778,8 @@ const zhTW: typeof en = {
   'composer.button.send': '傳送',
   'composer.button.enqueue': '加入指令佇列',
   'composer.hint.enqueue': '⏎ Enter 加入指令佇列',
+  'composer.attachment.remove': '移除',
+  'composer.attachment.image': '圖片',
 
   'queue.interruptAndInsert': '中斷並插入',
   'queue.edit': '編輯',
@@ -877,6 +885,7 @@ const zhTW: typeof en = {
   'shortcuts.openSettings': '開啟設定',
   'shortcuts.toggleSidebar': '切換側邊欄',
   'shortcuts.toggleStatusBar': '切換狀態列',
+  'shortcuts.commitAndPush': '提交並推送',
   'shortcuts.interrupt': '中斷任務',
   'shortcuts.showShortcuts': '顯示鍵盤快速鍵',
   'shortcuts.selectTaskN': '選擇任務 {n}',

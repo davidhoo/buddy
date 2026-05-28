@@ -1,4 +1,5 @@
 import type {
+  AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
   GlobalSettings,
@@ -34,8 +35,8 @@ export const api = {
     buddy().pauseCountdown(taskId, data),
   interrupt: (taskId: string, workspaceKey?: string) =>
     buddy().interrupt(taskId, workspaceKey),
-  enqueueInstruction: (taskId: string, workspaceKey: string, content: string) =>
-    buddy().enqueueInstruction(taskId, workspaceKey, content),
+  enqueueInstruction: (taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]) =>
+    buddy().enqueueInstruction(taskId, workspaceKey, content, attachments),
   dequeueInstruction: (taskId: string, workspaceKey: string, itemId: string) =>
     buddy().dequeueInstruction(taskId, workspaceKey, itemId),
   clearInstructionQueue: (taskId: string, workspaceKey: string) =>

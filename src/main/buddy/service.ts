@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type {
+  AttachmentMeta,
   BootstrapResponse,
   CountdownInput,
   CreateTaskInput,
@@ -40,6 +41,10 @@ export class BuddyCoreService {
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
     this.runner = new BuddyRunner(this.store)
+  }
+
+  getStore(): BuddyStore {
+    return this.store
   }
 
   async checkHealth(): Promise<boolean> {
@@ -96,8 +101,8 @@ export class BuddyCoreService {
     return this.runner.interrupt(taskId, workspaceKey)
   }
 
-  enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<InstructionQueueItem> {
-    return this.runner.enqueueInstruction(taskId, workspaceKey, content)
+  enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {
+    return this.runner.enqueueInstruction(taskId, workspaceKey, content, attachments)
   }
 
   dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void> {

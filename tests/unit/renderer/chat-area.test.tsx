@@ -60,6 +60,8 @@ describe('ChatArea ready task controls', () => {
         onInterrupt={() => {}}
         draft=""
         onDraftChange={() => {}}
+        attachments={[]}
+        onAttachmentsChange={() => {}}
       />
     )
 
@@ -88,6 +90,8 @@ describe('ChatArea ready task controls', () => {
         onInterrupt={() => {}}
         draft=""
         onDraftChange={() => {}}
+        attachments={[]}
+        onAttachmentsChange={() => {}}
       />
     )
 
@@ -108,6 +112,8 @@ describe('ChatArea ready task controls', () => {
         onInterrupt={() => {}}
         draft=""
         onDraftChange={() => {}}
+        attachments={[]}
+        onAttachmentsChange={() => {}}
       />
     )
 

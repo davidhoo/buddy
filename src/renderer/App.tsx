@@ -14,7 +14,7 @@ import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart } from './lib/taskState'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask } from './lib/taskList'
-import type { GlobalSettings, InstructionQueueItem } from '../shared/types'
+import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
 export default function App() {
@@ -31,6 +31,7 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [taskAttachments, setTaskAttachments] = useState<Record<string, Attachment[]>>({})
   const [projectNames, setProjectNames] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(localStorage.getItem('buddy.projectNames') || '{}')
@@ -74,10 +75,16 @@ export default function App() {
   const interruptAndInsert = useInterruptAndInsert()
 
   const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
+  const currentAttachments = selectedTaskId ? (taskAttachments[selectedTaskId] ?? []) : []
 
   const handleDraftChange = useCallback((value: string) => {
     if (!selectedTaskId) return
     setDrafts(prev => ({ ...prev, [selectedTaskId]: value }))
+  }, [selectedTaskId])
+
+  const handleAttachmentsChange = useCallback((attachments: Attachment[]) => {
+    if (!selectedTaskId) return
+    setTaskAttachments(prev => ({ ...prev, [selectedTaskId]: attachments }))
   }, [selectedTaskId])
 
   const handleSelectTask = useCallback((taskId: string, workspaceKey: string) => {
@@ -91,6 +98,7 @@ export default function App() {
     try {
       await deleteTask.mutateAsync({ taskId, workspaceKey })
       setDrafts(prev => { const { [taskId]: _, ...rest } = prev; return rest })
+      setTaskAttachments(prev => { const { [taskId]: _, ...rest } = prev; return rest })
       if (selectedTaskId === taskId) {
         setSelectedTaskId(null)
         setSelectedWorkspaceKey(null)
@@ -185,15 +193,51 @@ export default function App() {
     return bootstrap?.home_dir ?? ''
   })()
 
-  const handleSendMessage = useCallback((message: string, actor?: string) => {
+  const handleSendMessage = useCallback(async (message: string, actor?: string, attachments?: Attachment[]) => {
     if (!selectedTaskId) return
     setDrafts(prev => ({ ...prev, [selectedTaskId]: '' }))
+    setTaskAttachments(prev => ({ ...prev, [selectedTaskId]: [] }))
+
+    let enrichedMessage = message
+    const attachmentMeta: AttachmentMeta[] = []
+    if (attachments && attachments.length > 0) {
+      const savedPaths: string[] = []
+      for (const att of attachments) {
+        try {
+          let savedPath: string
+          if (att.bufferBase64) {
+            savedPath = await window.api.saveAttachmentBuffer(
+              selectedTaskId,
+              selectedWorkspaceKey ?? '',
+              att.name,
+              att.bufferBase64
+            )
+          } else if (att.filePath) {
+            savedPath = att.filePath
+          } else {
+            continue
+          }
+          savedPaths.push(savedPath)
+          attachmentMeta.push({ path: savedPath, name: att.name, mimeType: att.mimeType, size: att.size })
+        } catch (err) {
+          console.error('Failed to save attachment:', att.name, err)
+        }
+      }
+      if (savedPaths.length > 0) {
+        const fileList = savedPaths.map(p => `- file://${p}`).join('\n')
+        enrichedMessage = message
+          ? `${message}\n\n[Attachments]\n${fileList}`
+          : `[Attachments]\n${fileList}`
+      }
+    }
+
     sendMessage.mutate({
       taskId: selectedTaskId,
       data: {
-        message,
+        message: enrichedMessage,
         actor,
-        workspace_key: selectedWorkspaceKey ?? undefined
+        workspace_key: selectedWorkspaceKey ?? undefined,
+        attachmentMeta: attachmentMeta.length > 0 ? attachmentMeta : undefined
       }
     })
   }, [selectedTaskId, selectedWorkspaceKey, sendMessage])
@@ -217,12 +261,49 @@ export default function App() {
     })
   }, [selectedTaskId, selectedWorkspaceKey, interrupt])
 
-  const handleEnqueueInstruction = useCallback((content: string) => {
+  const handleEnqueueInstruction = useCallback(async (content: string, attachments?: Attachment[]) => {
     if (!selectedTaskId || !selectedWorkspaceKey) return
+    setDrafts(prev => ({ ...prev, [selectedTaskId]: '' }))
+    setTaskAttachments(prev => ({ ...prev, [selectedTaskId]: [] }))
+
+    let enrichedContent = content
+    const attachmentMeta: AttachmentMeta[] = []
+    if (attachments && attachments.length > 0) {
+      const savedPaths: string[] = []
+      for (const att of attachments) {
+        try {
+          let savedPath: string
+          if (att.bufferBase64) {
+            savedPath = await window.api.saveAttachmentBuffer(
+              selectedTaskId,
+              selectedWorkspaceKey ?? '',
+              att.name,
+              att.bufferBase64
+            )
+          } else if (att.filePath) {
+            savedPath = att.filePath
+          } else {
+            continue
+          }
+          savedPaths.push(savedPath)
+          attachmentMeta.push({ path: savedPath, name: att.name, mimeType: att.mimeType, size: att.size })
+        } catch (err) {
+          console.error('Failed to save attachment:', att.name, err)
+        }
+      }
+      if (savedPaths.length > 0) {
+        const fileList = savedPaths.map(p => `- file://${p}`).join('\n')
+        enrichedContent = content
+          ? `${content}\n\n[Attachments]\n${fileList}`
+          : `[Attachments]\n${fileList}`
+      }
+    }
+
     enqueueInstruction.mutate({
       taskId: selectedTaskId,
       workspaceKey: selectedWorkspaceKey,
-      content
+      content: enrichedContent,
+      attachments: attachmentMeta.length > 0 ? attachmentMeta : undefined
     })
   }, [selectedTaskId, selectedWorkspaceKey, enqueueInstruction])
 
@@ -297,6 +378,7 @@ export default function App() {
     onOpenSettings: () => { setView('settings'); setSettingsTab('general') },
     onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
     onToggleStatusBar: () => setIsStatusBarOpen(prev => !prev),
+    onCommitAndPush: () => window.dispatchEvent(new CustomEvent('buddy:commit')),
     onSelectTaskByIndex: (index: number) => selectVisibleTaskBySlot(index + 1),
     onNextTask: () => selectVisibleTaskByOffset(1),
     onPrevTask: () => selectVisibleTaskByOffset(-1),
@@ -400,6 +482,8 @@ export default function App() {
                 onClearInstructionQueue={handleClearInstructionQueue}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
+                attachments={currentAttachments}
+                onAttachmentsChange={handleAttachmentsChange}
               />
 
               {/* 右侧状态栏 */}

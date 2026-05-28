@@ -11,6 +11,7 @@ export interface ShortcutActions {
   onOpenSettings: () => void
   onToggleSidebar: () => void
   onToggleStatusBar: () => void
+  onCommitAndPush: () => void
   onSelectTaskByIndex: (index: number) => void
   onNextTask: () => void
   onPrevTask: () => void
@@ -67,6 +68,9 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
         break
       case 'toggleStatusBar':
         actions.onToggleStatusBar()
+        break
+      case 'commitAndPush':
+        actions.onCommitAndPush()
         break
       case 'selectTask1': case 'selectTask2': case 'selectTask3':
       case 'selectTask4': case 'selectTask5': case 'selectTask6':

@@ -83,6 +83,13 @@ export function StatusBar({
   const [showCommitModal, setShowCommitModal] = useState(false)
   const [commitFeedback, setCommitFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
+  // Listen for ⌘M shortcut: open commit modal on user request
+  useEffect(() => {
+    const handler = () => { setCommitFeedback(null); setShowCommitModal(true) }
+    window.addEventListener('buddy:commit', handler)
+    return () => window.removeEventListener('buddy:commit', handler)
+  }, [])
+
   if (!isOpen) return null
 
   const { participants } = taskActors(taskSettings)

@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type {
   CreateTaskInput,
+  AttachmentMeta,
   CreateTaskResult,
   Event,
   GlobalSettings,
@@ -231,12 +232,14 @@ export class BuddyStore {
   async enqueueInstruction(
     taskId: string,
     workspaceKey: string,
-    content: string
+    content: string,
+    attachments?: AttachmentMeta[]
   ): Promise<InstructionQueueItem> {
     const item: InstructionQueueItem = {
       id: `qi_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       content,
-      created_at: utcNow()
+      created_at: utcNow(),
+      attachments: attachments && attachments.length > 0 ? attachments : undefined
     }
     await this.updateTaskState(taskId, workspaceKey, (state) => ({
       ...state,

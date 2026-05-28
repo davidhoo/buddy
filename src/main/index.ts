@@ -1,8 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { WindowManager } from './window-manager'
 import { registerBuddyHandlers } from './ipc/buddy-handlers'
 import { BuddyCoreService } from './buddy/service'
 import { BuddyEventBus } from './buddy/events'
+import { mkdir, writeFile, stat, readFile, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 const windowManager = new WindowManager()
 const buddyEvents = new BuddyEventBus()
@@ -38,6 +41,96 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('shell:openInFinder', async (_event, path: string) => {
     await shell.openPath(path)
+  })
+
+  ipcMain.handle('clipboard:readFilePaths', async () => {
+    if (process.platform !== 'darwin') return []
+    try {
+      // Prefer NSFilenamesPboardType which contains real POSIX paths
+      if (clipboard.has('NSFilenamesPboardType')) {
+        const buffer = clipboard.readBuffer('NSFilenamesPboardType')
+        const text = buffer.toString('utf8')
+        const paths: string[] = []
+
+        // Try XML plist format first
+        if (text.includes('<string>')) {
+          const matches = text.match(/<string>([^<]+)<\/string>/g)
+          if (matches) {
+            for (const m of matches) {
+              const p = m.replace(/<\/?string>/g, '').trim()
+              if (p.startsWith('/')) paths.push(p)
+            }
+          }
+        }
+
+        // Binary plist: extract null-separated path strings
+        if (paths.length === 0 && buffer.length > 0) {
+          const raw = buffer.toString('utf8')
+          const parts = raw.split(/\0|\n/)
+          for (const part of parts) {
+            const p = part.trim()
+            if (p.startsWith('/') && !p.includes('�')) {
+              paths.push(p)
+            }
+          }
+        }
+
+        if (paths.length > 0) {
+          const results: Array<{ path: string; size: number }> = []
+          for (const p of paths) {
+            try {
+              const s = await stat(p)
+              results.push({ path: p, size: s.size })
+            } catch {
+              results.push({ path: p, size: 0 })
+            }
+          }
+          return results
+        }
+      }
+
+      // Fallback to public.file-url
+      if (!clipboard.has('public.file-url')) return []
+      const buffer = clipboard.readBuffer('public.file-url')
+      const text = buffer.toString('utf8')
+      const paths = text.split('\0')
+        .map((s: string) => s.trim())
+        .filter((s: string) => s.length > 0)
+        .map((url: string) => {
+          try { return decodeURIComponent(new URL(url).pathname) }
+          catch { return url }
+        })
+      const results: Array<{ path: string; size: number }> = []
+      for (const p of paths) {
+        try {
+          const resolved = await realpath(p)
+          const s = await stat(resolved)
+          results.push({ path: resolved, size: s.size })
+        } catch {
+          // Skip unresolvable .file/id= references
+        }
+      }
+      return results
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('attachment:saveBuffer', async (_event, taskId: string, workspaceKey: string, name: string, bufferBase64: string) => {
+    const taskDirPath = buddyService.getStore().taskDirectory(taskId, workspaceKey)
+    const artifactsDir = join(taskDirPath, 'attachments')
+    await mkdir(artifactsDir, { recursive: true })
+    const ext = name.includes('.') ? '.' + name.split('.').pop() : ''
+    const filename = `${randomUUID()}${ext}`
+    const filePath = join(artifactsDir, filename)
+    await writeFile(filePath, Buffer.from(bufferBase64, 'base64'))
+    return filePath
+  })
+
+  ipcMain.handle('attachment:readFileAsDataURL', async (_event, filePath: string, mimeType: string) => {
+    const buffer = await readFile(filePath)
+    const base64 = buffer.toString('base64')
+    return `data:${mimeType};base64,${base64}`
   })
 
   app.on('activate', () => {

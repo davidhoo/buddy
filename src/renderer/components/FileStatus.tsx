@@ -5,6 +5,7 @@ import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
 import { useLanguage } from '../hooks/useI18n'
 import { api } from '../lib/api'
+import { formatBinding, loadBindings } from '../lib/keyboard'
 
 interface FileStatusProps {
   gitStatus: GitStatusResult | null | undefined
@@ -100,7 +101,9 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit }: Fil
         >
           <GitCommit size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.commit')}</span>
-          <span className="ml-auto text-accent-primary">{t('git.commit')}</span>
+          {hasChanges && (
+            <span className="ml-auto text-accent-primary">{t('shortcuts.commitAndPush')}<span className="text-fg-muted ml-1">{formatBinding(loadBindings().commitAndPush)}</span></span>
+          )}
         </button>
       </div>
     </details>

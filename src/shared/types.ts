@@ -35,6 +35,7 @@ export interface InstructionQueueItem {
   id: string
   content: string
   created_at: string
+  attachments?: AttachmentMeta[]
 }
 
 export interface TaskState {
@@ -192,10 +193,30 @@ export interface StartTaskInput {
   workspace_key?: string
 }
 
+export interface Attachment {
+  id: string
+  name: string
+  category: 'image' | 'file'
+  mimeType: string
+  size: number
+  previewUrl?: string
+  bufferBase64?: string
+  filePath?: string
+}
+
+export interface AttachmentMeta {
+  path: string
+  name: string
+  mimeType: string
+  size: number
+}
+
 export interface SendMessageInput {
   actor?: string
   message?: string
   workspace_key?: string
+  attachments?: Attachment[]
+  attachmentMeta?: AttachmentMeta[]
 }
 
 export interface CountdownInput {

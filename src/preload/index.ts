@@ -12,7 +12,13 @@ const api = {
     return () => { ipcRenderer.removeListener('window:fullScreenChange', handler) }
   },
   isFullScreen: (): Promise<boolean> =>
-    ipcRenderer.invoke('window:isFullScreen')
+    ipcRenderer.invoke('window:isFullScreen'),
+  readClipboardFilePaths: (): Promise<Array<{ path: string; size: number }>> =>
+    ipcRenderer.invoke('clipboard:readFilePaths'),
+  saveAttachmentBuffer: (taskId: string, workspaceKey: string, name: string, bufferBase64: string): Promise<string> =>
+    ipcRenderer.invoke('attachment:saveBuffer', taskId, workspaceKey, name, bufferBase64),
+  readFileAsDataURL: (filePath: string, mimeType: string): Promise<string> =>
+    ipcRenderer.invoke('attachment:readFileAsDataURL', filePath, mimeType)
 }
 
 const buddy = createBuddyPreloadApi(ipcRenderer)

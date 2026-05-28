@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import type {
+  AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
   GlobalSettings,
@@ -19,7 +20,7 @@ export interface BuddyHandlerService {
   skipCountdown(taskId: string, input: CountdownInput): Promise<void>
   pauseCountdown(taskId: string, input: CountdownInput): Promise<void>
   interrupt(taskId: string, workspaceKey?: string): Promise<void>
-  enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<unknown>
+  enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<unknown>
   dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void>
   clearInstructionQueue(taskId: string, workspaceKey: string): Promise<void>
   interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void>
@@ -62,8 +63,8 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:interrupt', (_event, taskId: string, workspaceKey?: string) =>
     service.interrupt(taskId, workspaceKey)
   )
-  ipcMain.handle('buddy:enqueueInstruction', (_event, taskId: string, workspaceKey: string, content: string) =>
-    service.enqueueInstruction(taskId, workspaceKey, content)
+  ipcMain.handle('buddy:enqueueInstruction', (_event, taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]) =>
+    service.enqueueInstruction(taskId, workspaceKey, content, attachments)
   )
   ipcMain.handle('buddy:dequeueInstruction', (_event, taskId: string, workspaceKey: string, itemId: string) =>
     service.dequeueInstruction(taskId, workspaceKey, itemId)

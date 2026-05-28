@@ -1,23 +1,75 @@
-import { useState, useRef, useEffect } from 'react'
-import { ArrowUp, ChevronDown, Square } from 'lucide-react'
-import { TaskSettings, TaskState } from '../../shared/types'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { ArrowUp, ChevronDown, Square, X, FileText, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon } from 'lucide-react'
+import { Attachment, TaskSettings, TaskState } from '../../shared/types'
 import { taskActors, ACTOR_LABEL_KEY, Actor } from '../lib/format'
 import { useT, useSendShortcut } from '../hooks/useI18n'
 
 interface ComposerProps {
-  onSend: (message: string, actor?: string) => void
+  onSend: (message: string, actor?: string, attachments?: Attachment[]) => void
   onStart: (actor?: string) => void
   onInterrupt: () => void
-  onEnqueueInstruction: (content: string) => void
+  onEnqueueInstruction: (content: string, attachments?: Attachment[]) => void
   isRunning: boolean
   isReady: boolean
   settings: TaskSettings | null
   taskState: TaskState | null
   draft: string
   onDraftChange: (value: string) => void
+  attachments: Attachment[]
+  onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, draft, onDraftChange }: ComposerProps) {
+function generateId(): string {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+}
+
+function fileExt(name: string): string {
+  return name.split('.').pop()?.toUpperCase() ?? ''
+}
+
+function isImageAttachment(att: Attachment): boolean {
+  return att.category === 'image' || att.mimeType.startsWith('image/')
+}
+
+const EXT_ICON_MAP: Record<string, typeof File> = {
+  json: FileJson,
+  zip: FileArchive, tar: FileArchive, gz: FileArchive, rar: FileArchive, '7z': FileArchive,
+  csv: FileSpreadsheet, xls: FileSpreadsheet, xlsx: FileSpreadsheet,
+  ts: FileCode2, tsx: FileCode2, js: FileCode2, jsx: FileCode2,
+  py: FileCode2, go: FileCode2, rs: FileCode2, rb: FileCode2,
+  java: FileCode2, c: FileCode2, cpp: FileCode2, h: FileCode2,
+  swift: FileCode2, kt: FileCode2,
+  md: FileText, txt: FileText, rtf: FileText,
+  doc: FileText, docx: FileText, pdf: FileText,
+  xml: FileText, yaml: FileText, yml: FileText, toml: FileText,
+  png: ImageIcon, jpg: ImageIcon, jpeg: ImageIcon, gif: ImageIcon,
+  webp: ImageIcon, svg: ImageIcon, bmp: ImageIcon, ico: ImageIcon,
+}
+
+function fileIconForName(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_ICON_MAP[ext] ?? File
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function mimeTypeForExt(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    bmp: 'image/bmp', pdf: 'application/pdf',
+    txt: 'text/plain', md: 'text/markdown',
+    json: 'application/json', csv: 'text/csv',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
+export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
   const t = useT()
   const { shortcut } = useSendShortcut()
   const { impl, participants } = taskActors(settings)
@@ -25,9 +77,6 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevStateNextRef = useRef<string | undefined>()
 
-  // 计算真正的"下一轮承接方"
-  // 运行中 → 取当前运行 actor 的另一方
-  // 其他状态 → 用 next_actor || impl
   const computedNext = (() => {
     if (isRunning && taskState?.active_run?.actor) {
       return participants.find(a => a !== taskState.active_run!.actor) || impl
@@ -35,7 +84,6 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     return taskState?.next_actor || impl
   })()
 
-  // 只在后端状态目标 actor 变化时自动同步下拉框，用户手动选择不被覆盖
   useEffect(() => {
     if (computedNext && computedNext !== prevStateNextRef.current) {
       prevStateNextRef.current = computedNext
@@ -52,27 +100,115 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     }
   }, [draft])
 
-  const handleSend = () => {
-    if (draft.trim()) {
-      if (isRunning) {
-        onEnqueueInstruction(draft.trim())
-      } else {
-        onSend(draft.trim(), nextActor)
+  const removeAttachment = useCallback((id: string) => {
+    onAttachmentsChange(attachments.filter(a => {
+      if (a.id === id) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+        return false
       }
-      onDraftChange('')
+      return true
+    }))
+  }, [attachments, onAttachmentsChange])
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items
+    if (!items || items.length === 0) return
+
+    const newAttachments: Attachment[] = []
+
+    // Check for images in clipboard
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) continue
+
+        const previewUrl = URL.createObjectURL(file)
+        const buffer = await file.arrayBuffer()
+        const bytes = new Uint8Array(buffer)
+        let binary = ''
+        for (let j = 0; j < bytes.length; j++) {
+          binary += String.fromCharCode(bytes[j])
+        }
+        const bufferBase64 = btoa(binary)
+
+        newAttachments.push({
+          id: generateId(),
+          name: file.name || `paste-${Date.now()}.png`,
+          category: 'image',
+          mimeType: item.type,
+          size: file.size,
+          previewUrl,
+          bufferBase64,
+        })
+      }
     }
+
+    // If no images found, check for file paths via main process
+    if (newAttachments.length === 0 && e.clipboardData.files.length > 0) {
+      e.preventDefault()
+      try {
+        const fileEntries: Array<{ path: string; size: number }> = await window.api.readClipboardFilePaths()
+        for (const entry of fileEntries) {
+          // Skip duplicate file paths
+          if (attachments.some(a => a.filePath === entry.path)) continue
+          const name = entry.path.split('/').pop() ?? entry.path
+          const mimeType = mimeTypeForExt(name)
+          const isImage = mimeType.startsWith('image/')
+          let previewUrl: string | undefined
+          if (isImage) {
+            try {
+              previewUrl = await window.api.readFileAsDataURL(entry.path, mimeType)
+            } catch {
+              // Fall back to no preview
+            }
+          }
+          newAttachments.push({
+            id: generateId(),
+            name,
+            category: isImage ? 'image' : 'file',
+            mimeType,
+            size: entry.size,
+            filePath: entry.path,
+            previewUrl,
+          })
+        }
+      } catch {
+        // Ignore clipboard read errors
+      }
+    }
+
+    if (newAttachments.length > 0) {
+      onAttachmentsChange([...attachments, ...newAttachments])
+    }
+  }, [attachments, onAttachmentsChange])
+
+  const handleSend = () => {
+    const hasContent = draft.trim() || attachments.length > 0
+    if (!hasContent) return
+
+    if (isRunning) {
+      onEnqueueInstruction(draft.trim(), attachments.length > 0 ? attachments : undefined)
+    } else {
+      onSend(draft.trim(), nextActor, attachments.length > 0 ? attachments : undefined)
+    }
+    // Cleanup preview URLs
+    for (const att of attachments) {
+      if (att.previewUrl) URL.revokeObjectURL(att.previewUrl)
+    }
+    onDraftChange('')
+    onAttachmentsChange([])
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'Enter') return
-    // 让 IME 组合输入正常完成 (Chinese/Japanese 输入法)
     const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (ne.isComposing || ne.keyCode === 229) return
-    // Cmd+Enter always sends/starts (regardless of send mode)
     if (e.metaKey) {
       e.preventDefault()
       e.stopPropagation()
-      if (draft.trim()) {
+      if (draft.trim() || attachments.length > 0) {
         handleSend()
       } else if (isReady) {
         onStart(nextActor)
@@ -83,16 +219,11 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     const shouldSend = shortcut === 'enter' ? !e.shiftKey : e.shiftKey
     if (!shouldSend) return
     e.preventDefault()
-    if (!draft.trim()) return
+    if (!draft.trim() && attachments.length === 0) return
     handleSend()
   }
 
-  // 按钮逻辑：
-  // - 运行中 + 有内容 → 提交到队列 (ArrowUp)
-  // - 运行中 + 无内容 → stop
-  // - 就绪 + 无内容 → 开始
-  // - 其他 → 发送
-  const hasDraft = draft.trim().length > 0
+  const hasDraft = draft.trim().length > 0 || attachments.length > 0
   const showStop = isRunning && !hasDraft
   const showEnqueue = isRunning && hasDraft
   const showStart = isReady && !hasDraft && !isRunning
@@ -106,14 +237,84 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     ? t('composer.hint.enqueue')
     : shortcut === 'enter' ? t('composer.hint.enter') : shortcut === 'shift-enter' ? t('composer.hint.shiftEnter') : t('composer.hint.cmdEnter')
 
+  const imageAttachments = attachments.filter(a => isImageAttachment(a))
+  const fileAttachments = attachments.filter(a => !isImageAttachment(a))
+
   return (
     <div className="rounded-2xl border border-border bg-bg-elevated shadow-sm relative z-[1]">
+      {attachments.length > 0 && (
+        <div className="px-4 pt-3 space-y-2">
+          {/* Image thumbnails row */}
+          {imageAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {imageAttachments.map(att => (
+                <div
+                  key={att.id}
+                  className="group relative rounded-lg overflow-hidden border border-border bg-bg-base"
+                >
+                  {att.previewUrl ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      className="h-20 w-auto max-w-[160px] object-cover"
+                    />
+                  ) : (
+                    <div className="h-20 w-20 flex items-center justify-center bg-bg-subtle">
+                      <ImageIcon size={20} className="text-fg-muted" />
+                    </div>
+                  )}
+                  <button
+                    onClick={() => removeAttachment(att.id)}
+                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger"
+                    title={t('composer.attachment.remove')}
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* File attachment cards */}
+          {fileAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {fileAttachments.map(att => {
+                const Icon = fileIconForName(att.name)
+                const ext = fileExt(att.name)
+                return (
+                  <div
+                    key={att.id}
+                    className="group relative rounded-lg border border-border bg-bg-base px-2.5 py-1.5 flex items-center gap-2.5 max-w-[220px] hover:border-border-primary transition-colors"
+                  >
+                    <Icon size={28} className="flex-shrink-0 text-fg-muted" />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate text-xs text-fg-secondary">{att.name}</div>
+                      {ext && (
+                        <div className="text-[10px] text-fg-muted">{ext}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removeAttachment(att.id)}
+                      className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger"
+                      title={t('composer.attachment.remove')}
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="px-4 pt-3 pb-2">
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           className="w-full resize-none bg-transparent border-0 outline-none text-sm leading-relaxed placeholder:text-fg-muted"
           rows={2}

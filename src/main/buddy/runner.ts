@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
+  AttachmentMeta,
   CountdownInput,
   GlobalSettings,
   InstructionQueueItem,
@@ -113,12 +114,16 @@ export class BuddyRunner {
     if (!input.workspace_key) throw new Error('workspace_key is required')
     const message = input.message ?? ''
     if (!message.trim()) throw new Error('message is required')
+    const meta: Record<string, unknown> = { source: 'run_once' }
+    if (input.attachmentMeta && input.attachmentMeta.length > 0) {
+      meta.attachments = input.attachmentMeta
+    }
     await this.store.appendTranscript(
       taskId,
       input.workspace_key,
       'human',
       message,
-      { source: 'run_once' }
+      meta
     )
     await this.store.appendTaskEvent(taskId, input.workspace_key, {
       type: 'human.message',
@@ -206,12 +211,13 @@ export class BuddyRunner {
     // Send the instruction as a human message and start the next actor
     await this.sendMessage(taskId, {
       workspace_key: workspaceKey,
-      message: item.content
+      message: item.content,
+      attachmentMeta: item.attachments
     })
   }
 
-  async enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<InstructionQueueItem> {
-    return this.store.enqueueInstruction(taskId, workspaceKey, content)
+  async enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {
+    return this.store.enqueueInstruction(taskId, workspaceKey, content, attachments)
   }
 
   async dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void> {
@@ -238,10 +244,11 @@ export class BuddyRunner {
   ): Promise<void> {
     const combinedContent = items.map(item => item.content).join('\n\n')
     for (const item of items) {
-      await this.store.appendTranscript(taskId, workspaceKey, 'human', item.content, {
-        source: 'instruction_queue',
-        queue_item_id: item.id
-      })
+      const meta: Record<string, unknown> = { source: 'instruction_queue', queue_item_id: item.id }
+      if (item.attachments && item.attachments.length > 0) {
+        meta.attachments = item.attachments
+      }
+      await this.store.appendTranscript(taskId, workspaceKey, 'human', item.content, meta)
       await this.store.appendTaskEvent(taskId, workspaceKey, {
         type: 'human.message',
         payload: { content: item.content, source: 'instruction_queue' }

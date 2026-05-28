@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ListOrdered, CornerDownRight, Trash2, Sparkles } from 'lucide-react'
-import { TaskDetail, InstructionQueueItem } from '../../shared/types'
+import { ListOrdered, CornerDownRight, Trash2, Sparkles, Paperclip } from 'lucide-react'
+import { TaskDetail, InstructionQueueItem, Attachment } from '../../shared/types'
 import { MessageBubble } from './MessageBubble'
 import { RunningStatusMessage } from './RunningStatusMessage'
 import { Composer } from './Composer'
@@ -13,19 +13,21 @@ import { renderMarkdown } from '../lib/markdown'
 interface ChatAreaProps {
   task: TaskDetail | null
   hasAnyTasks: boolean
-  onSendMessage: (message: string, actor?: string) => void
+  onSendMessage: (message: string, actor?: string, attachments?: Attachment[]) => void
   onStartTask: (actor?: string) => void
   onInterrupt: () => void
-  onEnqueueInstruction: (content: string) => void
+  onEnqueueInstruction: (content: string, attachments?: Attachment[]) => void
   onInterruptAndInsert: (itemId: string) => void
   onDequeueInstruction: (itemId: string) => void
   onEditInstruction: (item: InstructionQueueItem) => void
   onClearInstructionQueue: () => void
   draft: string
   onDraftChange: (value: string) => void
+  attachments: Attachment[]
+  onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, draft, onDraftChange }: ChatAreaProps) {
+export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -151,12 +153,21 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
 
       <div className="px-4 pb-4">
         {(task?.state?.instruction_queue?.length ?? 0) > 0 && (
-          <div className="mx-8 -mb-px relative z-0">
+          <div className="mx-8 -mb-px relative z-[2]">
             <div className="border-t border-l border-r border-b-0 border-border rounded-t-lg bg-bg-elevated px-3 py-2 space-y-0.5">
-              {task!.state.instruction_queue!.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 px-1 py-1 text-xs group">
-                  <ListOrdered size={14} className="text-fg-muted shrink-0" />
-                  <span className="flex-1 truncate text-fg-secondary">{item.content}</span>
+              {task!.state.instruction_queue!.map((item) => {
+                const cleanedContent = item.content.replace(/\n*\[Attachments\]\n(?:- .*\n?)+/g, '').trim()
+                const attCount = item.attachments?.length ?? 0
+                return (
+                  <div key={item.id} className="flex items-center gap-2 px-1 py-1 text-xs group">
+                    <ListOrdered size={14} className="text-fg-muted shrink-0" />
+                    <span className="flex-1 truncate text-fg-secondary">{cleanedContent}</span>
+                    {attCount > 0 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-bg-subtle text-fg-muted text-[10px] shrink-0">
+                        <Paperclip size={10} />
+                        {attCount}
+                      </span>
+                    )}
                   <div className="flex items-center gap-1.5 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => onInterruptAndInsert(item.id)}
@@ -180,7 +191,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
                     />
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )}
@@ -195,6 +206,8 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
           taskState={task?.state ?? null}
           draft={draft}
           onDraftChange={onDraftChange}
+          attachments={attachments}
+          onAttachmentsChange={onAttachmentsChange}
         />
       </div>
     </div>
