@@ -108,14 +108,25 @@ git archive --format=tar.gz --prefix="buddy-macos-${VERSION}/" HEAD \
 git archive --format=zip --prefix="buddy-macos-${VERSION}/" -o "release/buddy-macos-${VERSION}-source.zip" HEAD
 echo "   Source archives created ✓"
 
-# --- 6. Commit version bump, tag and push ---
-echo ">> Committing version bump..."
-git add package.json
-git commit -m "chore: release ${VERSION}"
-echo ">> Pushing tag ${VERSION}..."
-git tag "$VERSION"
-git push origin main "$VERSION"
-echo "   Tag pushed ✓"
+# --- 6. Commit version bump, tag and push (skip if tag already exists on current HEAD) ---
+if git tag --list "$VERSION" | grep -q .; then
+  TAG_COMMIT="$(git rev-list -n 1 "$VERSION" 2>/dev/null || true)"
+  HEAD_COMMIT="$(git rev-parse HEAD)"
+  if [ "$TAG_COMMIT" = "$HEAD_COMMIT" ]; then
+    echo ">> Tag ${VERSION} already exists on current HEAD, skipping commit/tag/push ✓"
+  else
+    echo "Tag ${VERSION} exists on a different commit (${TAG_COMMIT:0:7}), current HEAD is ${HEAD_COMMIT:0:7}" >&2
+    exit 1
+  fi
+else
+  echo ">> Committing version bump..."
+  git add package.json
+  git diff --cached --quiet || git commit -m "chore: release ${VERSION}"
+  echo ">> Pushing tag ${VERSION}..."
+  git tag "$VERSION"
+  git push origin main "$VERSION"
+  echo "   Tag pushed ✓"
+fi
 
 # --- 7. Upload to GitLab Package Registry ---
 upload_file() {
