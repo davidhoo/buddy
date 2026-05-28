@@ -39,6 +39,12 @@ const failureSchema = z.object({
   event_file: z.string().optional()
 })
 
+const instructionQueueItemSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  created_at: z.string()
+})
+
 export const taskStateSchema = z.object({
   protocol_version: z.string().optional(),
   task_id: z.string().optional(),
@@ -49,6 +55,7 @@ export const taskStateSchema = z.object({
   next_actor: z.string(),
   countdown: countdownSchema.nullable().optional(),
   active_run: activeRunSchema.nullable().optional(),
+  instruction_queue: z.array(instructionQueueItemSchema).default([]),
   claude_session_id: z.string().nullable().optional(),
   codex_thread_id: z.string().nullable().optional(),
   opencode_session_id: z.string().nullable().optional(),

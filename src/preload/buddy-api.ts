@@ -5,6 +5,7 @@ import type {
   CreateTaskResult,
   Event,
   GlobalSettings,
+  InstructionQueueItem,
   SendMessageInput,
   StartTaskInput,
   Task,
@@ -44,6 +45,14 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:pauseCountdown', taskId, input) as Promise<void>,
     interrupt: (taskId: string, workspaceKey?: string): Promise<void> =>
       ipc.invoke('buddy:interrupt', taskId, workspaceKey) as Promise<void>,
+    enqueueInstruction: (taskId: string, workspaceKey: string, content: string): Promise<InstructionQueueItem> =>
+      ipc.invoke('buddy:enqueueInstruction', taskId, workspaceKey, content) as Promise<InstructionQueueItem>,
+    dequeueInstruction: (taskId: string, workspaceKey: string, itemId: string): Promise<void> =>
+      ipc.invoke('buddy:dequeueInstruction', taskId, workspaceKey, itemId) as Promise<void>,
+    clearInstructionQueue: (taskId: string, workspaceKey: string): Promise<void> =>
+      ipc.invoke('buddy:clearInstructionQueue', taskId, workspaceKey) as Promise<void>,
+    interruptAndInsert: (taskId: string, workspaceKey: string, queueItemId: string): Promise<void> =>
+      ipc.invoke('buddy:interruptAndInsert', taskId, workspaceKey, queueItemId) as Promise<void>,
     getEvents: (taskId: string, since: number, workspaceKey?: string): Promise<{ events: Event[] }> =>
       ipc.invoke('buddy:getEvents', taskId, since, workspaceKey) as Promise<{ events: Event[] }>,
     updateGlobalSettings: (settings: GlobalSettings): Promise<GlobalSettings> =>

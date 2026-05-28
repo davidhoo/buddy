@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type {
   CountdownInput,
   GlobalSettings,
+  InstructionQueueItem,
   SendMessageInput,
   StartTaskInput,
   TaskSettings,
@@ -185,6 +186,74 @@ export class BuddyRunner {
     })
   }
 
+  async interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void> {
+    // Remove the instruction from the queue first
+    const state = await this.store.readTaskState(taskId, workspaceKey)
+    const item = (state.instruction_queue ?? []).find((i) => i.id === queueItemId)
+    if (!item) throw new Error('Instruction not found in queue')
+    await this.store.dequeueInstruction(taskId, workspaceKey, queueItemId)
+    // Interrupt the current actor
+    await this.store.updateTaskState(taskId, workspaceKey, (s) => ({
+      ...s,
+      status: 'PAUSED',
+      active_run: null,
+      updated_at: new Date().toISOString()
+    }))
+    await this.store.appendTaskEvent(taskId, workspaceKey, {
+      type: 'actor.interrupted',
+      payload: { reason: 'interrupt_and_insert', instruction_id: queueItemId }
+    })
+    // Send the instruction as a human message and start the next actor
+    await this.sendMessage(taskId, {
+      workspace_key: workspaceKey,
+      message: item.content
+    })
+  }
+
+  async enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<InstructionQueueItem> {
+    return this.store.enqueueInstruction(taskId, workspaceKey, content)
+  }
+
+  async dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void> {
+    return this.store.dequeueInstruction(taskId, workspaceKey, itemId)
+  }
+
+  async clearInstructionQueue(taskId: string, workspaceKey: string): Promise<void> {
+    return this.store.clearInstructionQueue(taskId, workspaceKey)
+  }
+
+  private async drainAllInstructions(taskId: string, workspaceKey: string): Promise<InstructionQueueItem[]> {
+    const state = await this.store.readTaskState(taskId, workspaceKey)
+    const queue = state.instruction_queue ?? []
+    if (queue.length === 0) return []
+    await this.store.clearInstructionQueue(taskId, workspaceKey)
+    return queue
+  }
+
+  private async sendQueuedInstructions(
+    taskId: string,
+    workspaceKey: string,
+    items: InstructionQueueItem[],
+    nextActor: string
+  ): Promise<void> {
+    const combinedContent = items.map(item => item.content).join('\n\n')
+    for (const item of items) {
+      await this.store.appendTranscript(taskId, workspaceKey, 'human', item.content, {
+        source: 'instruction_queue',
+        queue_item_id: item.id
+      })
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'human.message',
+        payload: { content: item.content, source: 'instruction_queue' }
+      })
+    }
+    await this.startTask(taskId, {
+      workspace_key: workspaceKey,
+      actor: nextActor,
+      message: combinedContent
+    })
+  }
+
   private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = ''): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
@@ -295,6 +364,12 @@ export class BuddyRunner {
     elapsedMs: number,
     exitCode: number
   ): Promise<void> {
+    // Guard: if the task was interrupted (active_run cleared or changed), skip completion
+    const currentState = await this.store.readTaskState(taskId, workspaceKey)
+    if (currentState.active_run?.run_id !== runId) {
+      return
+    }
+
     const text = outputText
     const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
     const threadId = lastValue(parsedLines.map((line) => line.threadId))
@@ -459,10 +534,14 @@ export class BuddyRunner {
       })
       return
     }
-    // Directly start the next actor without countdown
     if (this.executeLaunchers) {
       try {
-        await this.startTask(taskId, { workspace_key: workspaceKey, actor: nextActor })
+        const queueItems = await this.drainAllInstructions(taskId, workspaceKey)
+        if (queueItems.length > 0) {
+          await this.sendQueuedInstructions(taskId, workspaceKey, queueItems, nextActor)
+        } else {
+          await this.startTask(taskId, { workspace_key: workspaceKey, actor: nextActor })
+        }
       } catch {
         // Auto-start of next actor failed; task is already in READY state
       }
@@ -470,6 +549,13 @@ export class BuddyRunner {
   }
 
   private async markFailed(taskId: string, workspaceKey: string, actor: string, message: string, runId?: string): Promise<void> {
+    // Guard: if the task was interrupted (active_run changed), skip marking failed
+    if (runId) {
+      const currentState = await this.store.readTaskState(taskId, workspaceKey)
+      if (currentState.active_run?.run_id !== runId) {
+        return
+      }
+    }
     const failure = {
       message,
       actor,

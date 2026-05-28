@@ -7,6 +7,7 @@ import type {
   CreateTaskResult,
   Event,
   GlobalSettings,
+  InstructionQueueItem,
   SendMessageInput,
   StartTaskInput,
   Task,
@@ -93,6 +94,22 @@ export class BuddyCoreService {
   interrupt(taskId: string, workspaceKey?: string): Promise<void> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
     return this.runner.interrupt(taskId, workspaceKey)
+  }
+
+  enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<InstructionQueueItem> {
+    return this.runner.enqueueInstruction(taskId, workspaceKey, content)
+  }
+
+  dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void> {
+    return this.runner.dequeueInstruction(taskId, workspaceKey, itemId)
+  }
+
+  clearInstructionQueue(taskId: string, workspaceKey: string): Promise<void> {
+    return this.runner.clearInstructionQueue(taskId, workspaceKey)
+  }
+
+  interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void> {
+    return this.runner.interruptAndInsert(taskId, workspaceKey, queueItemId)
   }
 
   getEvents(taskId: string, since: number, workspaceKey?: string): Promise<{ events: Event[] }> {

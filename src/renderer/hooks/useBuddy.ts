@@ -149,6 +149,54 @@ export function useInterrupt() {
   })
 }
 
+export function useEnqueueInstruction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ taskId, workspaceKey, content }: { taskId: string; workspaceKey: string; content: string }) =>
+      api.enqueueInstruction(taskId, workspaceKey, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task'] })
+    }
+  })
+}
+
+export function useDequeueInstruction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ taskId, workspaceKey, itemId }: { taskId: string; workspaceKey: string; itemId: string }) =>
+      api.dequeueInstruction(taskId, workspaceKey, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task'] })
+    }
+  })
+}
+
+export function useClearInstructionQueue() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ taskId, workspaceKey }: { taskId: string; workspaceKey: string }) =>
+      api.clearInstructionQueue(taskId, workspaceKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task'] })
+    }
+  })
+}
+
+export function useInterruptAndInsert() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ taskId, workspaceKey, queueItemId }: { taskId: string; workspaceKey: string; queueItemId: string }) =>
+      api.interruptAndInsert(taskId, workspaceKey, queueItemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task'] })
+    }
+  })
+}
+
 export function useUpdateGlobalSettings() {
   const queryClient = useQueryClient()
 

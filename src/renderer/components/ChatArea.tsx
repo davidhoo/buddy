@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { TaskDetail } from '../../shared/types'
+import { ListOrdered, CornerDownRight, Trash2 } from 'lucide-react'
+import { TaskDetail, InstructionQueueItem } from '../../shared/types'
 import { MessageBubble } from './MessageBubble'
 import { RunningStatusMessage } from './RunningStatusMessage'
 import { Composer } from './Composer'
+import { QueueMenu } from './InstructionQueue'
 import { isTaskReadyToStart } from '../lib/taskState'
 
 import { useT } from '../hooks/useI18n'
@@ -13,11 +15,16 @@ interface ChatAreaProps {
   onSendMessage: (message: string, actor?: string) => void
   onStartTask: (actor?: string) => void
   onInterrupt: () => void
+  onEnqueueInstruction: (content: string) => void
+  onInterruptAndInsert: (itemId: string) => void
+  onDequeueInstruction: (itemId: string) => void
+  onEditInstruction: (item: InstructionQueueItem) => void
+  onClearInstructionQueue: () => void
   draft: string
   onDraftChange: (value: string) => void
 }
 
-export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, draft, onDraftChange }: ChatAreaProps) {
+export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, draft, onDraftChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -126,17 +133,54 @@ export function ChatArea({ task, onSendMessage, onStartTask, onInterrupt, draft,
         </div>
       )}
 
-      <Composer
-        onSend={onSendMessage}
-        onStart={onStartTask}
-        onInterrupt={onInterrupt}
-        isRunning={isRunning}
-        isReady={isReady}
-        settings={task?.settings ?? null}
-        taskState={task?.state ?? null}
-        draft={draft}
-        onDraftChange={onDraftChange}
-      />
+      <div className="px-4 pb-4">
+        {(task?.state?.instruction_queue?.length ?? 0) > 0 && (
+          <div className="mx-8 -mb-px relative z-0">
+            <div className="border-t border-l border-r border-b-0 border-border rounded-t-lg bg-bg-elevated px-3 py-2 space-y-0.5">
+              {task!.state.instruction_queue!.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 px-1 py-1 text-xs group">
+                  <ListOrdered size={14} className="text-fg-muted shrink-0" />
+                  <span className="flex-1 truncate text-fg-secondary">{item.content}</span>
+                  <div className="flex items-center gap-1.5 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => onInterruptAndInsert(item.id)}
+                      title={t('queue.interruptAndInsert')}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:text-accent text-fg-muted transition-colors cursor-pointer"
+                    >
+                      <CornerDownRight size={13} />
+                      <span className="text-[11px]">{t('queue.interruptAndInsert')}</span>
+                    </button>
+                    <button
+                      onClick={() => onDequeueInstruction(item.id)}
+                      title={t('common.delete')}
+                      className="p-1 rounded hover:text-danger text-fg-muted transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                    <QueueMenu
+                      item={item}
+                      onEdit={onEditInstruction}
+                      onClearQueue={onClearInstructionQueue}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <Composer
+          onSend={onSendMessage}
+          onStart={onStartTask}
+          onInterrupt={onInterrupt}
+          onEnqueueInstruction={onEnqueueInstruction}
+          isRunning={isRunning}
+          isReady={isReady}
+          settings={task?.settings ?? null}
+          taskState={task?.state ?? null}
+          draft={draft}
+          onDraftChange={onDraftChange}
+        />
+      </div>
     </div>
   )
 }

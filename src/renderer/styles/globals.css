@@ -275,6 +275,7 @@ body {
 
 /* ===== Running status card ===== */
 .message.running-status {
+  animation: buddy-breathe 5s ease-in-out infinite;
   background: var(--bg-elevated);
   border-width: 1px;
   border-style: solid;
@@ -283,10 +284,14 @@ body {
   color: var(--success-fg);
   font-style: italic;
   font-size: 13px;
-  animation: hint-fade 2s ease-in-out infinite;
+  animation: hint-fade 5s ease-in-out infinite;
+}
+@keyframes buddy-breathe {
+  0%, 100% { box-shadow: 0 0 6px 1px color-mix(in srgb, var(--actor-color) 6%, transparent); }
+  50% { box-shadow: 0 0 14px 4px color-mix(in srgb, var(--actor-color) 16%, transparent); }
 }
 @keyframes hint-fade {
-  0%, 100% { opacity: 0.6; }
+  0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
 

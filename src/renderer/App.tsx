@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask } from './hooks/useBuddy'
+import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT } from './hooks/useI18n'
 import type { TFunction } from './hooks/useI18n'
@@ -14,7 +14,7 @@ import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart } from './lib/taskState'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead } from './lib/taskList'
-import type { GlobalSettings } from '../shared/types'
+import type { GlobalSettings, InstructionQueueItem } from '../shared/types'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
 export default function App() {
@@ -55,6 +55,10 @@ export default function App() {
   const sendMessage = useSendMessage()
   const startTask = useStartTask()
   const interrupt = useInterrupt()
+  const enqueueInstruction = useEnqueueInstruction()
+  const dequeueInstruction = useDequeueInstruction()
+  const clearInstructionQueue = useClearInstructionQueue()
+  const interruptAndInsert = useInterruptAndInsert()
 
   const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
 
@@ -196,6 +200,55 @@ export default function App() {
     })
   }, [selectedTaskId, selectedWorkspaceKey, interrupt])
 
+  const handleEnqueueInstruction = useCallback((content: string) => {
+    if (!selectedTaskId || !selectedWorkspaceKey) return
+    enqueueInstruction.mutate({
+      taskId: selectedTaskId,
+      workspaceKey: selectedWorkspaceKey,
+      content
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, enqueueInstruction])
+
+  const handleDequeueInstruction = useCallback((itemId: string) => {
+    if (!selectedTaskId || !selectedWorkspaceKey) return
+    dequeueInstruction.mutate({
+      taskId: selectedTaskId,
+      workspaceKey: selectedWorkspaceKey,
+      itemId
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, dequeueInstruction])
+
+  const handleClearInstructionQueue = useCallback(() => {
+    if (!selectedTaskId || !selectedWorkspaceKey) return
+    clearInstructionQueue.mutate({
+      taskId: selectedTaskId,
+      workspaceKey: selectedWorkspaceKey
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, clearInstructionQueue])
+
+  const handleInterruptAndInsert = useCallback((itemId: string) => {
+    if (!selectedTaskId || !selectedWorkspaceKey) return
+    interruptAndInsert.mutate({
+      taskId: selectedTaskId,
+      workspaceKey: selectedWorkspaceKey,
+      queueItemId: itemId
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, interruptAndInsert])
+
+  const handleEditInstruction = useCallback((item: { id: string; content: string }) => {
+    if (!selectedTaskId || !selectedWorkspaceKey) return
+    // Move content back to input and remove from queue
+    setDrafts(prev => ({
+      ...prev,
+      [selectedTaskId]: prev[selectedTaskId] ? `${prev[selectedTaskId]}\n${item.content}` : item.content
+    }))
+    dequeueInstruction.mutate({
+      taskId: selectedTaskId,
+      workspaceKey: selectedWorkspaceKey,
+      itemId: item.id
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, dequeueInstruction])
+
   const selectVisibleTaskByOffset = useCallback((offset: number) => {
     const visibleTasks = visibleTasksForShortcuts(
       tasks,
@@ -320,6 +373,11 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onStartTask={handleStartTask}
                 onInterrupt={handleInterrupt}
+                onEnqueueInstruction={handleEnqueueInstruction}
+                onInterruptAndInsert={handleInterruptAndInsert}
+                onDequeueInstruction={handleDequeueInstruction}
+                onEditInstruction={handleEditInstruction}
+                onClearInstructionQueue={handleClearInstructionQueue}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
               />

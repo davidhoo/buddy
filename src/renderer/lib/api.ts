@@ -2,6 +2,7 @@ import type {
   CountdownInput,
   CreateTaskInput,
   GlobalSettings,
+  InstructionQueueItem,
   SendMessageInput,
   StartTaskInput
 } from '../../shared/types'
@@ -33,6 +34,14 @@ export const api = {
     buddy().pauseCountdown(taskId, data),
   interrupt: (taskId: string, workspaceKey?: string) =>
     buddy().interrupt(taskId, workspaceKey),
+  enqueueInstruction: (taskId: string, workspaceKey: string, content: string) =>
+    buddy().enqueueInstruction(taskId, workspaceKey, content),
+  dequeueInstruction: (taskId: string, workspaceKey: string, itemId: string) =>
+    buddy().dequeueInstruction(taskId, workspaceKey, itemId),
+  clearInstructionQueue: (taskId: string, workspaceKey: string) =>
+    buddy().clearInstructionQueue(taskId, workspaceKey),
+  interruptAndInsert: (taskId: string, workspaceKey: string, queueItemId: string) =>
+    buddy().interruptAndInsert(taskId, workspaceKey, queueItemId),
   getEvents: (taskId: string, since: number, workspaceKey?: string) =>
     buddy().getEvents(taskId, since, workspaceKey),
   updateGlobalSettings: (settings: GlobalSettings) =>

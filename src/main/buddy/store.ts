@@ -14,6 +14,7 @@ import type {
   CreateTaskResult,
   Event,
   GlobalSettings,
+  InstructionQueueItem,
   Launcher,
   Task,
   TaskDetail,
@@ -225,6 +226,58 @@ export class BuddyStore {
       transcript_seq: seq
     })
     return row
+  }
+
+  async enqueueInstruction(
+    taskId: string,
+    workspaceKey: string,
+    content: string
+  ): Promise<InstructionQueueItem> {
+    const item: InstructionQueueItem = {
+      id: `qi_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+      content,
+      created_at: utcNow()
+    }
+    await this.updateTaskState(taskId, workspaceKey, (state) => ({
+      ...state,
+      instruction_queue: [...(state.instruction_queue ?? []), item]
+    }))
+    return item
+  }
+
+  async dequeueInstruction(
+    taskId: string,
+    workspaceKey: string,
+    itemId: string
+  ): Promise<void> {
+    await this.updateTaskState(taskId, workspaceKey, (state) => ({
+      ...state,
+      instruction_queue: (state.instruction_queue ?? []).filter((item) => item.id !== itemId)
+    }))
+  }
+
+  async clearInstructionQueue(
+    taskId: string,
+    workspaceKey: string
+  ): Promise<void> {
+    await this.updateTaskState(taskId, workspaceKey, (state) => ({
+      ...state,
+      instruction_queue: []
+    }))
+  }
+
+  async drainInstructionQueue(
+    taskId: string,
+    workspaceKey: string
+  ): Promise<InstructionQueueItem[]> {
+    const state = await this.readTaskState(taskId, workspaceKey)
+    const items = state.instruction_queue ?? []
+    if (items.length === 0) return []
+    await this.writeTaskState(taskId, workspaceKey, {
+      ...state,
+      instruction_queue: []
+    })
+    return items
   }
 
   taskDirectory(taskId: string, workspaceKey: string): string {
@@ -521,6 +574,7 @@ function defaultTaskState(
     context_hash: sha256Hex(contextText),
     context_sent: Object.fromEntries(ACTORS.map((actor) => [actor, false])),
     active_run: null,
+    instruction_queue: [],
     countdown: null,
     last_error: null,
     latest_failure: null,

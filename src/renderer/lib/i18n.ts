@@ -202,6 +202,13 @@ const en = {
   'composer.button.interrupt': 'Interrupt',
   'composer.button.start': 'Start',
   'composer.button.send': 'Send',
+  'composer.button.enqueue': 'Queue instruction',
+  'composer.hint.enqueue': '⏎ Enter to queue instruction',
+
+  // Instruction Queue
+  'queue.interruptAndInsert': 'Interrupt & insert',
+  'queue.edit': 'Edit',
+  'queue.clearQueue': 'Clear queue',
 
   // Running message + meta
   'running.metaRound': 'Round {n}',
@@ -462,6 +469,12 @@ const zhCN: typeof en = {
   'composer.button.interrupt': '打断',
   'composer.button.start': '开始',
   'composer.button.send': '发送',
+  'composer.button.enqueue': '加入指令队列',
+  'composer.hint.enqueue': '⏎ Enter 加入指令队列',
+
+  'queue.interruptAndInsert': '打断并插入',
+  'queue.edit': '编辑',
+  'queue.clearQueue': '清除队列',
 
   'running.metaRound': '第 {n} 轮',
   'running.metaSuffix': '运行中 · {elapsed}',
@@ -718,6 +731,12 @@ const zhTW: typeof en = {
   'composer.button.interrupt': '中斷',
   'composer.button.start': '開始',
   'composer.button.send': '傳送',
+  'composer.button.enqueue': '加入指令佇列',
+  'composer.hint.enqueue': '⏎ Enter 加入指令佇列',
+
+  'queue.interruptAndInsert': '中斷並插入',
+  'queue.edit': '編輯',
+  'queue.clearQueue': '清除佇列',
 
   'running.metaRound': '第 {n} 輪',
   'running.metaSuffix': '執行中 · {elapsed}',

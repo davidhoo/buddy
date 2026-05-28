@@ -8,6 +8,7 @@ interface ComposerProps {
   onSend: (message: string, actor?: string) => void
   onStart: (actor?: string) => void
   onInterrupt: () => void
+  onEnqueueInstruction: (content: string) => void
   isRunning: boolean
   isReady: boolean
   settings: TaskSettings | null
@@ -16,7 +17,7 @@ interface ComposerProps {
   onDraftChange: (value: string) => void
 }
 
-export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, settings, taskState, draft, onDraftChange }: ComposerProps) {
+export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, draft, onDraftChange }: ComposerProps) {
   const t = useT()
   const { shortcut } = useSendShortcut()
   const { impl, participants } = taskActors(settings)
@@ -53,7 +54,11 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
 
   const handleSend = () => {
     if (draft.trim()) {
-      onSend(draft.trim(), nextActor)
+      if (isRunning) {
+        onEnqueueInstruction(draft.trim())
+      } else {
+        onSend(draft.trim(), nextActor)
+      }
       onDraftChange('')
     }
   }
@@ -67,7 +72,6 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
     if (e.metaKey) {
       e.preventDefault()
       e.stopPropagation()
-      if (isRunning) return
       if (draft.trim()) {
         handleSend()
       } else if (isReady) {
@@ -79,25 +83,32 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
     const shouldSend = shortcut === 'enter' ? !e.shiftKey : e.shiftKey
     if (!shouldSend) return
     e.preventDefault()
-    if (isRunning) return
+    if (!draft.trim()) return
     handleSend()
   }
 
-  // 按钮逻辑：运行中显示 stop，就绪无内容显示开始，其他显示发送
-  const showStop = isRunning
-  const showStart = isReady && !draft.trim() && !isRunning
+  // 按钮逻辑：
+  // - 运行中 + 有内容 → 提交到队列 (ArrowUp)
+  // - 运行中 + 无内容 → stop
+  // - 就绪 + 无内容 → 开始
+  // - 其他 → 发送
+  const hasDraft = draft.trim().length > 0
+  const showStop = isRunning && !hasDraft
+  const showEnqueue = isRunning && hasDraft
+  const showStart = isReady && !hasDraft && !isRunning
   const handlePrimary = showStop ? onInterrupt : showStart ? () => onStart(nextActor) : handleSend
-  const primaryDisabled = showStop ? false : showStart ? false : !draft.trim()
+  const primaryDisabled = showStop ? false : showStart ? false : !hasDraft
 
   const placeholder = isRunning
     ? t('composer.placeholder.running')
     : t('composer.placeholder.idle')
-  const sendHint = shortcut === 'enter' ? t('composer.hint.enter') : shortcut === 'shift-enter' ? t('composer.hint.shiftEnter') : t('composer.hint.cmdEnter')
+  const sendHint = isRunning && hasDraft
+    ? t('composer.hint.enqueue')
+    : shortcut === 'enter' ? t('composer.hint.enter') : shortcut === 'shift-enter' ? t('composer.hint.shiftEnter') : t('composer.hint.cmdEnter')
 
   return (
-    <div className="px-4 pb-4 pt-2">
-      <div className="rounded-2xl border border-border bg-bg-elevated px-4 pt-3 pb-2 shadow-sm">
-        {/* 输入区 */}
+    <div className="rounded-2xl border border-border bg-bg-elevated shadow-sm relative z-[1]">
+      <div className="px-4 pt-3 pb-2">
         <textarea
           ref={textareaRef}
           value={draft}
@@ -108,10 +119,9 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
           rows={2}
         />
 
-        {/* 工具栏 */}
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-1 text-xs text-fg-muted select-none">
-            {isRunning ? (
+            {isRunning && !hasDraft ? (
               t('composer.hint.running')
             ) : (
               sendHint
@@ -119,12 +129,10 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 「下一轮承接方」标签 */}
             <span className="text-xs text-fg-secondary select-none">
               {t('composer.nextHandoff')}
             </span>
 
-            {/* 承接方下拉 */}
             <div className="relative">
               <select
                 value={nextActor}
@@ -142,11 +150,10 @@ export function Composer({ onSend, onStart, onInterrupt, isRunning, isReady, set
               />
             </div>
 
-            {/* 圆形按钮：运行中=stop，就绪=开始，其他=发送 */}
             <button
               onClick={handlePrimary}
               disabled={primaryDisabled}
-              title={showStop ? t('composer.button.interrupt') : showStart ? t('composer.button.start') : t('composer.button.send')}
+              title={showStop ? t('composer.button.interrupt') : showEnqueue ? t('composer.button.enqueue') : showStart ? t('composer.button.start') : t('composer.button.send')}
               className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
                 showStop
                   ? 'bg-danger hover:bg-danger-hover text-fg-inverse'

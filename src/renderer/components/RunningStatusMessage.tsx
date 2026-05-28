@@ -96,7 +96,7 @@ export function RunningStatusMessage({ actor, startedAt }: { actor: string; star
 
   return (
     <div className="flex mb-3 justify-start">
-      <div className="message w-full running-status" style={{ borderColor: actorColorVar(actor) }}>
+      <div className="message w-full running-status" style={{ '--actor-color': actorColorVar(actor), borderColor: actorColorVar(actor) } as React.CSSProperties}>
         <div className="message-head">
           <span className="role" style={{ color: actorColorVar(actor) }}>{actorLabel}</span>
           <span>{metaText}</span>

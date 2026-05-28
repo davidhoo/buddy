@@ -31,6 +31,12 @@ export interface TaskDetail {
   latest_failure: Failure | null
 }
 
+export interface InstructionQueueItem {
+  id: string
+  content: string
+  created_at: string
+}
+
 export interface TaskState {
   protocol_version?: string
   task_id?: string
@@ -41,6 +47,7 @@ export interface TaskState {
   next_actor: string
   countdown?: Countdown | null
   active_run?: ActiveRun | null
+  instruction_queue?: InstructionQueueItem[]
   claude_session_id?: string | null
   codex_thread_id?: string | null
   opencode_session_id?: string | null

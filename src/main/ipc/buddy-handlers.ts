@@ -19,6 +19,10 @@ export interface BuddyHandlerService {
   skipCountdown(taskId: string, input: CountdownInput): Promise<void>
   pauseCountdown(taskId: string, input: CountdownInput): Promise<void>
   interrupt(taskId: string, workspaceKey?: string): Promise<void>
+  enqueueInstruction(taskId: string, workspaceKey: string, content: string): Promise<unknown>
+  dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void>
+  clearInstructionQueue(taskId: string, workspaceKey: string): Promise<void>
+  interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void>
   getEvents(taskId: string, since: number, workspaceKey?: string): Promise<unknown>
   updateGlobalSettings(settings: GlobalSettings): Promise<unknown>
   gitStatus(repoRoot: string): Promise<unknown>
@@ -57,6 +61,18 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:interrupt', (_event, taskId: string, workspaceKey?: string) =>
     service.interrupt(taskId, workspaceKey)
+  )
+  ipcMain.handle('buddy:enqueueInstruction', (_event, taskId: string, workspaceKey: string, content: string) =>
+    service.enqueueInstruction(taskId, workspaceKey, content)
+  )
+  ipcMain.handle('buddy:dequeueInstruction', (_event, taskId: string, workspaceKey: string, itemId: string) =>
+    service.dequeueInstruction(taskId, workspaceKey, itemId)
+  )
+  ipcMain.handle('buddy:clearInstructionQueue', (_event, taskId: string, workspaceKey: string) =>
+    service.clearInstructionQueue(taskId, workspaceKey)
+  )
+  ipcMain.handle('buddy:interruptAndInsert', (_event, taskId: string, workspaceKey: string, queueItemId: string) =>
+    service.interruptAndInsert(taskId, workspaceKey, queueItemId)
   )
   ipcMain.handle('buddy:getEvents', (_event, taskId: string, since: number, workspaceKey?: string) =>
     service.getEvents(taskId, since, workspaceKey)
