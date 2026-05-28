@@ -112,13 +112,15 @@ function normalizeStatusCode(xy: string): GitFileStatusCode {
 
 export async function getGitFileStatuses(cwd: string): Promise<GitFileStatus[]> {
   try {
-    const output = await execGit(['status', '--short', '--no-renames'], cwd)
+    const output = await execGit(['status', '--porcelain', '--no-renames'], cwd)
     if (!output.trim()) return []
     const result: GitFileStatus[] = []
     for (const line of output.split('\n')) {
       if (!line.trim()) continue
-      const xy = line.slice(0, 2)
-      const filePath = line.slice(3).trim()
+      const m = line.match(/^([MADRCU? ]{1,2})\s+(.+)$/)
+      if (!m) continue
+      const xy = m[1]
+      const filePath = m[2].trim()
       if (!filePath) continue
       result.push({ path: filePath, status: normalizeStatusCode(xy), insertions: 0, deletions: 0 })
     }
