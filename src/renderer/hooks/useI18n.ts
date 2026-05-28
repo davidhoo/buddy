@@ -43,7 +43,7 @@ function readLanguagePref(): LanguagePref {
 function readSendShortcut(): SendShortcut {
   const v = getStoredValue(SEND_SHORTCUT_KEY)
   if (v === 'enter' || v === 'shift-enter' || v === 'cmd-enter') return v
-  return 'shift-enter'
+  return 'cmd-enter'
 }
 
 function writeLanguagePref(pref: LanguagePref) {

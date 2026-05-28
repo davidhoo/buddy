@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLauncherCommand, setKimiVariant } from '../../../src/main/buddy/launchers'
+import { buildLauncherCommand } from '../../../src/main/buddy/launchers'
 
 describe('launcher command builder', () => {
   it('builds Claude non-interactive stream-json command', () => {
@@ -116,8 +116,7 @@ describe('launcher command builder', () => {
     })
   })
 
-  it('builds kimi-code stream-json command with -p prompt', () => {
-    setKimiVariant('kimi', 'kimi-code')
+  it('builds Kimi Code stream-json command with -p prompt', () => {
     expect(buildLauncherCommand({
       actor: 'kimi',
       command: 'kimi',
@@ -138,24 +137,19 @@ describe('launcher command builder', () => {
     })
   })
 
-  it('builds kimi-cli stream-json command with --print and -p', () => {
-    setKimiVariant('kimi', 'kimi-cli')
+  it('builds Kimi Code command without session when no sessionId', () => {
     expect(buildLauncherCommand({
       actor: 'kimi',
       command: 'kimi',
       promptFile: '/tmp/prompt.md',
-      promptText: 'hello from prompt',
-      sessionId: 'kimi-session'
+      promptText: 'hello from prompt'
     })).toEqual({
       command: 'kimi',
       args: [
-        '--print',
-        '--output-format',
-        'stream-json',
         '-p',
         'hello from prompt',
-        '-r',
-        'kimi-session'
+        '--output-format',
+        'stream-json'
       ],
       kind: 'native_kimi'
     })

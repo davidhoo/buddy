@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { basename } from 'node:path'
@@ -31,29 +30,6 @@ export interface LauncherCommand {
   env?: Record<string, string>
   kind: LauncherCommandKind
   stdinText?: string
-}
-
-export type KimiVariant = 'kimi-code' | 'kimi-cli'
-
-const kimiVariantCache = new Map<string, KimiVariant>()
-
-export function detectKimiVariant(command: string): KimiVariant {
-  const cached = kimiVariantCache.get(command)
-  if (cached) return cached
-  try {
-    const help = execFileSync(command, ['--help'], { encoding: 'utf8', timeout: 3000 }) ?? ''
-    const variant: KimiVariant = help.includes('migrate') ? 'kimi-code' : 'kimi-cli'
-    kimiVariantCache.set(command, variant)
-    return variant
-  } catch {
-    const variant: KimiVariant = 'kimi-code'
-    kimiVariantCache.set(command, variant)
-    return variant
-  }
-}
-
-export function setKimiVariant(command: string, variant: KimiVariant): void {
-  kimiVariantCache.set(command, variant)
 }
 
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
@@ -124,22 +100,6 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
 
   if (kind === 'native_kimi') {
     const promptText = input.promptText?.trim() ?? ''
-    const variant = detectKimiVariant(command)
-    if (variant === 'kimi-cli') {
-      return {
-        command,
-        args: [
-          ...prefixArgs,
-          '--print',
-          '--output-format',
-          'stream-json',
-          '-p',
-          promptText,
-          ...(input.sessionId ? ['-r', input.sessionId] : [])
-        ],
-        kind
-      }
-    }
     return {
       command,
       args: [

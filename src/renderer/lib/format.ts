@@ -29,7 +29,7 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
-  kimi: 'Kimi'
+  kimi: 'Kimi Code'
 }
 
 const EVENT_TYPE_KEY: Record<string, TranslationKey> = {

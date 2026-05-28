@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const INSTALL_HINTS: Record<string, string> = {
-  kimi: 'pip install kimi-cli',
+  kimi: 'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash',
   claude: 'npm install -g @anthropic-ai/claude-code',
   codex: 'npm install -g @openai/codex',
   opencode: 'go install github.com/sst/opencode@latest'
@@ -18,13 +18,11 @@ export function fixShellPath(): void {
   if (process.env.NODE_ENV === 'test') return
   try {
     const shell = process.env.SHELL || '/bin/zsh'
-    // Use interactive login shell (-il) so ~/.zshrc is sourced
     const path = execSync(`${shell} -il -c 'echo "$PATH"' 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }).trim()
     if (path && path !== process.env.PATH) {
       process.env.PATH = path
     }
   } catch {
-    // Fallback: add common binary directories
     const home = homedir()
     const extras = [
       join(home, '.kimi-code/bin'),

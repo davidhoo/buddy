@@ -632,7 +632,7 @@ function actorDisplayName(actor: unknown): string {
   if (actor === 'claude') return 'Claude Code'
   if (actor === 'codex') return 'Codex'
   if (actor === 'opencode') return 'OpenCode'
-  if (actor === 'kimi') return 'Kimi'
+  if (actor === 'kimi') return 'Kimi Code'
   return typeof actor === 'string' && actor ? actor : 'Unknown'
 }
 

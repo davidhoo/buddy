@@ -194,7 +194,7 @@ export function implementerActor(settings: Partial<TaskSettings>): string {
 export function actorDisplayName(actor: unknown): string {
   if (actor === ACTOR_CLAUDE) return 'Claude Code'
   if (actor === ACTOR_OPENCODE) return 'OpenCode'
-  if (actor === ACTOR_KIMI) return 'Kimi'
+  if (actor === ACTOR_KIMI) return 'Kimi Code'
   if (actor === ACTOR_CODEX) return 'Codex'
   return typeof actor === 'string' && actor ? actor : 'Codex'
 }
