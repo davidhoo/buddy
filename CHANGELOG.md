@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.8] - 2026-05-29
+
+### Changed
+- Actor 失败处理增强：识别"静默失败"和"幽灵输出"，连续失败达到上限时自动暂停而非无限重试
+- 对端已请求 break 时，当前 actor 失败自动确认 dual-break 结束任务
+- 更新器开启自动下载并增加 30 分钟周期性检查
+- 更新按钮区分"检查更新"与"安装更新"两种状态
+
+### Fixed
+- 修复 repoRoot 被写入 [object Object] 的问题，增加类型守卫与 localStorage 清理
+- 修复 onCreateTask 调用缺少空括号导致的类型错误
+- 修复 running-status 展开面板底部边框断线
+
+---
+
 ## [1.0.7] - 2026-05-29
 
 ### Added
@@ -162,6 +177,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.8
 [1.0.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.7
 [1.0.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.6
 [1.0.5]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.5
