@@ -56,10 +56,10 @@ export function buildPingPrompt(actor: string): string {
     BUDDY_MESSAGE_PROTOCOL,
     '',
     '## Task',
-    'Health check — respond to confirm you are operational.',
+    'Connectivity check — say hi to confirm you are ready.',
     '',
     '## Instruction',
-    `This is a connectivity check. Reply with \`{"type":"chat","content":"pong"}\` to confirm you are operational.`
+    'This is a quick connectivity check before a collaborative task begins. Please respond with a brief greeting to confirm you are operational and ready to work. Use the buddy message protocol (JSON) to respond.'
   ]
   return `${parts.join('\n').trimEnd()}\n`
 }
@@ -72,6 +72,7 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   const contextHash = hashText(input.contextText)
   const contextSent = state.context_sent ?? {}
   const pendingBreak = state.pending_break
+  const breakRejectedBy = state.break_rejected_by
 
   const parts = [
     '# buddy actor turn',
@@ -101,6 +102,19 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
     )
   }
 
+  if (breakRejectedBy && breakRejectedBy.actor !== input.actor) {
+    const rejectedLabel = actorDisplayName(breakRejectedBy.actor)
+    parts.push(
+      '',
+      '## Break request rejected — review required',
+      `Your previous \`type=break\` request was rejected by ${rejectedLabel}, who made changes to the codebase.`,
+      `You must review ${rejectedLabel}'s changes before confirming completion.`,
+      '- Carefully examine the changes made by the other actor.',
+      '- If the changes are correct and the task is truly complete, respond with `type=break`.',
+      '- If you find issues with the changes or the task is not yet complete, respond with `type=chat` and describe what needs to be fixed.'
+    )
+  }
+
   if (input.userMessage) {
     parts.push('', '## Human message', input.userMessage)
   }
@@ -121,6 +135,9 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   if (pendingBreak) {
     const requesterName = actorDisplayName(pendingBreak.actor)
     parts.push(`${requesterName} has requested to end the task. Confirm with \`type=break\` or continue with \`type=chat\`.`)
+  } else if (breakRejectedBy && breakRejectedBy.actor !== input.actor) {
+    const rejectedName = actorDisplayName(breakRejectedBy.actor)
+    parts.push(`Your previous break request was rejected by ${rejectedName}, who made changes. Review their changes carefully. Only confirm with \`type=break\` if you agree the changes are correct and the task is complete.`)
   } else {
     const implementer = implementerActor(settings)
     if (input.actor === implementer) {

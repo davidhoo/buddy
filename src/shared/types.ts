@@ -69,6 +69,7 @@ export interface TaskState {
   created_at?: string
   updated_at?: string
   pending_break?: { actor?: string; round?: number } | null
+  break_rejected_by?: { actor?: string; round?: number } | null
   latest_failure?: Failure | null
   health_check?: HealthCheckResult | null
 }

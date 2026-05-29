@@ -247,7 +247,7 @@ export class BuddyRunner {
     taskId: string,
     workspaceKey: string,
     actor: string
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const launcher = detail.settings.launchers[actor] ?? {
       command: actor,
@@ -306,8 +306,18 @@ export class BuddyRunner {
         return { success: false, error: error.slice(0, 300) }
       }
 
+      // Verify the actor responded with a valid buddy message
+      const message = parseBuddyMessage(outputText)
+      const hasContent = message.kind === 'message'
+        ? message.text.trim().length > 0
+        : message.content.trim().length > 0
+      if (!hasContent) {
+        return { success: false, error: 'Actor responded with empty content' }
+      }
+
       const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
-      return { success: true, sessionId }
+      const threadId = lastValue(parsedLines.map((line) => line.threadId))
+      return { success: true, sessionId, threadId }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const stderrText = stderrLines.join('\n').trim()
@@ -368,20 +378,22 @@ export class BuddyRunner {
       if (settled.status === 'fulfilled' && settled.value.success) {
         finalResults[actor] = 'passed'
         const sid = settled.value.sessionId
+        const tid = settled.value.threadId
         if (actor === 'claude' && sid) sessionUpdates.claude_session_id = sid
-        if (actor === 'codex' && sid) sessionUpdates.codex_thread_id = sid
+        if (actor === 'codex' && (tid ?? sid)) sessionUpdates.codex_thread_id = tid ?? sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
+        const displayId = actor === 'codex' ? (tid ?? sid) : sid
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'health_check.actor_passed',
           actor,
-          payload: { session_id: sid ?? null }
+          payload: { session_id: displayId ?? null }
         })
         await this.store.appendTranscript(
           taskId,
           workspaceKey,
           'system',
-          `${actorDisplayName(actor)} 连通性检查通过${sid ? `，会话 ID: ${sid.slice(0, 12)}...` : ''}`,
+          `${actorDisplayName(actor)} 连通性检查通过${displayId ? `，会话 ID: ${displayId.slice(0, 12)}...` : ''}`,
           { kind: 'health_check' }
         )
       } else {
@@ -692,7 +704,8 @@ export class BuddyRunner {
           ...next,
           status: hasQueuedInstructions ? 'READY' : 'DONE',
           countdown: null,
-          pending_break: null
+          pending_break: null,
+          break_rejected_by: null
         }
       }
 
@@ -701,6 +714,7 @@ export class BuddyRunner {
           ...next,
           status: roundWindowReached ? 'PAUSED' : 'READY',
           pending_break: { actor, round },
+          break_rejected_by: null,
           countdown: null
         }
       }
@@ -709,6 +723,7 @@ export class BuddyRunner {
         ...next,
         status: roundWindowReached ? 'PAUSED' : 'READY',
         pending_break: breakRejected ? null : next.pending_break,
+        break_rejected_by: breakRejected ? { actor, round } : null,
         countdown: null
       }
     })

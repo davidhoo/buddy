@@ -348,33 +348,35 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
       <div className="flex items-center gap-2 mb-1">
         <ActorBadge actor={actor} />
         <h2 className="text-base font-semibold text-fg">{info.title}</h2>
+      </div>
+      <p className="text-sm text-fg-secondary mb-3 leading-relaxed">{info.hint}</p>
+      <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          placeholder={info.placeholder}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && dirty) {
+              e.preventDefault()
+              onSaveCommand(draft)
+            }
+            if (e.key === 'Escape') {
+              setDraft(saved)
+            }
+          }}
+          className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+        />
         <button
           type="button"
           onClick={() => onSaveCommand(draft)}
           disabled={!dirty}
-          className="ml-auto px-3 py-1 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
         >
           {t('common.save')}
         </button>
       </div>
-      <p className="text-sm text-fg-secondary mb-3 leading-relaxed">{info.hint}</p>
-      <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
-      <input
-        type="text"
-        value={draft}
-        placeholder={info.placeholder}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && dirty) {
-            e.preventDefault()
-            onSaveCommand(draft)
-          }
-          if (e.key === 'Escape') {
-            setDraft(saved)
-          }
-        }}
-        className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-      />
       {Object.keys(launcher.env).length > 0 && (
         <div className="mt-2 text-xs text-fg-muted font-mono">
           {Object.entries(launcher.env).map(([k, v]) => (

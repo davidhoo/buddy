@@ -84,6 +84,7 @@ export const taskStateSchema = z.object({
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   pending_break: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
+  break_rejected_by: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
   latest_failure: failureSchema.nullable().optional(),
   health_check: healthCheckResultSchema.nullable().optional()
 })
