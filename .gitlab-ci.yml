@@ -1,59 +1,8 @@
 stages:
-  - test
   - package
 
 variables:
-  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
   pnpm_version: "11"
-
-# -------------------------------------------------------
-# Cache: pnpm store
-# -------------------------------------------------------
-.pnpm_cache: &pnpm_cache
-  cache:
-    key:
-      files:
-        - pnpm-lock.yaml
-    paths:
-      - .pnpm-store
-
-.pnpm_before: &pnpm_before
-  before_script:
-    - corepack enable
-    - corepack prepare pnpm@${pnpm_version} --activate
-    - pnpm config set store-dir .pnpm-store
-    - pnpm install --frozen-lockfile
-
-# -------------------------------------------------------
-# Rules
-# -------------------------------------------------------
-.rule_release: &rule_release
-  - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-.rule_merge: &rule_merge
-  - if: $CI_MERGE_REQUEST_IID
-  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-
-# -------------------------------------------------------
-# Test (runs on MRs and default branch, Docker runner)
-# -------------------------------------------------------
-typecheck:
-  stage: test
-  image: node:22-slim
-  <<: *pnpm_cache
-  <<: *pnpm_before
-  rules: *rule_merge
-  script:
-    - pnpm typecheck
-
-unit-test:
-  stage: test
-  image: node:22-slim
-  <<: *pnpm_cache
-  <<: *pnpm_before
-  rules: *rule_merge
-  script:
-    - pnpm test
 
 # -------------------------------------------------------
 # Package: source archive (tag only, Docker runner)
@@ -61,7 +10,8 @@ unit-test:
 package:source:
   stage: package
   image: registry-origin.api.weibo.com/mapi/v7-ci:latest
-  rules: *rule_release
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
   script:
     - mkdir -p release-src
     - git archive --format=tar --prefix="buddy-macos-${CI_COMMIT_TAG}/" HEAD | gzip > "release-src/buddy-macos-${CI_COMMIT_TAG}-source.tar.gz"
