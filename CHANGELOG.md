@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.9] - 2026-05-29
+
+### Added
+- Actor 连通性健康检查：任务首次启动时自动 ping 两个 actor，验证可用性后再执行任务，避免在 actor 不可用时盲目运行
+- 健康检查失败时任务直接结束并显示详细错误信息，便于快速定位问题
+
+### Changed
+- 空字符串的 launcher command 自动回退到 actor 名称作为默认值
+
+---
+
 ## [1.0.8] - 2026-05-29
 
 ### Changed
@@ -177,6 +188,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.9
 [1.0.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.8
 [1.0.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.7
 [1.0.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.6

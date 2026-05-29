@@ -1,6 +1,6 @@
 {
   "name": "buddy-macos",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "macOS native desktop app with built-in Buddy Core",
   "main": "./out/main/index.js",
   "packageManager": "pnpm@11.1.3",
