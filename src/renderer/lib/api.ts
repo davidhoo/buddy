@@ -5,7 +5,8 @@ import type {
   GlobalSettings,
   InstructionQueueItem,
   SendMessageInput,
-  StartTaskInput
+  StartTaskInput,
+  TaskEventEnvelope
 } from '../../shared/types'
 
 function buddy() {
@@ -56,5 +57,7 @@ export const api = {
   gitDiffForCommitMessage: (repoRoot: string) =>
     buddy().gitDiffForCommitMessage(repoRoot),
   generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
-    buddy().generateCommitMessage(repoRoot, actorCommand, lang)
+    buddy().generateCommitMessage(repoRoot, actorCommand, lang),
+  onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
+    buddy().onTaskEvent(callback)
 }

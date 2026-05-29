@@ -26,6 +26,7 @@ export type UpdaterEvent =
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
+autoUpdater.disableDifferentialDownload = true
 
 let mainWindow: BrowserWindow | null = null
 let initialized = false

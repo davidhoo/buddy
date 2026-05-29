@@ -3,6 +3,7 @@ import { FolderOpen } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
+import { setServerLocale } from './lib/i18n'
 import type { TFunction } from './hooks/useI18n'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import type { ShortcutActions } from './hooks/useKeyboardShortcuts'
@@ -61,6 +62,11 @@ export default function App() {
   const { data: bootstrap, isLoading: isLoadingBootstrap, error: bootstrapError } = useBootstrap()
   const { data: tasks = [], isLoading: isLoadingTasks, error: tasksError } = useTasks()
   const { data: taskDetail } = useTaskDetail(selectedTaskId, selectedWorkspaceKey ?? undefined)
+
+  // Feed main-process locale to renderer language detection as fallback
+  useEffect(() => {
+    if (bootstrap?.locale) setServerLocale(bootstrap.locale)
+  }, [bootstrap?.locale])
 
   // Auto-select: restore last selection or default to first task
   useEffect(() => {
@@ -574,6 +580,7 @@ export default function App() {
                 onDequeueInstruction={handleDequeueInstruction}
                 onEditInstruction={handleEditInstruction}
                 onClearInstructionQueue={handleClearInstructionQueue}
+                onCreateTask={handleOpenCreateModal}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}

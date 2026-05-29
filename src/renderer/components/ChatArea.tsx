@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ListOrdered, CornerDownRight, Trash2, Sparkles, Paperclip } from 'lucide-react'
+import { ListOrdered, CornerDownRight, Trash2, Sparkles, Paperclip, Plus } from 'lucide-react'
 import { TaskDetail, InstructionQueueItem, Attachment } from '../../shared/types'
 import { MessageBubble } from './MessageBubble'
-import { RunningStatusMessage } from './RunningStatusMessage'
+import { RunningStatusMessage, RunningDetailPanel } from './RunningStatusMessage'
 import { Composer } from './Composer'
 import { QueueMenu } from './InstructionQueue'
 import { isTaskReadyToStart } from '../lib/taskState'
+import { useActorStream } from '../hooks/useBuddy'
 
 import { useT } from '../hooks/useI18n'
 import { renderMarkdown } from '../lib/markdown'
@@ -21,17 +22,41 @@ interface ChatAreaProps {
   onDequeueInstruction: (itemId: string) => void
   onEditInstruction: (item: InstructionQueueItem) => void
   onClearInstructionQueue: () => void
+  onCreateTask: () => void
   draft: string
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
+export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [detailExpanded, setDetailExpanded] = useState(false)
   const userScrolledUp = useRef(false)
+
+  const isRunning = task?.state?.status?.startsWith('RUNNING_') ?? false
+  const activeRunId = isRunning ? task?.state?.active_run?.run_id : null
+  const activeActor = isRunning ? task?.state?.active_run?.actor : null
+  const streamLines = useActorStream(task?.task_id ?? null, activeRunId ?? null)
+
+  // Collapse detail panel when actor stops running
+  useEffect(() => {
+    if (!isRunning) setDetailExpanded(false)
+  }, [isRunning])
+
+  const handleToggleExpand = useCallback(() => {
+    setDetailExpanded(prev => {
+      if (!prev) {
+        setTimeout(() => {
+          const el = transcriptRef.current
+          if (el) el.scrollTop = el.scrollHeight
+        }, 0)
+      }
+      return !prev
+    })
+  }, [])
 
   const isNearBottom = useCallback(() => {
     const el = transcriptRef.current
@@ -72,7 +97,6 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
     setShowScrollBtn(false)
   }, [task?.task_id])
 
-  const isRunning = task?.state?.status?.startsWith('RUNNING_') ?? false
   const isReady = isTaskReadyToStart(task?.state)
   const hasTranscript = (task?.transcript?.length ?? 0) > 0
   const taskText = (task?.task_text || '').trim()
@@ -80,14 +104,23 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
 
   return (
     <div className="flex-1 flex flex-col bg-bg-elevated min-w-0">
-      <div ref={transcriptRef} className="flex-1 overflow-y-auto px-6 py-4">
+      <div ref={transcriptRef} className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
         {!task ? (
           !hasAnyTasks ? (
             <div className="flex items-center justify-center h-full min-h-[60vh]">
               <div className="text-center text-fg-muted max-w-xs">
                 <Sparkles size={36} strokeWidth={1.25} className="mx-auto mb-4 text-fg-muted/60" />
                 <div className="text-lg font-medium mb-2">{t('chat.onboarding.title')}</div>
-                <div className="text-sm leading-relaxed">{t('chat.onboarding.desc')}</div>
+                <div className="text-sm leading-relaxed mb-2">{t('chat.onboarding.desc')}</div>
+                <div className="text-xs text-fg-muted/70 mb-5">{t('chat.onboarding.cliHint')}</div>
+                <button
+                  type="button"
+                  onClick={onCreateTask}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover transition-colors cursor-pointer"
+                >
+                  <Plus size={16} />
+                  {t('chat.onboarding.createTask')}
+                </button>
               </div>
             </div>
           ) : (
@@ -129,13 +162,22 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
                 actor={task.state.active_run.actor}
                 startedAt={task.state.active_run.started_at}
                 round={task.state.round}
+                expanded={detailExpanded}
+                onToggleExpand={handleToggleExpand}
+              />
+            )}
+            {detailExpanded && isRunning && activeActor && (
+              <RunningDetailPanel
+                actor={activeActor}
+                streamLines={streamLines}
+                onCollapse={handleToggleExpand}
               />
             )}
           </>
         )}
       </div>
 
-      {showScrollBtn && (
+      {showScrollBtn && !detailExpanded && (
         <div className="flex justify-center -mt-2 mb-1 relative z-10">
           <button
             type="button"
@@ -151,6 +193,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
         </div>
       )}
 
+      {!task && !hasAnyTasks ? null : (
       <div className="px-4 pb-4">
         {(task?.state?.instruction_queue?.length ?? 0) > 0 && (
           <div className="mx-8 -mb-px relative z-[2]">
@@ -210,6 +253,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
           onAttachmentsChange={onAttachmentsChange}
         />
       </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { app } from 'electron'
 import type {
   AttachmentMeta,
   BootstrapResponse,
@@ -40,7 +41,7 @@ export class BuddyCoreService {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
-    this.runner = new BuddyRunner(this.store)
+    this.runner = new BuddyRunner(this.store, { events: normalized.events })
   }
 
   getStore(): BuddyStore {
@@ -52,11 +53,14 @@ export class BuddyCoreService {
   }
 
   async bootstrap(): Promise<BootstrapResponse> {
+    let locale: string | undefined
+    try { locale = app?.getLocale() } catch { /* not available in test env */ }
     return {
       version: 'native',
       repo_root: '',
       data_root: this.store.dataRoot,
       home_dir: homedir(),
+      locale,
       tasks: await this.store.getTasks(),
       global_settings: await this.store.readGlobalSettings()
     }

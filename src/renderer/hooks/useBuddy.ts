@@ -1,6 +1,7 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult } from '../../shared/types'
+import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, TaskEventEnvelope } from '../../shared/types'
 
 export function useHealthCheck() {
   return useQuery({
@@ -246,4 +247,37 @@ export function useGitCommitAndPush() {
       queryClient.invalidateQueries({ queryKey: ['gitStatus'] })
     }
   })
+}
+
+export interface ActorStreamLine {
+  text: string
+  ts: string
+}
+
+export function useActorStream(taskId: string | null, runId: string | null) {
+  const [lines, setLines] = useState<ActorStreamLine[]>([])
+  const taskIdRef = useRef(taskId)
+  const runIdRef = useRef(runId)
+
+  taskIdRef.current = taskId
+  runIdRef.current = runId
+
+  useEffect(() => {
+    setLines([])
+  }, [runId])
+
+  useEffect(() => {
+    if (!taskId || !runId) return
+    const unsub = api.onTaskEvent((envelope: TaskEventEnvelope) => {
+      if (envelope.task_id !== taskIdRef.current) return
+      if (envelope.event.type !== 'actor.stdout') return
+      if (runIdRef.current && envelope.event.run_id && envelope.event.run_id !== runIdRef.current) return
+      const text = envelope.event.payload?.text as string | undefined
+      if (!text) return
+      setLines(prev => [...prev, { text, ts: envelope.event.ts }])
+    })
+    return unsub
+  }, [taskId, runId])
+
+  return lines
 }

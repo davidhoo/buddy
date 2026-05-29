@@ -10,10 +10,17 @@ export const LANGUAGE_OPTIONS: Array<{ value: LanguagePref; label: string }> = [
 
 export type SendShortcut = 'enter' | 'shift-enter' | 'cmd-enter'
 
+let _serverLocale: string | undefined
+
+export function setServerLocale(locale: string | undefined) {
+  _serverLocale = locale
+}
+
 export function detectLanguage(): Language {
   const candidates = [
     typeof navigator !== 'undefined' ? navigator.language : '',
-    ...(typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
+    ...(typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : []),
+    _serverLocale ?? ''
   ]
   for (const raw of candidates) {
     if (!raw) continue
@@ -193,6 +200,8 @@ const en = {
   'chat.empty.desc': 'Pick a task from the sidebar, or create a new one to start.',
   'chat.onboarding.title': 'Welcome to Buddy',
   'chat.onboarding.desc': 'Create your first task to start a collaborative coding journey with AI agents.',
+  'chat.onboarding.createTask': 'New Task',
+  'chat.onboarding.cliHint': 'Go to Settings first and configure your CLI tools.',
   'chat.created.title': 'Task created',
   'chat.created.desc': 'Click "Start" below to let AI begin.',
   'chat.taskBrief': 'Task brief',
@@ -222,6 +231,9 @@ const en = {
   // Running message + meta
   'running.metaRound': 'Round {n}',
   'running.metaSuffix': 'running · {elapsed}',
+  'running.expandDetail': 'Show live output',
+  'running.collapseDetail': 'Collapse live output',
+  'running.streamingWaiting': 'Waiting for output…',
 
   // StatusBar
   'statusBar.runStatus': 'Run status',
@@ -496,6 +508,8 @@ const zhCN: typeof en = {
   'chat.empty.desc': '在左侧栏选择任务，或创建新任务开始',
   'chat.onboarding.title': '欢迎使用 Buddy',
   'chat.onboarding.desc': '创建你的第一个任务，开始 AI 协作编程之旅。',
+  'chat.onboarding.createTask': '新建任务',
+  'chat.onboarding.cliHint': '请先前往设置页，根据你的环境配置 CLI 工具。',
   'chat.created.title': '任务已创建',
   'chat.created.desc': '点击下方"开始"让 AI 开始工作',
   'chat.taskBrief': '任务说明',
@@ -521,6 +535,9 @@ const zhCN: typeof en = {
 
   'running.metaRound': '第 {n} 轮',
   'running.metaSuffix': '运行中 · {elapsed}',
+  'running.expandDetail': '查看实时输出',
+  'running.collapseDetail': '收起实时输出',
+  'running.streamingWaiting': '等待输出…',
 
   'statusBar.runStatus': '运行状态',
   'statusBar.taskSettings': '任务设置',
@@ -791,6 +808,8 @@ const zhTW: typeof en = {
   'chat.empty.desc': '在左側選擇任務，或建立新任務開始',
   'chat.onboarding.title': '歡迎使用 Buddy',
   'chat.onboarding.desc': '建立你的第一個任務，開始 AI 協作程式設計之旅。',
+  'chat.onboarding.createTask': '新增任務',
+  'chat.onboarding.cliHint': '請先前往設定頁，根據你的環境配置 CLI 工具。',
   'chat.created.title': '任務已建立',
   'chat.created.desc': '點擊下方「開始」讓 AI 開始工作',
   'chat.taskBrief': '任務說明',
@@ -817,6 +836,9 @@ const zhTW: typeof en = {
 
   'running.metaRound': '第 {n} 輪',
   'running.metaSuffix': '執行中 · {elapsed}',
+  'running.expandDetail': '查看即時輸出',
+  'running.collapseDetail': '收合即時輸出',
+  'running.streamingWaiting': '等待輸出…',
 
   'statusBar.runStatus': '執行狀態',
   'statusBar.taskSettings': '任務設定',

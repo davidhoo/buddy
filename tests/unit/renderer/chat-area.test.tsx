@@ -98,7 +98,7 @@ describe('ChatArea ready task controls', () => {
     expect(html).toContain('Make the user message card wider.')
     expect(html).toContain('task-brief-card')
     expect(html.indexOf('Make the user message card wider.')).toBeLessThan(html.indexOf('first round message'))
-    const transcriptContainerIdx = html.indexOf('flex-1 overflow-y-auto px-6 py-4')
+    const transcriptContainerIdx = html.indexOf('overflow-y-auto px-6 py-4')
     expect(transcriptContainerIdx).toBeGreaterThanOrEqual(0)
     expect(html.indexOf('task-brief-card')).toBeGreaterThan(transcriptContainerIdx)
   })
@@ -117,6 +117,6 @@ describe('ChatArea ready task controls', () => {
       />
     )
 
-    expect(html).toContain('title="开始"')
+    expect(html).toContain('title="Start"')
   })
 })

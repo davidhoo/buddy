@@ -25,7 +25,7 @@ Rules:
 - Always output valid JSON matching this structure.
 - Output raw JSON only - do NOT wrap it in a Markdown code block, and do NOT add any text before or after the JSON.
 - Avoid unescaped double quotes inside \`content\`; use single quotes or escape them.
-- Use \`type=break\` when: the task is fully completed, you are blocked and need human input, or continuing would be counterproductive.
+- Use \`type=break\` when: the task is fully completed, you are blocked and need human input, continuing would be counterproductive, or the other actor has failed repeatedly on the same issue across multiple rounds without meaningful progress.
 - Use \`type=chat\` for all normal responses.
 - The \`content\` field contains your actual response (markdown is fine).
 
@@ -108,7 +108,7 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
     if (input.actor === implementer) {
       parts.push('Continue the implementation work. Report changed files, what you did, and blockers.')
     } else {
-      parts.push('Review the current task state. Report blocking findings first, then concise next action.')
+      parts.push('Review the current task state. Report blocking findings first, then concise next action. If you detect that the other actor is making repeated errors or the task is stuck in a circular pattern without progress, signal `type=break` to stop and let a human decide.')
     }
   }
 
@@ -137,6 +137,16 @@ export function runtimeSettingsLines(
   ]
   if (repoRoot) lines.push(`- Repository: ${repoRoot}`)
   if (state.countdown?.deadline) lines.push(`- Active countdown deadline: ${state.countdown.deadline}`)
+  const consecutiveFailures = numberValue(state.consecutive_failures, 0)
+  if (consecutiveFailures > 0) {
+    lines.push(`- Consecutive failures: ${consecutiveFailures}`)
+    if (state.latest_failure?.message) {
+      const msg = state.latest_failure.message.length > 200
+        ? state.latest_failure.message.slice(0, 200) + '...'
+        : state.latest_failure.message
+      lines.push(`- Latest failure: ${msg}`)
+    }
+  }
   return lines
 }
 

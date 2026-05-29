@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp, PanelBottomClose } from 'lucide-react'
 import { ACTOR_LABEL_KEY } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
+import type { ActorStreamLine } from '../hooks/useBuddy'
 
 const HINTS_ZH_CN = [
   '解析中', '推理中', '计划中', '执行中', '检索中', '生成中', '校验中', '重构中', '合并中', '收束中',
@@ -66,7 +68,18 @@ function actorColorVar(actor: string): string {
   return 'var(--border)'
 }
 
-export function RunningStatusMessage({ actor, startedAt }: { actor: string; startedAt: string; round?: number }) {
+export function RunningStatusMessage({
+  actor,
+  startedAt,
+  expanded,
+  onToggleExpand
+}: {
+  actor: string
+  startedAt: string
+  round?: number
+  expanded?: boolean
+  onToggleExpand?: () => void
+}) {
   const t = useT()
   const lang = useLanguage()
   const [hint, setHint] = useState(() => pickHint(lang))
@@ -91,20 +104,94 @@ export function RunningStatusMessage({ actor, startedAt }: { actor: string; star
   }, [startedAt, lang])
 
   const metaText = t('running.metaSuffix', { elapsed })
-
   const actorLabel = ACTOR_LABEL_KEY[actor] ? t(ACTOR_LABEL_KEY[actor]) : actor
 
   return (
-    <div className="flex mb-3 justify-start">
-      <div className="message w-full running-status" style={{ '--actor-color': actorColorVar(actor), borderColor: actorColorVar(actor) } as React.CSSProperties}>
+    <div className="flex justify-start">
+      <div className={`message w-full running-status ${expanded ? 'running-status-expanded' : 'mb-3'}`} style={{ '--actor-color': actorColorVar(actor), borderColor: actorColorVar(actor) } as React.CSSProperties}>
         <div className="message-head">
           <span className="role" style={{ color: actorColorVar(actor) }}>{actorLabel}</span>
-          <span>{metaText}</span>
+          <div className="flex items-center gap-2">
+            <span>{metaText}</span>
+            {onToggleExpand && (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="running-expand-btn"
+                title={expanded ? t('running.collapseDetail') : t('running.expandDetail')}
+              >
+                {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            )}
+          </div>
         </div>
         <div className="running-status-body">
           {hint}{dotsPhases[dots]}
         </div>
       </div>
+    </div>
+  )
+}
+
+export function RunningDetailPanel({
+  actor,
+  streamLines,
+  onCollapse
+}: {
+  actor: string
+  streamLines: ActorStreamLine[]
+  onCollapse?: () => void
+}) {
+  const t = useT()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const userScrolledUp = useRef(false)
+
+  const isNearBottom = () => {
+    const el = scrollRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const handler = () => {
+      userScrolledUp.current = !isNearBottom()
+    }
+    el.addEventListener('scroll', handler, { passive: true })
+    return () => el.removeEventListener('scroll', handler)
+  }, [])
+
+  useEffect(() => {
+    if (scrollRef.current && !userScrolledUp.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [streamLines])
+
+  return (
+    <div className="running-detail-panel" style={{ '--actor-color': actorColorVar(actor) } as React.CSSProperties}>
+      <div ref={scrollRef} className="running-detail-content">
+        {streamLines.length === 0 ? (
+          <div className="running-detail-empty">{t('running.streamingWaiting')}</div>
+        ) : (
+          streamLines.map((line, i) => (
+            <div key={i} className="running-detail-line">{line.text}</div>
+          ))
+        )}
+      </div>
+      {onCollapse && (
+        <div className="running-detail-footer">
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="running-detail-collapse-btn"
+            title={t('running.collapseDetail')}
+          >
+            <PanelBottomClose size={14} />
+            <span>{t('common.collapse')}</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

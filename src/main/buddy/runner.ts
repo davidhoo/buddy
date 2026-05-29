@@ -13,9 +13,10 @@ import type {
 } from '../../shared/types'
 import { buildLauncherCommand, commandKindFor, runLauncher, type LauncherCommandKind } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
-import { extractActorOutput, parseActorEvents, parseBuddyMessage, ParsedActorLine } from './parsers'
+import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, ParsedActorLine } from './parsers'
 import { buildActorPrompt, hashText, nextActor as nextActorForSettings } from './prompts'
 import { BuddyStore } from './store'
+import { BuddyEventBus } from './events'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -26,16 +27,19 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
 
 interface RunnerOptions {
   executeLaunchers?: boolean
+  events?: BuddyEventBus
 }
 
 export class BuddyRunner {
   private readonly executeLaunchers: boolean
+  private readonly events?: BuddyEventBus
 
   constructor(
     private readonly store: BuddyStore,
     options: RunnerOptions = {}
   ) {
     this.executeLaunchers = options.executeLaunchers ?? true
+    this.events = options.events
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
@@ -326,6 +330,25 @@ export class BuddyRunner {
         timeoutMs: launcher.timeout_seconds * 1000,
         onStdout: (line) => {
           outputLines.push(line)
+          if (this.events) {
+            try {
+              const parsed = parseActorLine(actor, line)
+              if (parsed.text) {
+                this.events.publish({
+                  workspace_key: workspaceKey,
+                  task_id: taskId,
+                  event: {
+                    seq: 0,
+                    type: 'actor.stdout',
+                    actor,
+                    ts: new Date().toISOString(),
+                    run_id: runId,
+                    payload: { text: parsed.text }
+                  }
+                })
+              }
+            } catch { /* ignore parse errors for streaming */ }
+          }
         },
         onStderr: (line) => stderrLines.push(line)
       })
