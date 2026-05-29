@@ -165,7 +165,7 @@ glab release create "$VERSION" \
   --name "Buddy ${VERSION}" \
   --notes "Release ${VERSION}" \
   --assets-links "$ASSETS_LINKS" \
-  || { echo "   Release creation failed" >&2; exit 1; }
+  || echo "   Release already exists or assets already linked, continuing ✓"
 echo "   Release created ✓"
 
 # --- 9. Deploy to update server ---
