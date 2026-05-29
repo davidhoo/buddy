@@ -171,7 +171,9 @@ if glab release view "$VERSION" >/dev/null 2>&1; then
     link_url="$(echo "$link" | cut -d'|' -f3-)"
     glab api --method POST "/projects/${PROJECT_ID}/releases/${VERSION}/assets/links" \
       -f "name=$link_name" -f "url=$link_url" -f "link_type=package" >/dev/null 2>&1 \
-      || true
+      || glab api --method PUT "/projects/${PROJECT_ID}/releases/${VERSION}/assets/links" \
+        -f "name=$link_name" -f "url=$link_url" -f "link_type=package" >/dev/null 2>&1 \
+        || true
   done
 else
   glab release create "$VERSION" \
