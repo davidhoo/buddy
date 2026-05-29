@@ -363,7 +363,7 @@ const en = {
   'updater.error': 'Update failed',
   'updater.sidebarUpdate': 'Update v{version}',
   'updater.sidebarDownloading': 'Updating…',
-  'updater.sidebarReady': 'Ready v{version}',
+  'updater.sidebarReady': 'Restart v{version}',
 }
 
 // Simplified Chinese — preserves the original wording in the codebase.
@@ -672,7 +672,7 @@ const zhCN: typeof en = {
   'updater.error': '更新失败',
   'updater.sidebarUpdate': '更新 v{version}',
   'updater.sidebarDownloading': '更新中…',
-  'updater.sidebarReady': '就绪 v{version}',
+  'updater.sidebarReady': '重启并更新 v{version}',
 }
 
 // Traditional Chinese
@@ -983,7 +983,7 @@ const zhTW: typeof en = {
   'updater.error': '更新失敗',
   'updater.sidebarUpdate': '更新 v{version}',
   'updater.sidebarDownloading': '更新中…',
-  'updater.sidebarReady': '就緒 v{version}',
+  'updater.sidebarReady': '重新啟動並更新 v{version}',
 }
 
 const dictionaries: Record<Language, typeof en> = {

@@ -12,7 +12,8 @@ import {
   SquarePlus,
   Sun,
   Trash2,
-  Upload
+  Upload,
+  RotateCw
 } from 'lucide-react'
 import { Task, TaskStatus } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
@@ -324,11 +325,15 @@ function ChatSidebar({
               className={`px-2 py-0.5 text-[10px] font-medium rounded-full flex items-center gap-1 ${
                 updateStatus === 'downloading'
                   ? 'bg-accent-soft text-fg-secondary cursor-default'
-                  : 'bg-accent-soft text-accent-primary hover:bg-accent-soft-hover'
+                  : updateStatus === 'downloaded'
+                    ? 'bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover'
+                    : 'bg-accent-soft text-accent-primary hover:bg-accent-soft-hover'
               }`}
               disabled={updateStatus === 'downloading'}
             >
-              <Upload size={10} strokeWidth={2.5} />
+              {updateStatus === 'downloaded'
+                ? <RotateCw size={10} strokeWidth={2.5} />
+                : <Upload size={10} strokeWidth={2.5} />}
               {updateStatus === 'downloading'
                 ? t('updater.sidebarDownloading')
                 : updateStatus === 'downloaded'
