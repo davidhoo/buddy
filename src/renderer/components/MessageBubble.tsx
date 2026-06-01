@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Wrench, Terminal, FilePen, FileText, Brain, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon } from 'lucide-react'
-import { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry } from '../../shared/types'
+import { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry, TaskStats } from '../../shared/types'
 import { renderMarkdown } from '../lib/markdown'
 import { formatDuration, formatTimeWithRelativeDate, decodeErrorText, unescapeText, ACTOR_LABEL_KEY, actorText } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
-import { useRoundEvents } from '../hooks/useBuddy'
+import { useRoundEvents, useTaskStats } from '../hooks/useBuddy'
 import { translate } from '../lib/i18n'
 
 interface MessageBubbleProps {
@@ -239,6 +239,7 @@ export function MessageBubble({ entry, taskId, workspaceKey }: MessageBubbleProp
       : entry.role
 
   const noticeClass = isRoundNotice ? 'round-notice' : isHealthCheckFailed ? 'health-check-failed' : isHealthCheck ? 'health-check' : ''
+  const isTaskDone = isRoundNotice && meta.done_reason === 'dual_break_confirmed'
 
   return (
     <div className={`flex mb-3 ${isHuman ? 'justify-end' : 'justify-start'}`}>
@@ -255,14 +256,17 @@ export function MessageBubble({ entry, taskId, workspaceKey }: MessageBubbleProp
           dangerouslySetInnerHTML={{ __html: html }}
         />
         {runId && !isHuman && !isSystem && taskId && workspaceKey && (
-          <RoundEvents taskId={taskId} runId={runId} workspaceKey={workspaceKey} actor={entry.role} />
+          <RoundEvents taskId={taskId} runId={runId} workspaceKey={workspaceKey} actor={entry.role} elapsedMs={meta.elapsed_ms as number | undefined} />
+        )}
+        {isTaskDone && taskId && workspaceKey && (
+          <TaskDoneStats taskId={taskId} workspaceKey={workspaceKey} />
         )}
       </div>
     </div>
   )
 }
 
-function RoundEvents({ taskId, runId, workspaceKey, actor }: { taskId: string; runId: string; workspaceKey: string; actor: string }) {
+function RoundEvents({ taskId, runId, workspaceKey, actor, elapsedMs }: { taskId: string; runId: string; workspaceKey: string; actor: string; elapsedMs?: number }) {
   const t = useT()
   const lang = useLanguage()
   const [expanded, setExpanded] = useState(false)
@@ -302,8 +306,8 @@ function RoundEvents({ taskId, runId, workspaceKey, actor }: { taskId: string; r
                 {(data.inputTokens > 0 || data.outputTokens > 0) && (
                   <span>In: {data.inputTokens.toLocaleString()} · Out: {data.outputTokens.toLocaleString()}</span>
                 )}
-                {data.durationMs != null && (
-                  <span>{formatDuration(data.durationMs)}</span>
+                {(elapsedMs != null || data.durationMs != null) && (
+                  <span>{formatDuration(elapsedMs ?? data.durationMs!)}</span>
                 )}
                 {data.costUsd != null && (
                   <span>${data.costUsd.toFixed(4)}</span>
@@ -316,6 +320,60 @@ function RoundEvents({ taskId, runId, workspaceKey, actor }: { taskId: string; r
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function TaskDoneStats({ taskId, workspaceKey }: { taskId: string; workspaceKey: string }) {
+  const t = useT()
+  const lang = useLanguage()
+  const { data, isLoading } = useTaskStats(taskId, workspaceKey)
+
+  if (isLoading) {
+    return <div className="task-done-stats-loading">...</div>
+  }
+  if (!data || data.actors.length === 0) return null
+
+  return (
+    <div className="task-done-stats">
+      <table className="task-done-stats-table">
+        <thead>
+          <tr>
+            <th />
+            <th>{t('taskStats.model')}</th>
+            <th>{t('taskStats.input')}</th>
+            <th>{t('taskStats.output')}</th>
+            <th>{t('taskStats.cache')}</th>
+            <th>{t('taskStats.duration')}</th>
+            {data.totalCostUsd != null && <th>{t('taskStats.cost')}</th>}
+            <th>{t('taskStats.rounds')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.actors.map((a) => (
+            <tr key={a.actor}>
+              <td className="task-done-stats-actor">{actorText(a.actor, lang)}</td>
+              <td className="task-done-stats-model">{a.model ?? '-'}</td>
+              <td className="task-done-stats-num">{a.inputTokens.toLocaleString()}</td>
+              <td className="task-done-stats-num">{a.outputTokens.toLocaleString()}</td>
+              <td className="task-done-stats-num">{a.cacheReadTokens.toLocaleString()}</td>
+              <td>{formatDuration(a.durationMs)}</td>
+              {data.totalCostUsd != null && <td>{a.costUsd != null ? `$${a.costUsd.toFixed(4)}` : '-'}</td>}
+              <td className="task-done-stats-num">{a.rounds}</td>
+            </tr>
+          ))}
+          <tr className="task-done-stats-total">
+            <td>{t('taskStats.total')}</td>
+            <td />
+            <td className="task-done-stats-num">{data.totalInputTokens.toLocaleString()}</td>
+            <td className="task-done-stats-num">{data.totalOutputTokens.toLocaleString()}</td>
+            <td className="task-done-stats-num">{data.totalCacheReadTokens.toLocaleString()}</td>
+            <td>{formatDuration(data.totalDurationMs)}</td>
+            {data.totalCostUsd != null && <td>${data.totalCostUsd.toFixed(4)}</td>}
+            <td className="task-done-stats-num">{data.totalRounds}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   )
 }

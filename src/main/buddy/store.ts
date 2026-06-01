@@ -20,9 +20,11 @@ import type {
   RoundEventEntry,
   RoundEventSummary,
   Task,
+  TaskActorStats,
   TaskDetail,
   TaskSettings,
   TaskState,
+  TaskStats,
   TranscriptEntry
 } from '../../shared/types'
 import { normalizeGlobalSettings, normalizeLaunchers } from '../../shared/defaults'
@@ -316,6 +318,7 @@ export class BuddyStore {
     const events: RoundEventEntry[] = []
     let inputTokens = 0
     let outputTokens = 0
+    let cacheReadTokens = 0
     let durationMs: number | undefined
     let costUsd: number | undefined
     let model: string | undefined
@@ -366,8 +369,10 @@ export class BuddyStore {
 
       if (event.type === 'result') {
         if (event.usage) {
-          inputTokens = (event.usage as Record<string, unknown>).input_tokens as number ?? inputTokens
-          outputTokens = (event.usage as Record<string, unknown>).output_tokens as number ?? outputTokens
+          const u = event.usage as Record<string, unknown>
+          inputTokens = (u.input_tokens as number) ?? inputTokens
+          outputTokens = (u.output_tokens as number) ?? outputTokens
+          cacheReadTokens = (u.cache_read_input_tokens as number) ?? cacheReadTokens
         }
         if (event.duration_ms != null) durationMs = event.duration_ms as number
         if (event.total_cost_usd != null) costUsd = event.total_cost_usd as number
@@ -443,7 +448,8 @@ export class BuddyStore {
         const tokens = objectValue(part?.tokens)
         if (tokens) {
           const cacheRead = (objectValue(tokens.cache)?.read as number) ?? 0
-          inputTokens = ((tokens.input as number) ?? 0) + cacheRead
+          inputTokens = (tokens.input as number) ?? 0
+          cacheReadTokens = cacheRead
           outputTokens = (tokens.output as number) ?? outputTokens
         }
         if (part?.cost != null) costUsd = part.cost as number
@@ -468,7 +474,89 @@ export class BuddyStore {
       model = await detectModelFromConfig(actor)
     }
 
-    return { runId, events, inputTokens, outputTokens, durationMs, costUsd, model }
+    return { runId, events, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
+  }
+
+  async getTaskStats(taskId: string, workspaceKey: string): Promise<TaskStats | null> {
+    const transcript = await this.readTranscriptJsonl(taskId, workspaceKey)
+    if (transcript.length === 0) return null
+
+    // Collect run_ids grouped by actor, and track elapsed_ms per run
+    const actorRuns = new Map<string, { runId: string; elapsedMs: number }[]>()
+
+    const ACTOR_ROLES = new Set(['claude', 'codex', 'opencode', 'kimi'])
+    for (const entry of transcript) {
+      if (!ACTOR_ROLES.has(entry.role)) continue
+      const meta = entry.meta as Record<string, unknown> | undefined
+      const runId = meta?.run_id as string | undefined
+      if (!runId) continue
+      const elapsedMs = (meta?.elapsed_ms as number) ?? 0
+      if (!actorRuns.has(entry.role)) {
+        actorRuns.set(entry.role, [])
+      }
+      actorRuns.get(entry.role)!.push({ runId, elapsedMs })
+    }
+
+    if (actorRuns.size === 0) return null
+
+    const actors: TaskActorStats[] = []
+
+    for (const [actor, runs] of actorRuns) {
+      let inputTokens = 0
+      let outputTokens = 0
+      let cacheReadTokens = 0
+      let durationMs = 0
+      let costUsd: number | undefined
+      let model: string | undefined
+
+      for (const run of runs) {
+        durationMs += run.elapsedMs
+        const summary = await this.getRoundEvents(taskId, run.runId, workspaceKey, actor)
+        if (summary) {
+          inputTokens += summary.inputTokens
+          outputTokens += summary.outputTokens
+          cacheReadTokens += summary.cacheReadTokens
+          if (summary.durationMs != null && summary.durationMs > 0) {
+            // Use actor-reported duration if available, otherwise fall back to elapsed_ms
+            durationMs = durationMs - run.elapsedMs + summary.durationMs
+          }
+          if (summary.costUsd != null) {
+            costUsd = (costUsd ?? 0) + summary.costUsd
+          }
+          // Use the latest model reported by the actor
+          if (summary.model) model = summary.model
+        }
+      }
+
+      actors.push({
+        actor,
+        model,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        durationMs,
+        costUsd,
+        rounds: runs.length
+      })
+    }
+
+    const totalInputTokens = actors.reduce((s, a) => s + a.inputTokens, 0)
+    const totalOutputTokens = actors.reduce((s, a) => s + a.outputTokens, 0)
+    const totalCacheReadTokens = actors.reduce((s, a) => s + a.cacheReadTokens, 0)
+    const totalDurationMs = actors.reduce((s, a) => s + a.durationMs, 0)
+    const totalRounds = actors.reduce((s, a) => s + a.rounds, 0)
+    const hasCost = actors.some(a => a.costUsd != null)
+    const totalCostUsd = hasCost ? actors.reduce((s, a) => s + (a.costUsd ?? 0), 0) : undefined
+
+    return {
+      actors,
+      totalInputTokens,
+      totalOutputTokens,
+      totalCacheReadTokens,
+      totalDurationMs,
+      totalCostUsd,
+      totalRounds
+    }
   }
 
   private async writeWorkspaceMetadata(workspaceKey: string, repoRoot: string, now: string): Promise<void> {
@@ -525,7 +613,7 @@ export class BuddyStore {
     return this.readTranscriptJsonl(taskId, workspaceKey)
   }
 
-  private async readTranscriptJsonl(taskId: string, workspaceKey: string): Promise<TranscriptEntry[]> {
+  async readTranscriptJsonl(taskId: string, workspaceKey: string): Promise<TranscriptEntry[]> {
     const text = await readOptionalText(this.transcriptJsonlPath(taskId, workspaceKey))
     if (!text.trim()) return []
 

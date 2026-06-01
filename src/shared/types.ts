@@ -252,9 +252,31 @@ export interface RoundEventSummary {
   events: RoundEventEntry[]
   inputTokens: number
   outputTokens: number
+  cacheReadTokens: number
   durationMs?: number
   costUsd?: number
   model?: string
+}
+
+export interface TaskActorStats {
+  actor: string
+  model?: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  durationMs: number
+  costUsd?: number
+  rounds: number
+}
+
+export interface TaskStats {
+  actors: TaskActorStats[]
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalDurationMs: number
+  totalCostUsd?: number
+  totalRounds: number
 }
 
 export type GitFileStatusCode = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | '?'

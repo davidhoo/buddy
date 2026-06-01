@@ -247,6 +247,16 @@ const en = {
   // Round events
   'roundEvents.expand': 'Details',
 
+  // Task stats
+  'taskStats.model': 'Model',
+  'taskStats.input': 'Input',
+  'taskStats.output': 'Output',
+  'taskStats.cache': 'Cache',
+  'taskStats.duration': 'Duration',
+  'taskStats.cost': 'Cost',
+  'taskStats.rounds': 'Rounds',
+  'taskStats.total': 'Total',
+
   // StatusBar
   'statusBar.runStatus': 'Run status',
   'statusBar.taskSettings': 'Task settings',
@@ -574,6 +584,15 @@ const zhCN: typeof en = {
 
   'roundEvents.expand': '详情',
 
+  'taskStats.model': '模型',
+  'taskStats.input': '输入',
+  'taskStats.output': '输出',
+  'taskStats.cache': '缓存',
+  'taskStats.duration': '耗时',
+  'taskStats.cost': '费用',
+  'taskStats.rounds': '轮次',
+  'taskStats.total': '合计',
+
   'statusBar.runStatus': '运行状态',
   'statusBar.taskSettings': '任务设置',
   'statusBar.events': '过程事件',
@@ -897,6 +916,15 @@ const zhTW: typeof en = {
   'running.streamingWaiting': '等待輸出…',
 
   'roundEvents.expand': '詳情',
+
+  'taskStats.model': '模型',
+  'taskStats.input': '輸入',
+  'taskStats.output': '輸出',
+  'taskStats.cache': '快取',
+  'taskStats.duration': '耗時',
+  'taskStats.cost': '費用',
+  'taskStats.rounds': '輪次',
+  'taskStats.total': '合計',
 
   'statusBar.runStatus': '執行狀態',
   'statusBar.taskSettings': '任務設定',

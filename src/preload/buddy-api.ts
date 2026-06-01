@@ -12,7 +12,8 @@ import type {
   StartTaskInput,
   Task,
   TaskDetail,
-  TaskEventEnvelope
+  TaskEventEnvelope,
+  TaskStats
 } from '../shared/types'
 
 type Listener = (event: unknown, payload: TaskEventEnvelope) => void
@@ -59,6 +60,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:getEvents', taskId, since, workspaceKey) as Promise<{ events: Event[] }>,
     getRoundEvents: (taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null> =>
       ipc.invoke('buddy:getRoundEvents', taskId, runId, workspaceKey, actor) as Promise<RoundEventSummary | null>,
+    getTaskStats: (taskId: string, workspaceKey?: string): Promise<TaskStats | null> =>
+      ipc.invoke('buddy:getTaskStats', taskId, workspaceKey) as Promise<TaskStats | null>,
     updateGlobalSettings: (settings: GlobalSettings): Promise<GlobalSettings> =>
       ipc.invoke('buddy:updateGlobalSettings', settings) as Promise<GlobalSettings>,
     gitStatus: (repoRoot: string): Promise<unknown> =>

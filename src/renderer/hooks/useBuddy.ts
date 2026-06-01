@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope } from '../../shared/types'
+import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
 
 export function useHealthCheck() {
   return useQuery({
@@ -254,6 +254,15 @@ export function useRoundEvents(taskId: string | null, runId: string | null, work
     queryKey: ['roundEvents', taskId, runId, actor],
     queryFn: () => api.getRoundEvents(taskId!, runId!, workspaceKey, actor),
     enabled: !!taskId && !!runId,
+    staleTime: Infinity
+  })
+}
+
+export function useTaskStats(taskId: string | null, workspaceKey?: string) {
+  return useQuery({
+    queryKey: ['taskStats', taskId],
+    queryFn: () => api.getTaskStats(taskId!, workspaceKey),
+    enabled: !!taskId,
     staleTime: Infinity
   })
 }

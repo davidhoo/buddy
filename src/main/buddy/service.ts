@@ -14,7 +14,8 @@ import type {
   SendMessageInput,
   StartTaskInput,
   Task,
-  TaskDetail
+  TaskDetail,
+  TaskStats
 } from '../../shared/types'
 import { BuddyEventBus } from './events'
 import {
@@ -130,6 +131,11 @@ export class BuddyCoreService {
   getRoundEvents(taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
     return this.store.getRoundEvents(taskId, runId, workspaceKey, actor)
+  }
+
+  getTaskStats(taskId: string, workspaceKey?: string): Promise<TaskStats | null> {
+    if (!workspaceKey) throw new Error('workspaceKey is required')
+    return this.store.getTaskStats(taskId, workspaceKey)
   }
 
   updateGlobalSettings(settings: GlobalSettings): Promise<GlobalSettings> {

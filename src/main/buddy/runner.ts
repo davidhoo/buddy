@@ -773,7 +773,7 @@ export class BuddyRunner {
           workspaceKey,
           'system',
           `${actorDisplayName(pendingBreak?.actor)} 和 ${actorDisplayName(actor)} 均确认任务完成，任务结束。`,
-          { kind: 'round_notice', round }
+          { kind: 'round_notice', round, done_reason: 'dual_break_confirmed' }
         )
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'task.done',

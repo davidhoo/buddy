@@ -22,6 +22,7 @@ describe('registerBuddyHandlers', () => {
       interruptAndInsert: vi.fn(),
       getEvents: vi.fn(),
       getRoundEvents: vi.fn(),
+      getTaskStats: vi.fn(),
       updateGlobalSettings: vi.fn(),
       gitStatus: vi.fn(),
       gitStageAll: vi.fn(),
@@ -35,6 +36,6 @@ describe('registerBuddyHandlers', () => {
 
     expect(handle).toHaveBeenCalledWith('buddy:bootstrap', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:startTask', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(23)
+    expect(handle).toHaveBeenCalledTimes(24)
   })
 })
