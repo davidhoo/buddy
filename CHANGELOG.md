@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.12] - 2026-06-01
+
+### Fixed
+- 修复 Claude Code 仅输出 system/hook 噪声事件时，原始 JSON 被当作错误消息展示的问题；现在过滤噪声事件并提供更有意义的错误提示
+- 修复 `release.sh` 重复发布时资产链接创建失败的问题；改为先删除已有链接再重新创建，并打印警告而非静默忽略错误
+
+### Changed
+- Codex 输出解析增强：支持 tool_call 事件的工具名称和参数展示，优先提取 text/output_text 类型内容
+
+---
+
 ## [1.0.11] - 2026-06-01
 
 ### Added
@@ -217,6 +228,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.12
 [1.0.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.11
 [1.0.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.10
 [1.0.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.9
