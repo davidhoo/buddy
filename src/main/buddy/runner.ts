@@ -588,7 +588,7 @@ export class BuddyRunner {
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
-      const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
+      let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(actor, rawEvents)
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
@@ -607,8 +607,29 @@ export class BuddyRunner {
       }
 
       // Ghost output: raw events exist but nothing was extracted (unrecognized error format)
-      if (!outputText.trim() && rawEvents.trim()) {
-        throw new Error(rawEvents.trim().slice(0, 500))
+      // However, if parsedLines contain text (e.g. step_start placeholders), use those instead of throwing
+      // Skip noise events (system/hook) that carry no actor content
+      const nonNoiseEvents = rawEvents.trim().split(/\r?\n/).filter((line) => {
+        if (!line.trim()) return false
+        try {
+          const obj = JSON.parse(line)
+          // Filter out system/hook noise events
+          return !(obj.type === 'system' && typeof obj.subtype === 'string' && (obj.subtype as string).startsWith('hook_'))
+        } catch {
+          return true // keep non-JSON lines
+        }
+      })
+      const nonNoiseRaw = nonNoiseEvents.join('\n')
+      if (!outputText.trim() && nonNoiseRaw.trim()) {
+        const parsedText = parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
+        if (parsedText) {
+          outputText = parsedText
+        } else {
+          throw new Error(nonNoiseRaw.trim().slice(0, 500))
+        }
+      } else if (!outputText.trim() && rawEvents.trim() && !nonNoiseRaw.trim()) {
+        // All events were noise (e.g. only system/hook events) — actor produced no real output
+        throw new Error('Actor exited without producing any output')
       }
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)

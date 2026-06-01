@@ -3,6 +3,8 @@ export interface ParsedActorLine {
   sessionId?: string
   threadId?: string
   rawType?: string
+  /** True for noise events (e.g. system/hook) that carry no actor content */
+  noise?: boolean
 }
 
 export type BuddyMessage =
@@ -18,26 +20,40 @@ export function parseClaudeStreamLine(line: string): ParsedActorLine {
         .join('')
     : undefined
 
+  const isHook = json.type === 'system' && (typeof json.subtype === 'string' && (json.subtype as string).startsWith('hook_'))
+
   return {
     text,
     sessionId: claudeSessionIdFromEvent(json),
-    rawType: json.type
+    rawType: json.type,
+    noise: isHook
   }
 }
 
 export function parseCodexJsonLine(line: string): ParsedActorLine {
   const json = JSON.parse(line)
-  const itemText = json.item && typeof json.item === 'object' && !Array.isArray(json.item)
-    ? (json.item as { text?: unknown }).text
-    : undefined
-  const text = Array.isArray(json.content)
-    ? json.content
-        .filter((part: { text?: string }) => part.text)
-        .map((part: { text: string }) => part.text)
-        .join('')
-    : typeof itemText === 'string'
-      ? itemText
-      : json.message
+  let text: string | undefined
+
+  if (Array.isArray(json.content)) {
+    const parts: string[] = []
+    for (const part of json.content as Record<string, unknown>[]) {
+      if ((part.type === 'text' || part.type === 'output_text') && part.text) {
+        parts.push(part.text as string)
+      } else if (part.type === 'tool_call' && part.name) {
+        const detail = codexToolDetail(part.name as string, part.input)
+        parts.push(detail ? `🔧 ${part.name} ${detail}` : `🔧 ${part.name}`)
+      }
+    }
+    text = parts.join('') || undefined
+  }
+
+  if (!text) {
+    const itemText = json.item && typeof json.item === 'object' && !Array.isArray(json.item)
+      ? (json.item as { text?: unknown }).text
+      : undefined
+    if (typeof itemText === 'string') text = itemText
+    else if (json.message) text = textValue(json.message)
+  }
 
   return {
     text,
@@ -45,6 +61,22 @@ export function parseCodexJsonLine(line: string): ParsedActorLine {
     threadId: stableThreadIdFromEvent('codex', json) ?? textValue(json.thread_id),
     rawType: json.type
   }
+}
+
+function codexToolDetail(toolName: string, input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const obj = input as Record<string, unknown>
+  if (toolName === 'shell' || toolName === 'bash') {
+    const cmd = textValue(obj.command) ?? textValue(obj.cmd)
+    if (cmd) return truncate(cmd, 80)
+  }
+  const path = textValue(obj.path) ?? textValue(obj.file_path) ?? textValue(obj.file)
+  if (path) return truncate(path, 80)
+  for (const v of Object.values(obj)) {
+    const s = textValue(v)
+    if (s) return truncate(s, 80)
+  }
+  return undefined
 }
 
 export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
@@ -60,7 +92,10 @@ export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
     text = '...'
   } else if (json.type === 'tool_use') {
     const toolName = part?.tool ?? 'tool'
-    text = `🔧 ${toolName}`
+    const state = objectValue(part?.state)
+    const input = state?.input ?? part?.input
+    const detail = openCodeToolDetail(toolName, input)
+    text = detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`
   }
 
   return {
@@ -70,12 +105,42 @@ export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
   }
 }
 
-export function parseKimiJsonLine(line: string): ParsedActorLine {
+export function parseKimiJSONLine(line: string): ParsedActorLine {
   const json = JSON.parse(line)
-  const text = json.role === 'assistant' ? textValue(json.content) : undefined
+  const part = objectValue(json.part)
+  let text: string | undefined
+
+  // New stream-json format (mirrors OpenCode event types)
+  if (json.type === 'text') {
+    text = textValue(part?.text)
+  } else if (json.type === 'error') {
+    text = stringifyValue(json.error)
+  } else if (json.type === 'step_start') {
+    text = '...'
+  } else if (json.type === 'tool_use') {
+    const toolName = typeof part?.tool === 'string' ? part.tool : 'tool'
+    const state = objectValue(part?.state)
+    const input: unknown = state?.input ?? part?.input
+    const detail = kimiToolDetail(toolName, input)
+    text = detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`
+  } else if (json.role === 'assistant') {
+    // Legacy OpenAI-compatible format
+    text = textValue(json.content)
+    if (Array.isArray(json.tool_calls)) {
+      const toolTexts = (json.tool_calls as Record<string, unknown>[]).map(tc => {
+        const fn = objectValue(tc.function)
+        const name = textValue(fn?.name ?? tc.name) ?? 'tool'
+        const args = fn?.arguments
+        const detail = kimiToolDetail(name, args)
+        return detail ? `🔧 ${name} ${detail}` : `🔧 ${name}`
+      })
+      if (toolTexts.length) text = toolTexts.join(' ')
+    }
+  }
 
   const sessionId = stableSessionIdFromEvent('kimi', json)
     ?? (json.role === 'meta' && json.type === 'session.resume_hint' ? textValue(json.session_id) : undefined)
+    ?? textValue(json.sessionID)
 
   return {
     text,
@@ -84,11 +149,34 @@ export function parseKimiJsonLine(line: string): ParsedActorLine {
   }
 }
 
+function kimiToolDetail(toolName: string, args: unknown): string | undefined {
+  if (!args) return undefined
+  // args may be a JSON string or an object
+  let obj: Record<string, unknown> | undefined
+  if (typeof args === 'string') {
+    try { obj = JSON.parse(args) } catch { return truncate(args, 80) }
+  } else if (typeof args === 'object' && args !== null) {
+    obj = args as Record<string, unknown>
+  }
+  if (!obj) return undefined
+  if (toolName === 'shell' || toolName === 'bash') {
+    const cmd = textValue(obj.command) ?? textValue(obj.cmd)
+    if (cmd) return truncate(cmd, 80)
+  }
+  const path = textValue(obj.path) ?? textValue(obj.file_path) ?? textValue(obj.file)
+  if (path) return truncate(path, 80)
+  for (const v of Object.values(obj)) {
+    const s = textValue(v)
+    if (s) return truncate(s, 80)
+  }
+  return undefined
+}
+
 export function parseActorLine(actor: string, line: string): ParsedActorLine {
   if (actor === 'claude') return parseClaudeStreamLine(line)
   if (actor === 'codex') return parseCodexJsonLine(line)
   if (actor === 'opencode') return parseOpenCodeJsonLine(line)
-  if (actor === 'kimi') return parseKimiJsonLine(line)
+  if (actor === 'kimi') return parseKimiJSONLine(line)
   return parseCodexJsonLine(line)
 }
 
@@ -293,14 +381,25 @@ function extractOpenCodeOutput(rawEvents: string): string {
 }
 
 function extractKimiOutput(rawEvents: string): string {
-  let lastContent = ''
+  const chunks: string[] = []
+  let legacyLast = ''
   for (const event of parseJsonEvents(rawEvents)) {
-    if (event.role === 'assistant') {
+    // New stream-json format (mirrors OpenCode event types)
+    if (event.type === 'text') {
+      const part = objectValue(event.part)
+      const text = textValue(part?.text)
+      if (text) chunks.push(text)
+    } else if (event.type === 'error') {
+      const error = stringifyValue(event.error)
+      if (error) chunks.push(error)
+    } else if (event.role === 'assistant') {
+      // Legacy OpenAI-compatible format: each event is a full message, keep last
       const content = textValue(event.content)
-      if (content) lastContent = content
+      if (content) legacyLast = content
     }
   }
-  return lastContent.trim()
+  const streamText = chunks.join('').trim()
+  return streamText || legacyLast.trim()
 }
 
 function extractGenericJsonOutput(rawEvents: string): string {
@@ -399,6 +498,29 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
 
 function textValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function openCodeToolDetail(toolName: unknown, input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const obj = input as Record<string, unknown>
+  // bash/shell: show command
+  if (toolName === 'bash' || toolName === 'shell') {
+    const cmd = textValue(obj.command) ?? textValue(obj.cmd)
+    if (cmd) return truncate(cmd, 80)
+  }
+  // file operations: show path
+  const path = textValue(obj.path) ?? textValue(obj.file_path) ?? textValue(obj.file)
+  if (path) return truncate(path, 80)
+  // generic: show first string value
+  for (const v of Object.values(obj)) {
+    const s = textValue(v)
+    if (s) return truncate(s, 80)
+  }
+  return undefined
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max).trimEnd() + '…'
 }
 
 function stringifyValue(value: unknown): string | undefined {
