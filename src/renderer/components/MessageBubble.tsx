@@ -309,9 +309,6 @@ function RoundEvents({ taskId, runId, workspaceKey, actor, elapsedMs }: { taskId
                 {(elapsedMs != null || data.durationMs != null) && (
                   <span>{formatDuration(elapsedMs ?? data.durationMs!)}</span>
                 )}
-                {data.costUsd != null && (
-                  <span>${data.costUsd.toFixed(4)}</span>
-                )}
                 {data.model && (
                   <span className="round-events-model">{data.model}</span>
                 )}
@@ -345,7 +342,6 @@ function TaskDoneStats({ taskId, workspaceKey }: { taskId: string; workspaceKey:
             <th>{t('taskStats.output')}</th>
             <th>{t('taskStats.cache')}</th>
             <th>{t('taskStats.duration')}</th>
-            {data.totalCostUsd != null && <th>{t('taskStats.cost')}</th>}
             <th>{t('taskStats.rounds')}</th>
           </tr>
         </thead>
@@ -358,7 +354,6 @@ function TaskDoneStats({ taskId, workspaceKey }: { taskId: string; workspaceKey:
               <td className="task-done-stats-num">{a.outputTokens.toLocaleString()}</td>
               <td className="task-done-stats-num">{a.cacheReadTokens.toLocaleString()}</td>
               <td>{formatDuration(a.durationMs)}</td>
-              {data.totalCostUsd != null && <td>{a.costUsd != null ? `$${a.costUsd.toFixed(4)}` : '-'}</td>}
               <td className="task-done-stats-num">{a.rounds}</td>
             </tr>
           ))}
@@ -369,7 +364,6 @@ function TaskDoneStats({ taskId, workspaceKey }: { taskId: string; workspaceKey:
             <td className="task-done-stats-num">{data.totalOutputTokens.toLocaleString()}</td>
             <td className="task-done-stats-num">{data.totalCacheReadTokens.toLocaleString()}</td>
             <td>{formatDuration(data.totalDurationMs)}</td>
-            {data.totalCostUsd != null && <td>${data.totalCostUsd.toFixed(4)}</td>}
             <td className="task-done-stats-num">{data.totalRounds}</td>
           </tr>
         </tbody>

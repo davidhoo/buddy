@@ -186,7 +186,7 @@ export async function runLauncher(input: {
   timeoutMs: number
   onStdout(line: string): void
   onStderr(line: string): void
-}): Promise<{ exitCode: number | null }> {
+}): Promise<{ exitCode: number | null; signal: string | null }> {
   const [command, ...prefixArgs] = splitCommand(input.command)
   let child: ReturnType<typeof spawn>
   try {
@@ -224,9 +224,9 @@ export async function runLauncher(input: {
   child.stdin!.end(input.stdinText ?? '')
 
   const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
-  const [exitCode] = await once(child, 'exit') as [number | null]
+  const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
   clearTimeout(timeout)
-  return { exitCode }
+  return { exitCode, signal }
 }
 
 function commandNotFoundError(command: string, cause: unknown): Error {

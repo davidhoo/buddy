@@ -377,6 +377,12 @@ export class BuddyStore {
         if (event.duration_ms != null) durationMs = event.duration_ms as number
         if (event.total_cost_usd != null) costUsd = event.total_cost_usd as number
         if (event.model) model = event.model as string
+        // Claude's result event has modelUsage with model name as key
+        // e.g. modelUsage: { "thudm-glm-5.1": { inputTokens: ..., ... } }
+        if (!model && event.modelUsage && typeof event.modelUsage === 'object') {
+          const keys = Object.keys(event.modelUsage as Record<string, unknown>)
+          if (keys.length > 0) model = keys[0]
+        }
       }
 
       // Codex format: content array with tool_call / text

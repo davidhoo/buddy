@@ -25,7 +25,7 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
   kimi: 'RUNNING_KIMI'
 }
 
-const PING_TIMEOUT_SECONDS = 30
+const PING_TIMEOUT_SECONDS = 120
 
 interface RunnerOptions {
   executeLaunchers?: boolean
@@ -302,7 +302,7 @@ export class BuddyRunner {
 
       if (result.exitCode !== 0) {
         const stderrText = stderrLines.join('\n').trim()
-        const error = stderrText || outputText.trim() || `Actor exited with ${result.exitCode}`
+        const error = stderrText || outputText.trim() || exitErrorMessage(result.exitCode, result.signal)
         return { success: false, error: error.slice(0, 300) }
       }
 
@@ -604,7 +604,7 @@ export class BuddyRunner {
         const eventError = parsedLines.filter((l) => l.rawType === 'error' && l.text).map((l) => l.text).join('\n')
         if (eventError) parts.push(eventError)
         if (outputText.trim()) parts.push(outputText.trim())
-        throw new Error(parts.join('\n\n') || `Actor exited with ${result.exitCode}`)
+        throw new Error(parts.join('\n\n') || exitErrorMessage(result.exitCode, result.signal))
       }
 
       // Ghost output: raw events exist but nothing was extracted (unrecognized error format)
@@ -1058,7 +1058,12 @@ async function collectOutputText(
 ): Promise<string> {
   if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi') {
     const output = extractActorOutput(actor, stdoutText)
-    await writeFile(outputFile, output)
+    const message = parseBuddyMessage(output)
+    const normalized = JSON.stringify({
+      type: message.kind === 'break' ? 'break' : 'chat',
+      content: message.kind === 'break' ? (message.content ?? message.reason ?? '') : (message.text ?? '')
+    })
+    await writeFile(outputFile, normalized)
     return output
   }
 
@@ -1073,4 +1078,12 @@ async function readOptionalText(path: string): Promise<string> {
   } catch {
     return ''
   }
+}
+
+export function exitErrorMessage(exitCode: number | null, signal: string | null): string {
+  if (exitCode === null) {
+    if (signal) return `Actor was killed by signal ${signal} (possible timeout)`
+    return 'Actor exited unexpectedly (no exit code)'
+  }
+  return `Actor exited with code ${exitCode}`
 }
