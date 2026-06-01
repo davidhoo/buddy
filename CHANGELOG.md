@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.11] - 2026-06-01
+
+### Added
+- 运行详情面板：支持展开查看每轮 Actor 运行的模型、耗时、Token 用量等详细信息
+- 事件类型可读化：原始事件类型以友好标签展示，支持展开/折叠查看详情
+- Kimi/OpenAI 兼容格式的 Token 用量解析（input_tokens/prompt_tokens/output_tokens/completion_tokens）和模型识别
+- OpenCode 模型信息提取（从 step_finish 的 respondedModelID/requestedModelID 获取）
+
+### Changed
+- 当 Actor 未提供运行时长时，基于首末事件时间戳回退计算
+
+---
+
 ## [1.0.10] - 2026-05-29
 
 ### Added
@@ -204,6 +217,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.11
 [1.0.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.10
 [1.0.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.9
 [1.0.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.8
