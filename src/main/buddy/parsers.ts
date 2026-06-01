@@ -331,14 +331,18 @@ function parseBuddyJsonCandidate(text: string): BuddyMessage | null {
 
 function looseExtractBuddyMessage(text: string): BuddyMessage | null {
   const typeMatch = text.match(/"type"\s*:\s*"(chat|break)"/)
-  if (!typeMatch) return null
+  if (!typeMatch || typeMatch.index === undefined) return null
 
   const kind = typeMatch[1] as 'chat' | 'break'
 
-  const contentKeyMatch = text.match(/"content"\s*:\s*"/)
+  // Search for "content":" AFTER the "type" match to avoid picking up
+  // "content" keys from unrelated JSON structures (e.g. tool_result)
+  // that appear before the buddy JSON in the text.
+  const afterType = text.slice(typeMatch.index)
+  const contentKeyMatch = afterType.match(/"content"\s*:\s*"/)
   if (!contentKeyMatch || contentKeyMatch.index === undefined) return null
 
-  const contentStart = contentKeyMatch.index + contentKeyMatch[0].length
+  const contentStart = typeMatch.index + contentKeyMatch.index + contentKeyMatch[0].length
   const closingQuote = findClosingContentQuote(text)
   const raw = closingQuote !== -1 && closingQuote > contentStart
     ? text.slice(contentStart, closingQuote)
@@ -455,6 +459,21 @@ export function parseJsonlBuffer(raw: string): Record<string, unknown>[] {
 
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue
+
+    // If we have a stale buffer from a previous broken event and this line
+    // starts a new JSON object, try to salvage the buffer first, then
+    // discard it if it can't be parsed — don't let one broken event
+    // swallow all subsequent events.
+    if (buffer && line.startsWith('{')) {
+      try {
+        const obj = JSON.parse(buffer)
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+          results.push(obj)
+        }
+      } catch { /* discard broken buffer */ }
+      buffer = ''
+    }
+
     buffer = buffer ? buffer + '\n' + line : line
     try {
       const obj = JSON.parse(buffer)

@@ -4,7 +4,8 @@ import {
   parseActorLine,
   parseBuddyMessage,
   parseClaudeStreamLine,
-  parseCodexJsonLine
+  parseCodexJsonLine,
+  parseJsonlBuffer
 } from '../../../src/main/buddy/parsers'
 
 describe('buddy actor parsers', () => {
@@ -441,5 +442,121 @@ describe('buddy actor parsers', () => {
       expect(message.text).toContain('## Changes Summary')
       expect(message.text).toContain('Kimi ENOENT')
     }
+  })
+
+  describe('parseJsonlBuffer recovery from broken events', () => {
+    it('recovers valid events after a broken JSON event', () => {
+      // Simulate Claude stream-json where a tool_result event has
+      // control characters that break JSON parsing, followed by valid events
+      const broken = '{"type":"user","message":{"content":[{"type":"tool_result","content":"diff with\ttab"}]}}'
+      const valid1 = '{"type":"assistant","message":{"content":[{"type":"text","text":"Done!"}]}}'
+      const valid2 = '{"type":"result","result":"Done!","session_id":"s1"}'
+
+      const raw = [broken, valid1, valid2].join('\n')
+      const events = parseJsonlBuffer(raw)
+
+      // Should parse at least the valid events after the broken one
+      expect(events.length).toBeGreaterThanOrEqual(2)
+      expect(events.some(e => e.type === 'assistant')).toBe(true)
+      expect(events.some(e => e.type === 'result')).toBe(true)
+    })
+
+    it('recovers result event when tool_result has raw newlines', () => {
+      // This simulates the real-world bug: a user event with tool_result
+      // containing a diff with raw control chars breaks JSON parsing,
+      // and the result event that follows is lost
+      const brokenEvent = '{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tu_1","type":"tool_result","content":"diff --git a/file.ts b/file.ts\nindex abc..def\n--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n line1\n+line2\n line3"}]}}'
+      const assistantEvent = '{"type":"assistant","message":{"content":[{"type":"text","text":"Based on the diff, here is my conclusion."}]}}'
+      const resultEvent = '{"type":"result","subtype":"success","result":"Based on the diff, here is my conclusion.","session_id":"sess1"}'
+
+      const raw = brokenEvent + '\n' + assistantEvent + '\n' + resultEvent
+      const events = parseJsonlBuffer(raw)
+
+      // The broken event may or may not parse, but the valid events MUST be recovered
+      expect(events.some(e => e.type === 'assistant')).toBe(true)
+      expect(events.some(e => e.type === 'result')).toBe(true)
+
+      const resultEventParsed = events.find(e => e.type === 'result')
+      expect(resultEventParsed?.result).toBe('Based on the diff, here is my conclusion.')
+    })
+
+    it('preserves normal JSONL parsing when no broken events', () => {
+      const raw = [
+        '{"type":"system","subtype":"init","session_id":"s1"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}',
+        '{"type":"result","result":"hello"}'
+      ].join('\n')
+      const events = parseJsonlBuffer(raw)
+
+      expect(events).toHaveLength(3)
+      expect(events[0].type).toBe('system')
+      expect(events[1].type).toBe('assistant')
+      expect(events[2].type).toBe('result')
+    })
+  })
+
+  describe('parseBuddyMessage with preamble containing tool_result content', () => {
+    it('extracts buddy JSON when tool_result content appears before it', () => {
+      // When extractClaudeOutput fails (e.g., broken events) and the fallback
+      // parsedText includes raw tool_result content with "content":" keys,
+      // looseExtractBuddyMessage must find "content":" relative to the
+      // buddy JSON's "type":"chat" match, not the tool_result's "content" key
+      const toolResultContent = '{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tu_1","type":"tool_result","content":"diff output here"}]}}'
+      const buddyJson = '{"type":"chat","content":"My conclusion after review."}'
+      const text = toolResultContent + '\n' + buddyJson
+
+      const message = parseBuddyMessage(text)
+
+      expect(message).toEqual({
+        kind: 'message',
+        text: 'My conclusion after review.'
+      })
+    })
+
+    it('extracts buddy JSON from fallback parsedText with raw tool_result and diff content', () => {
+      // Simulates the real fallback path: extractClaudeOutput returns empty,
+      // parsedText includes raw broken events + assistant text with buddy JSON
+      const brokenLine1 = '{"type":"user","message":{"content":[{"type":"tool_result","content":"diff --git a/parsers.ts b/parsers.ts"}'
+      const brokenLine2 = 'more diff content with "content":" keys inside'
+      const assistantText = 'Here is my analysis.\n{"type":"chat","content":"Fixed the parsing bug."}'
+
+      const text = [brokenLine1, brokenLine2, assistantText].join('\n')
+      const message = parseBuddyMessage(text)
+
+      expect(message).toEqual({
+        kind: 'message',
+        text: 'Fixed the parsing bug.'
+      })
+    })
+
+    it('end-to-end: Claude stream with broken tool_result event', () => {
+      // Full simulation of the real-world bug:
+      // 1. Claude uses a tool (git diff), the tool_result has raw control chars
+      // 2. The result event is recovered by parseJsonlBuffer fix
+      // 3. extractClaudeOutput returns the correct text
+      // 4. parseBuddyMessage extracts the buddy content
+      const brokenEvent = '{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tu_1","type":"tool_result","content":"diff --git a/file.ts b/file.ts\nindex abc..def\n--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n line1\n+added\n line3"}]}}'
+      const assistantEvent = '{"type":"assistant","message":{"content":[{"type":"text","text":"Based on the diff:\\n\\n{"type":"chat","content":"## Changes\\n\\n1. Added new line to file.ts\\n\\nAll tests pass."}"}]}}'
+      const resultEvent = '{"type":"result","subtype":"success","result":"Based on the diff:\\n\\n{\\"type\\":\\"chat\\",\\"content\\":\\"## Changes\\\\n\\\\n1. Added new line to file.ts\\\\n\\\\nAll tests pass.\\"}","session_id":"sess1"}'
+
+      const raw = [
+        '{"type":"system","subtype":"init","session_id":"sess1"}',
+        '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_1","name":"Bash","input":{"command":"git diff"}}]}}',
+        brokenEvent,
+        assistantEvent,
+        resultEvent
+      ].join('\n')
+
+      const extracted = extractActorOutput('claude', raw)
+      const message = parseBuddyMessage(extracted)
+
+      expect(message.kind).toBe('message')
+      if (message.kind === 'message') {
+        expect(message.text).not.toContain('diff --git')
+        expect(message.text).not.toContain('"type"')
+        expect(message.text).toContain('## Changes')
+        expect(message.text).toContain('All tests pass.')
+      }
+    })
   })
 })
