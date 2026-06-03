@@ -1,7 +1,7 @@
 ---
 description: 发布新版本（生成 changelog、创建 Release、构建部署）
 argument-hint: <version>  e.g. v1.2.0
-allowed-tools: Bash(git *), Bash(glab *), Bash(pnpm *), Bash(node *), Bash(find *), Bash(rsync *), Bash(chmod *), Bash(hdiutil *), Bash(scripts/release.sh*), Bash(sh scripts/*), Read, Edit
+allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(node *), Bash(find *), Bash(chmod *), Bash(hdiutil *), Bash(scripts/release.sh*), Bash(sh scripts/*), Read, Edit
 ---
 
 ## Context
@@ -11,7 +11,7 @@ allowed-tools: Bash(git *), Bash(glab *), Bash(pnpm *), Bash(node *), Bash(find 
 - Commits since last tag: !`git log --oneline $(git describe --tags --abbrev=0 2>/dev/null)..HEAD 2>/dev/null || git log --oneline -20`
 - User argument: $ARGUMENTS
 - Release remote: !`git remote get-url upstream 2>/dev/null && echo "upstream" || echo "origin"`
-- glab targets: !`glab repo view 2>/dev/null | head -1`
+- GitHub repo: !`gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "unknown"`
 
 ## Your task
 
@@ -22,7 +22,7 @@ Execute the full release process for version `$ARGUMENTS`. Follow these steps in
 - Determine which remote to use for pushing commits, tags, and releases:
   - If `upstream` remote exists, use `upstream`
   - Otherwise use `origin`
-- Verify the chosen remote matches the project that `glab` targets (check `glab repo view`)
+- Verify the chosen remote matches the project that `gh` targets (check `gh repo view`)
 - If they don't match, warn the user and ask whether to proceed — mismatches cause releases and assets to land on different projects
 - Store the chosen remote as `PUSH_REMOTE` for use in later steps
 
@@ -36,7 +36,7 @@ Execute the full release process for version `$ARGUMENTS`. Follow these steps in
 ### Step 3: Check for existing tag and release
 
 - Run `git tag --list "$ARGUMENTS"` to check if the tag already exists
-- Run `glab release view "$ARGUMENTS" 2>/dev/null` to check if the GitLab Release already exists
+- Run `gh release view "$ARGUMENTS" 2>/dev/null` to check if the GitHub Release already exists
 - If the tag already exists, this is a **re-run** scenario. Tell the user clearly that tag/release already exists and ask:
   - If they want to continue with build + deploy only (skip version bump, commit, tag, push, and Release creation)
   - Or if they want to abort
@@ -87,7 +87,7 @@ Execute the full release process for version `$ARGUMENTS`. Follow these steps in
   - `## [X.Y.Z] - YYYY-MM-DD` as the version header
   - Sections: `### Added`, `### Changed`, `### Fixed`, `### Removed` (omit empty sections)
   - Add a `---` separator before the next older entry
-  - Add a link reference at the bottom: `[X.Y.Z]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/$ARGUMENTS`
+  - Add a link reference at the bottom: `[X.Y.Z]: https://github.com/davidhoo/buddy/releases/tag/$ARGUMENTS`
 - The new entry goes ABOVE the previous entries, below the `# Changelog` header
 
 ### Step 6: Bump version and commit
@@ -102,34 +102,28 @@ Execute the full release process for version `$ARGUMENTS`. Follow these steps in
 - `git push $PUSH_REMOTE main $ARGUMENTS`
 - If `$PUSH_REMOTE` is `upstream` AND `origin` also exists, also push to origin: `git push origin main $ARGUMENTS`
 
-### Step 8: Create GitLab Release
+### Step 8: Create GitHub Release
 
 - Use the **full changelog** (same content from Step 4, including version header and sections) as release notes
 - If the changelog is multi-line, write it to a temp file first and use `--notes-file`:
   ```bash
   echo "$CHANGELOG" > /tmp/release-notes-$VERSION.md
-  glab release create "$ARGUMENTS" --name "Buddy $ARGUMENTS" --notes-file /tmp/release-notes-$VERSION.md
+  gh release create "$ARGUMENTS" --repo $GITHUB_REPO --title "Buddy $ARGUMENTS" --notes-file /tmp/release-notes-$VERSION.md
   rm /tmp/release-notes-$VERSION.md
   ```
 
 ### Step 9: Run release script
 
 - Execute `scripts/release.sh $ARGUMENTS`
-- This handles: build → verify → upload to Package Registry → update Release assets → rsync deploy
-- The script also deploys stable-name latest DMGs to `/releases/latest/` on the update server:
-  - `latest/buddy-arm64.dmg` → latest Apple Silicon build
-  - `latest/buddy-x64.dmg` → latest Intel build
+- This handles: build → verify → upload assets to GitHub Release
 - Monitor the output and report progress to the user
 
 ### Step 10: Report results
 
 When complete, summarize:
 - Version released
-- GitLab Release URL
-- Update server URL
-- Latest download links:
-  - http://buddy.intra.weibo.cn/releases/latest/buddy-arm64.dmg
-  - http://buddy.intra.weibo.cn/releases/latest/buddy-x64.dmg
+- GitHub Release URL
+- Download links for DMG and ZIP assets
 - Any warnings or issues encountered
 
 ## Error handling

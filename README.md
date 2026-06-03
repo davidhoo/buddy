@@ -4,7 +4,7 @@
 
 双 AI Agent 协作编码的 macOS 桌面应用。两个 AI Actor（执行方 + 审查方）轮流工作，逐步收敛至正确结果，支持人工校准窗口与双确认结束机制。
 
-官网：[http://buddy.intra.weibo.cn](http://buddy.intra.weibo.cn)
+官网：[GitHub Releases](../../releases)
 
 ## 特性
 
@@ -24,13 +24,9 @@
 
 ## 安装
 
-### 官网下载（推荐）
+### GitHub Releases（推荐）
 
-访问 [官网](http://buddy.intra.weibo.cn) 下载最新版本 DMG，打开后将 Buddy 拖入 Applications 文件夹即可。
-
-### GitHub Releases
-
-也可从 [Releases](../../releases) 页面下载最新 DMG，拖入 Applications 即可。
+从 [Releases](../../releases) 页面下载最新版本 DMG，打开后将 Buddy 拖入 Applications 文件夹即可。
 
 或从源码构建：
 

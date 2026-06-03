@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Align buddy-macos core prompt assembly, role handoff, session seeding, context tracking, and round-window behavior with buddy-python.
+**Goal:** Align Buddy core prompt assembly, role handoff, session seeding, context tracking, and round-window behavior with buddy-python.
 
 **Architecture:** Keep the native TypeScript implementation, but make buddy-python the behavioral source of truth for the actor loop. The macOS runner will derive implementer/reviewer handoff from task settings, build prompts with the buddy-python sections and language rule, and maintain the same compatible state fields.
 

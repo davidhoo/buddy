@@ -486,11 +486,11 @@ export default function App() {
       } else if (action === 'checkForUpdates') {
         updater.checkForUpdates()
       } else if (action === 'openDocumentation') {
-        window.open('https://gitlab.weibo.cn/ailab/buddy-macos/-/tree/main/docs', '_blank')
+        window.open('https://github.com/davidhoo/buddy#readme', '_blank')
       } else if (action === 'openWhatsNew') {
-        window.open('https://buddy.intra.weibo.cn/releases/', '_blank')
+        window.open('https://github.com/davidhoo/buddy/releases', '_blank')
       } else if (action === 'sendFeedback') {
-        window.open('https://gitlab.weibo.cn/ailab/buddy-macos/-/issues/new', '_blank')
+        window.open('https://github.com/davidhoo/buddy/issues/new', '_blank')
       } else if (action === 'showKeyboardShortcuts') {
         setView('settings')
         setSettingsTab('keyboard')

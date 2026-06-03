@@ -1,5 +1,5 @@
 {
-  "name": "buddy-macos",
+  "name": "buddy",
   "version": "1.0.18",
   "description": "macOS native desktop app with built-in Buddy Core",
   "main": "./out/main/index.js",

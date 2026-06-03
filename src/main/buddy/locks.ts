@@ -12,7 +12,7 @@ export async function createRunLock(dataRoot: string, input: {
   const path = join(dir, `${input.workspace_key}__${input.task_id}.lock`)
   await writeFile(path, JSON.stringify({
     ...input,
-    app: 'buddy-macos',
+    app: 'buddy',
     started_at: new Date().toISOString()
   }))
   return path

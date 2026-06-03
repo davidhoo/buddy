@@ -1,4 +1,4 @@
-appId: com.buddy.macos
+appId: com.buddy.app
 productName: Buddy
 directories:
   output: release
@@ -29,5 +29,6 @@ dmg:
       type: link
       path: /Applications
 publish:
-  provider: generic
-  url: http://buddy.intra.weibo.cn/releases
+  provider: github
+  owner: davidhoo
+  repo: buddy

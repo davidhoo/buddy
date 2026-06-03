@@ -14,7 +14,7 @@ describe('run locks', () => {
       pid: 123
     })
 
-    await expect(readFile(lockPath, 'utf8')).resolves.toContain('"app":"buddy-macos"')
+    await expect(readFile(lockPath, 'utf8')).resolves.toContain('"app":"buddy"')
 
     await removeRunLock(lockPath)
     await expect(access(lockPath)).rejects.toThrow()

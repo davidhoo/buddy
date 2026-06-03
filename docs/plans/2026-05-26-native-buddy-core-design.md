@@ -1,8 +1,8 @@
-# buddy-macos Native Buddy Core Design
+# Buddy Native Core Design
 
 ## Decision
 
-buddy-macos will own the Buddy runtime inside the Electron app. The app will no longer start or call `buddy-python`, and it will no longer route renderer requests through a local HTTP server.
+Buddy will own the Buddy runtime inside the Electron app. The app will no longer start or call `buddy-python`, and it will no longer route renderer requests through a local HTTP server.
 
 The runtime target is:
 
@@ -200,7 +200,7 @@ Two lock types are used:
 - `.buddy.lock` inside each task directory for short state and event writes.
 - `runtime/tasks/{workspace_key}__{task_id}.lock` for actor run ownership.
 
-The native runtime does not need to coordinate with a running Python server, but it still preserves lock files to guard multiple buddy-macos windows or future compatible tools.
+The native runtime does not need to coordinate with a running Python server, but it still preserves lock files to guard multiple Buddy windows or future compatible tools.
 
 ### Error Handling
 

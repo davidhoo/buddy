@@ -1,4 +1,4 @@
-# buddy-macos MVP 实现计划
+# Buddy MVP 实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 

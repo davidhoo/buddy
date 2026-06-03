@@ -16,7 +16,7 @@
 - Use TDD for every task that changes behavior.
 - Keep commits small. Each task below ends with a commit.
 - Do not preserve or introduce any `buddy-python` sidecar, Python interpreter, or local HTTP server.
-- Prefer repo-relative paths in commands from repository root: `/Users/david/SynologyDrive/Projects/github/buddy/buddy-macos`.
+- Prefer repo-relative paths in commands from repository root: `/Users/david/SynologyDrive/Projects/github/buddy`.
 
 ## Task 1: Add Native Buddy API Types
 
@@ -2428,7 +2428,7 @@ describe('run locks', () => {
       pid: 123
     })
 
-    await expect(readFile(lockPath, 'utf8')).resolves.toContain('"app":"buddy-macos"')
+    await expect(readFile(lockPath, 'utf8')).resolves.toContain('"app":"buddy"')
 
     await removeRunLock(lockPath)
     await expect(access(lockPath)).rejects.toThrow()
@@ -2465,7 +2465,7 @@ export async function createRunLock(dataRoot: string, input: {
   const path = join(dir, `${input.workspace_key}__${input.task_id}.lock`)
   await writeFile(path, JSON.stringify({
     ...input,
-    app: 'buddy-macos',
+    app: 'buddy',
     started_at: new Date().toISOString()
   }))
   return path

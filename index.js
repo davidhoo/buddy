@@ -266,7 +266,7 @@ async function createRunLock(dataRoot, input) {
   const path2 = node_path.join(dir, `${input.workspace_key}__${input.task_id}.lock`);
   await promises.writeFile(path2, JSON.stringify({
     ...input,
-    app: "buddy-macos",
+    app: "buddy",
     started_at: (/* @__PURE__ */ new Date()).toISOString()
   }));
   return path2;

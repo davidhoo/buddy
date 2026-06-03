@@ -82,7 +82,7 @@ type(scope): 简短描述
 feat(ui): 添加任务未读状态指示
 fix(core): 修复 macOS PATH 问题
 refactor(runner): 移除倒计时机制
-ci: 添加 GitLab CI/CD 流水线配置
+ci: 添加 GitHub Actions 流水线配置
 ```
 
 ### TypeScript

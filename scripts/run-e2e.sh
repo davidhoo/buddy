@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-log_file="${TMPDIR:-/tmp}/buddy-macos-e2e-vite.log"
+log_file="${TMPDIR:-/tmp}/buddy-e2e-vite.log"
 
 pnpm exec vite src/renderer --host 127.0.0.1 --port 5173 --strictPort >"$log_file" 2>&1 &
 server_pid=$!

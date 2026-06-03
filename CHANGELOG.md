@@ -65,7 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 新建任务时默认使用当前选中任务的项目路径，减少重复输入
 
 ### Fixed
-- 修复 GitLab Release 资产链接创建失败的问题：改用 Web 可访问的下载 URL，并用 tab 分隔解析替代管道符解析避免链接名称含空格时出错
+- 修复 GitHub Release 资产链接上传失败的问题：改用 gh release upload 命令
 
 ---
 
@@ -199,7 +199,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- 移除 .gitlab-ci.yml，发布流程全部由本地 release.sh 完成
+- 移除 CI 配置，发布流程全部由本地 release.sh 完成
 - 精简 CI 配置，移除 typecheck 和 unit-test
 
 ### Fixed
@@ -230,7 +230,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - macOS 原生菜单栏国际化
 - 与 buddy-python 数据目录兼容（`~/Library/Application Support/buddy/`）
 - 应用崩溃/重启后任务状态完整恢复
-- GitLab CI/CD 流水线配置
+- GitHub Actions 流水线配置
 - DMG 打包（arm64 / x64 分架构构建）
 
 ### Changed
@@ -304,20 +304,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
-[1.0.18]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.18
-[1.0.17]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.17
-[1.0.16]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.16
-[1.0.15]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.15
-[1.0.14]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.14
-[1.0.13]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.13
-[1.0.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.12
-[1.0.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.11
-[1.0.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.10
-[1.0.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.9
-[1.0.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.8
-[1.0.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.7
-[1.0.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.6
-[1.0.5]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.5
-[1.0.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.4
-[1.0.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.3
-[1.0.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.0
+[1.0.18]: https://github.com/davidhoo/buddy/releases/tag/v1.0.18
+[1.0.17]: https://github.com/davidhoo/buddy/releases/tag/v1.0.17
+[1.0.16]: https://github.com/davidhoo/buddy/releases/tag/v1.0.16
+[1.0.15]: https://github.com/davidhoo/buddy/releases/tag/v1.0.15
+[1.0.14]: https://github.com/davidhoo/buddy/releases/tag/v1.0.14
+[1.0.13]: https://github.com/davidhoo/buddy/releases/tag/v1.0.13
+[1.0.12]: https://github.com/davidhoo/buddy/releases/tag/v1.0.12
+[1.0.11]: https://github.com/davidhoo/buddy/releases/tag/v1.0.11
+[1.0.10]: https://github.com/davidhoo/buddy/releases/tag/v1.0.10
+[1.0.9]: https://github.com/davidhoo/buddy/releases/tag/v1.0.9
+[1.0.8]: https://github.com/davidhoo/buddy/releases/tag/v1.0.8
+[1.0.7]: https://github.com/davidhoo/buddy/releases/tag/v1.0.7
+[1.0.6]: https://github.com/davidhoo/buddy/releases/tag/v1.0.6
+[1.0.5]: https://github.com/davidhoo/buddy/releases/tag/v1.0.5
+[1.0.4]: https://github.com/davidhoo/buddy/releases/tag/v1.0.4
+[1.0.3]: https://github.com/davidhoo/buddy/releases/tag/v1.0.3
+[1.0.0]: https://github.com/davidhoo/buddy/releases/tag/v1.0.0

@@ -2,18 +2,17 @@
 set -euo pipefail
 
 # =============================================================================
-# Buddy macOS — Local Release Script
+# Buddy — Local Release Script
 #
 # Usage: scripts/release.sh <version>
 #   e.g.  scripts/release.sh v1.2.0
 #
 # Prerequisites:
-#   - glab CLI authenticated (brew install glab && glab auth login)
-#   - ~/.rsyncd.pass file with rsync password (or set RSYNC_PASS_FILE)
+#   - gh CLI authenticated (brew install gh && gh auth login)
 #   - Rosetta installed for x64 cross-build (softwareupdate --install-rosetta)
 #
 # Flow:
-#   bump version → build → verify → commit+tag+push → upload to GitLab → create release → rsync deploy
+#   bump version → build → verify → commit+tag+push → create GitHub Release → upload assets
 # =============================================================================
 
 VERSION="${1:?Usage: release.sh <version>  e.g. release.sh v1.2.0}"
@@ -24,46 +23,36 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # --- Prerequisites ---
-command -v glab >/dev/null \
-  || { echo "glab not found. Install: brew install glab && glab auth login" >&2; exit 1; }
+command -v gh >/dev/null \
+  || { echo "gh not found. Install: brew install gh && gh auth login" >&2; exit 1; }
 
 # --- Config ---
-RSYNC_PASS_FILE="${RSYNC_PASS_FILE:-$HOME/.rsyncd.pass}"
-RSYNC_DEST="rsync://buddyweb@10.185.10.105/buddyweb-releases/"
-PACKAGE_NAME="buddy-macos"
+PACKAGE_NAME="buddy"
 
-# --- Derive GitLab info from remote (prefer upstream to match glab) ---
+# --- Derive GitHub info from remote (prefer upstream to match gh) ---
 if git remote get-url upstream >/dev/null 2>&1; then
   REMOTE_NAME="upstream"
 else
   REMOTE_NAME="origin"
 fi
 REMOTE_URL="$(git remote get-url "$REMOTE_NAME")"
-if [[ "$REMOTE_URL" == ssh://git@* ]]; then
-  REST="${REMOTE_URL#ssh://git@}"
-  GITLAB_HOST="${REST%%:*}"
-  REST="${REST#*/}"
-  PROJECT_PATH="${REST%.git}"
-elif [[ "$REMOTE_URL" == git@* ]]; then
-  REST="${REMOTE_URL#git@}"
-  GITLAB_HOST="${REST%%:*}"
-  PROJECT_PATH="${REST#*:}"
-  PROJECT_PATH="${PROJECT_PATH%.git}"
-elif [[ "$REMOTE_URL" == https://* ]] || [[ "$REMOTE_URL" == http://* ]]; then
-  REST="${REMOTE_URL#https://}"
-  REST="${REST#http://}"
-  GITLAB_HOST="${REST%%/*}"
-  PROJECT_PATH="${REST#*/}"
-  PROJECT_PATH="${PROJECT_PATH%.git}"
+
+# Extract GitHub repo (owner/repo) from remote URL
+if [[ "$REMOTE_URL" == git@github.com:* ]]; then
+  GITHUB_REPO="${REMOTE_URL#git@github.com:}"
+  GITHUB_REPO="${GITHUB_REPO%.git}"
+elif [[ "$REMOTE_URL" == https://github.com/* ]]; then
+  GITHUB_REPO="${REMOTE_URL#https://github.com/}"
+  GITHUB_REPO="${GITHUB_REPO%.git}"
+elif [[ "$REMOTE_URL" == ssh://git@github.com/* ]]; then
+  GITHUB_REPO="${REMOTE_URL#ssh://git@github.com/}"
+  GITHUB_REPO="${GITHUB_REPO%.git}"
 else
-  echo "Cannot parse remote URL: $REMOTE_URL" >&2; exit 1
+  echo "Cannot parse GitHub remote URL: $REMOTE_URL" >&2; exit 1
 fi
 
-PROJECT_ID="$(node -e "console.log(encodeURIComponent('${PROJECT_PATH}'))")"
-API_BASE="https://${GITLAB_HOST}/api/v4"
-
 echo "=== Buddy Release ${VERSION} ==="
-echo "GitLab: ${GITLAB_HOST} / ${PROJECT_PATH}"
+echo "GitHub: ${GITHUB_REPO}"
 echo "Remote: ${REMOTE_NAME} ($(git remote get-url "$REMOTE_NAME"))"
 echo ""
 
@@ -82,7 +71,7 @@ echo ">> Building..."
 pnpm build
 pnpm clean:release
 CUSTOM_DMGBUILD_PATH="$(sh scripts/prepare-dmgbuild.sh)" \
-  CSC_NAME="Apple Development: coolbor@gmail.com (LL5Q233Q8L)" \
+  CSC_IDENTITY_AUTO_DISCOVERY=false \
   pnpm exec electron-builder --mac --publish never -c.mac.notarize=false
 echo "   Build complete ✓"
 
@@ -109,9 +98,9 @@ echo "   DMGs verified ✓"
 
 # --- 5. Create source archives ---
 echo ">> Creating source archives..."
-git archive --format=tar.gz --prefix="buddy-macos-${VERSION}/" HEAD \
-  > "release/buddy-macos-${VERSION}-source.tar.gz"
-git archive --format=zip --prefix="buddy-macos-${VERSION}/" -o "release/buddy-macos-${VERSION}-source.zip" HEAD
+git archive --format=tar.gz --prefix="buddy-${VERSION}/" HEAD \
+  > "release/buddy-${VERSION}-source.tar.gz"
+git archive --format=zip --prefix="buddy-${VERSION}/" -o "release/buddy-${VERSION}-source.zip" HEAD
 echo "   Source archives created ✓"
 
 # --- 6. Commit version bump, tag and push (skip if tag already exists) ---
@@ -132,99 +121,44 @@ else
   echo "   Tag pushed ✓"
 fi
 
-# --- 7. Upload to GitLab Package Registry ---
-upload_file() {
-  local file="$1"
-  local basename
-  basename="$(basename "$file")"
-  echo "   Uploading ${basename}..."
-  local response
-  response="$(glab api --method PUT --input "$file" \
-    "/projects/${PROJECT_ID}/packages/generic/${PACKAGE_NAME}/${PACKAGE_VERSION}/${basename}" 2>&1)" \
-    || { echo "   Upload failed: ${response}" >&2; exit 1; }
-}
+# --- 7. Create GitHub Release with assets ---
+echo ">> Creating GitHub Release..."
 
-echo ">> Uploading to GitLab Package Registry..."
+if gh release view "$VERSION" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
+  echo "   Release already exists, uploading assets only..."
+else
+  # Create release with a basic title; notes can be edited later on GitHub
+  gh release create "$VERSION" \
+    --repo "$GITHUB_REPO" \
+    --title "Buddy ${VERSION}" \
+    --notes "Release ${VERSION}" \
+    || echo "   Release creation issue, continuing ✓"
+fi
+
+# Upload all assets
 UPLOAD_FILES=(
   "release/Buddy-${PACKAGE_VERSION}-arm64.dmg"
   "release/Buddy-${PACKAGE_VERSION}.dmg"
   "release/Buddy-${PACKAGE_VERSION}-arm64-mac.zip"
   "release/Buddy-${PACKAGE_VERSION}-mac.zip"
   "release/latest-mac.yml"
-  "release/buddy-macos-${VERSION}-source.tar.gz"
-  "release/buddy-macos-${VERSION}-source.zip"
+  "release/buddy-${VERSION}-source.tar.gz"
+  "release/buddy-${VERSION}-source.zip"
 )
+
+echo ">> Uploading assets to GitHub Release..."
 for f in "${UPLOAD_FILES[@]}"; do
-  upload_file "$f"
+  if [ -f "$f" ]; then
+    echo "   Uploading $(basename "$f")..."
+    gh release upload "$VERSION" "$f" \
+      --repo "$GITHUB_REPO" \
+      --clobber \
+      || { echo "   WARNING: Failed to upload $(basename "$f")" >&2; true; }
+  fi
 done
 echo "   Upload complete ✓"
 
-# --- 8. Create or update GitLab Release ---
-echo ">> Creating GitLab Release..."
-
-# Web-accessible package download URLs (avoids %2F encoding issues with API URLs)
-PKG_URL_BASE="https://${GITLAB_HOST}/${PROJECT_PATH}/-/packages/generic/${PACKAGE_NAME}/${PACKAGE_VERSION}"
-ASSETS_LINKS="$(cat <<EOF
-[
-  {"name":"macOS DMG (arm64)","url":"${PKG_URL_BASE}/Buddy-${PACKAGE_VERSION}-arm64.dmg","link_type":"package"},
-  {"name":"macOS DMG (x64)","url":"${PKG_URL_BASE}/Buddy-${PACKAGE_VERSION}.dmg","link_type":"package"},
-  {"name":"macOS ZIP (arm64)","url":"${PKG_URL_BASE}/Buddy-${PACKAGE_VERSION}-arm64-mac.zip","link_type":"package"},
-  {"name":"macOS ZIP (x64)","url":"${PKG_URL_BASE}/Buddy-${PACKAGE_VERSION}-mac.zip","link_type":"package"},
-  {"name":"Source (.tar.gz)","url":"${PKG_URL_BASE}/buddy-macos-${VERSION}-source.tar.gz","link_type":"package"},
-  {"name":"Source (.zip)","url":"${PKG_URL_BASE}/buddy-macos-${VERSION}-source.zip","link_type":"package"}
-]
-EOF
-)"
-
-if glab release view "$VERSION" >/dev/null 2>&1; then
-  echo "   Release already exists, updating assets only..."
-  # Delete existing asset links first to avoid name conflicts on re-creation
-  existing_links="$(glab api "/projects/${PROJECT_ID}/releases/${VERSION}/assets/links" 2>/dev/null || echo '[]')"
-  for link_id in $(echo "$existing_links" | node -e "
-    const links=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-    links.forEach(l=>console.log(l.id));
-  "); do
-    glab api --method DELETE "/projects/${PROJECT_ID}/releases/${VERSION}/assets/links/${link_id}" >/dev/null 2>&1 || true
-  done
-else
-  glab release create "$VERSION" \
-    --name "Buddy ${VERSION}" \
-    --notes "Release ${VERSION}" \
-    || echo "   Release creation issue, continuing ✓"
-fi
-
-# Create asset links via API (tab-delimited parsing avoids word-splitting bugs with names containing spaces)
-echo "$ASSETS_LINKS" | node -e "
-  const links=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-  links.forEach(l => process.stdout.write(l.name + '\\t' + l.url + '\\n'));
-" | while IFS=$'\t' read -r link_name link_url; do
-  glab api --method POST "/projects/${PROJECT_ID}/releases/${VERSION}/assets/links" \
-    -f "name=${link_name}" -f "url=${link_url}" -f "link_type=package" \
-    || { echo "   WARNING: Failed to create asset link: ${link_name}" >&2; true; }
-done
-echo "   Release ready ✓"
-
-# --- 9. Deploy to update server ---
-echo ">> Deploying to update server..."
-# Upload DMGs + ZIPs first
-find release -maxdepth 1 \( -name '*.dmg' -o -name '*.zip' \) \
-  -exec rsync -avz --password-file="$RSYNC_PASS_FILE" {} "$RSYNC_DEST" \;
-# Upload latest-mac.yml last (atomic commit point)
-find release -maxdepth 1 -name 'latest-mac.yml' \
-  -exec rsync -avz --password-file="$RSYNC_PASS_FILE" {} "$RSYNC_DEST" \;
-
-# Deploy stable-name latest DMGs for web download page
-LATEST_DIR="release/latest"
-mkdir -p "$LATEST_DIR"
-cp "release/Buddy-${PACKAGE_VERSION}-arm64.dmg" "${LATEST_DIR}/buddy-arm64.dmg"
-cp "release/Buddy-${PACKAGE_VERSION}.dmg" "${LATEST_DIR}/buddy-x64.dmg"
-rsync -avz --password-file="$RSYNC_PASS_FILE" "${LATEST_DIR}/" "${RSYNC_DEST}latest/"
-echo "   Deploy complete ✓"
-
 echo ""
 echo "=== Release ${VERSION} published! ==="
-echo "  GitLab:   https://${GITLAB_HOST}/${PROJECT_PATH}/-/releases/${VERSION}"
+echo "  GitHub:   https://github.com/${GITHUB_REPO}/releases/tag/${VERSION}"
 echo "  Remote:   ${REMOTE_NAME}"
-echo "  Download: http://buddy.intra.weibo.cn/releases/"
-echo "  Latest:   http://buddy.intra.weibo.cn/releases/latest/buddy-arm64.dmg"
-echo "            http://buddy.intra.weibo.cn/releases/latest/buddy-x64.dmg"
