@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.19] - 2026-06-03
+
+### Added
+- Actor 触达上下文窗口限制时自动压缩会话并重试：检测到上下文溢出错误后，自动发送 /compact 命令压缩会话，然后重新执行当前轮次，无需人工干预
+- 新增「压缩重试上限」设置项（默认 3 次），可在全局/任务级别控制自动压缩的最大重试次数
+
+---
+
 ## [1.0.18] - 2026-06-03
 
 ### Added
@@ -304,6 +312,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.19]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.19
 [1.0.18]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.18
 [1.0.17]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.17
 [1.0.16]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.16
