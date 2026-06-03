@@ -86,7 +86,8 @@ export const taskStateSchema = z.object({
   pending_break: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
   break_rejected_by: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
   latest_failure: failureSchema.nullable().optional(),
-  health_check: healthCheckResultSchema.nullable().optional()
+  health_check: healthCheckResultSchema.nullable().optional(),
+  compact_retries: z.number().optional()
 })
 
 export const launcherSchema = z.object({
@@ -106,17 +107,21 @@ export const taskSettingsSchema = z.object({
   seed_claude_session_id: z.string().optional(),
   seed_codex_thread_id: z.string().optional(),
   seed_opencode_session_id: z.string().optional(),
-  seed_kimi_session_id: z.string().optional()
+  seed_kimi_session_id: z.string().optional(),
+  max_compact_retries: z.number().optional()
 })
 
 export const globalSettingsSchema = z.object({
   protocol_version: z.string().default('1'),
   countdown_seconds: z.number().default(30),
   max_rounds: z.number().default(9999),
-    max_consecutive_failures: z.number().default(10),
+  max_consecutive_failures: z.number().default(10),
   launchers: z.record(z.string(), launcherSchema).default({}),
   seed_claude_session_id: z.string().optional(),
-  seed_codex_thread_id: z.string().optional()
+  seed_codex_thread_id: z.string().optional(),
+  seed_opencode_session_id: z.string().optional(),
+  seed_kimi_session_id: z.string().optional(),
+  max_compact_retries: z.number().optional()
 })
 
 export const eventSchema = z.object({

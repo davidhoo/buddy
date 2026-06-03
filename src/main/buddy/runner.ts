@@ -28,6 +28,23 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
 
 const PING_TIMEOUT_SECONDS = 120
 
+/** Patterns that indicate an actor hit the context window limit */
+const CONTEXT_WINDOW_LIMIT_PATTERNS = [
+  /context window limit/i,
+  /context length exceeded/i,
+  /context\.length\.exceeded/i,
+  /maximum context length/i,
+  /max.*context.*length/i,
+  /token limit/i,
+  /too many tokens/i,
+  /exceeds.*token/i,
+  /exceeded.*token/i,
+  /input.*too long/i,
+  /request too large/i
+]
+
+const DEFAULT_MAX_COMPACT_RETRIES = 3
+
 interface RunnerOptions {
   executeLaunchers?: boolean
   events?: BuddyEventBus
@@ -498,7 +515,7 @@ export class BuddyRunner {
     })
   }
 
-  private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = ''): Promise<void> {
+  private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = '', compactRetries = 0): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const launcher = detail.settings.launchers[actor] ?? {
@@ -645,6 +662,56 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
+
+      // Auto-compact on context window limit errors
+      const maxCompactRetries = globalSettings.max_compact_retries ?? DEFAULT_MAX_COMPACT_RETRIES
+      if (isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
+        const sessionId = sessionIdForActor(actor, detail.state, detail.settings)
+        if (sessionId) {
+          await this.store.appendTaskEvent(taskId, workspaceKey, {
+            type: 'actor.context_limit_detected',
+            actor,
+            run_id: runId,
+            payload: { error: failureMessage, compact_attempt: compactRetries + 1, max_compact_retries: maxCompactRetries }
+          })
+          await this.store.appendTranscript(
+            taskId,
+            workspaceKey,
+            'system',
+            `${actorDisplayName(actor)} 达到上下文窗口限制，正在压缩会话并重试 (${compactRetries + 1}/${maxCompactRetries})...`,
+            { kind: 'compact_retry', compact_attempt: compactRetries + 1 }
+          )
+
+          const compactSuccess = await this.runCompact(taskId, workspaceKey, actor, sessionId, cwd, launcher)
+          if (compactSuccess) {
+            await this.store.appendTaskEvent(taskId, workspaceKey, {
+              type: 'actor.compact_succeeded',
+              actor,
+              run_id: runId,
+              payload: { compact_attempt: compactRetries + 1 }
+            })
+            // Retry executeActor with incremented compact count
+            // The current lock will be removed by the finally block below,
+            // and the recursive call will create its own lock.
+            return this.executeActor(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1)
+          }
+
+          await this.store.appendTaskEvent(taskId, workspaceKey, {
+            type: 'actor.compact_failed',
+            actor,
+            run_id: runId,
+            payload: { compact_attempt: compactRetries + 1 }
+          })
+          await this.store.appendTranscript(
+            taskId,
+            workspaceKey,
+            'system',
+            `${actorDisplayName(actor)} 压缩会话失败，按常规错误处理。`,
+            { kind: 'compact_retry_failed', compact_attempt: compactRetries + 1 }
+          )
+        }
+      }
+
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
       throw error
     } finally {
@@ -715,6 +782,7 @@ export class BuddyRunner {
         latest_failure: null,
         last_error: null,
         consecutive_failures: 0,
+        compact_retries: 0,
         updated_at: now
       }
       if (actor === 'claude' && sessionId) next.claude_session_id = sessionId
@@ -928,6 +996,7 @@ export class BuddyRunner {
       consecutive_failures: newConsecutiveFailures,
       last_error: failure,
       latest_failure: failure,
+      compact_retries: 0,
       updated_at: failure.ts
     }))
     await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -948,6 +1017,50 @@ export class BuddyRunner {
         type: 'failure_threshold.reached',
         payload: { consecutive_failures: newConsecutiveFailures, max_consecutive_failures: maxConsecutiveFailures }
       })
+    }
+  }
+
+  /**
+   * Run a /compact command on the actor's session to reduce context size.
+   * Returns true if compact succeeded, false otherwise.
+   */
+  private async runCompact(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    sessionId: string,
+    cwd: string,
+    launcher: { command: string; env: Record<string, string>; timeout_seconds: number }
+  ): Promise<boolean> {
+    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+    const commandKind = commandKindFor(actor, launcher.command)
+
+    const compactCommand = buildLauncherCommand({
+      actor,
+      command: launcher.command,
+      mode: 'resume',
+      promptText: '/compact',
+      promptFile: '',
+      repoRoot: cwd,
+      taskDir: taskDirectory,
+      runId: `compact_${Date.now()}`,
+      sessionId
+    })
+
+    try {
+      const result = await runLauncher({
+        command: compactCommand.command,
+        args: compactCommand.args,
+        cwd,
+        env: { ...launcher.env, ...(compactCommand.env ?? {}) },
+        stdinText: compactCommand.stdinText,
+        timeoutMs: 120000, // 2 minutes for compact
+        onStdout: () => {},
+        onStderr: () => {}
+      })
+      return result.exitCode === 0
+    } catch {
+      return false
     }
   }
 }
@@ -1011,6 +1124,11 @@ function isCliWarningOnly(stderrText: string): boolean {
   return lines.length > 0 && lines.every((line) =>
     warningPatterns.some((p) => p.test(line))
   )
+}
+
+/** Check if an error message indicates a context window limit error */
+export function isContextWindowLimitError(message: string): boolean {
+  return CONTEXT_WINDOW_LIMIT_PATTERNS.some((p) => p.test(message))
 }
 
 async function existingCwd(path?: string): Promise<string> {

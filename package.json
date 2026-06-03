@@ -37,6 +37,7 @@
     "@types/react": "^18.3.29",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/utils": "^4.1.8",
     "autoprefixer": "^10.5.0",
     "dompurify": "^3.4.5",
     "electron": "^33.4.11",

@@ -72,6 +72,7 @@ export interface TaskState {
   break_rejected_by?: { actor?: string; round?: number } | null
   latest_failure?: Failure | null
   health_check?: HealthCheckResult | null
+  compact_retries?: number
 }
 
 export interface Countdown {
@@ -168,6 +169,7 @@ export interface GlobalSettings {
   seed_codex_thread_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  max_compact_retries?: number
 }
 
 export interface BuddyError {
