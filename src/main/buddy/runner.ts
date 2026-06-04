@@ -663,7 +663,9 @@ export class BuddyRunner {
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
 
-      // Auto-compact on context window limit errors
+      // Auto-reset session on context window limit errors
+      // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
+      // not a slash command. So we skip /compact entirely and go straight to session reset.
       const maxCompactRetries = globalSettings.max_compact_retries ?? DEFAULT_MAX_COMPACT_RETRIES
       if (isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
         const sessionId = sessionIdForActor(actor, detail.state, detail.settings)
@@ -672,43 +674,19 @@ export class BuddyRunner {
             type: 'actor.context_limit_detected',
             actor,
             run_id: runId,
-            payload: { error: failureMessage, compact_attempt: compactRetries + 1, max_compact_retries: maxCompactRetries }
+            payload: { error: failureMessage, reset_attempt: compactRetries + 1, max_reset_attempts: maxCompactRetries }
           })
+
           await this.store.appendTranscript(
             taskId,
             workspaceKey,
             'system',
-            `${actorDisplayName(actor)} 达到上下文窗口限制，正在压缩会话并重试 (${compactRetries + 1}/${maxCompactRetries})...`,
-            { kind: 'compact_retry', compact_attempt: compactRetries + 1 }
+            `${actorDisplayName(actor)} 达到上下文窗口限制，正在重置会话并注入精简上下文 (${compactRetries + 1}/${maxCompactRetries})...`,
+            { kind: 'session_reset', reset_attempt: compactRetries + 1 }
           )
+          await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
 
-          const compactSuccess = await this.runCompact(taskId, workspaceKey, actor, sessionId, cwd, launcher)
-          if (compactSuccess) {
-            await this.store.appendTaskEvent(taskId, workspaceKey, {
-              type: 'actor.compact_succeeded',
-              actor,
-              run_id: runId,
-              payload: { compact_attempt: compactRetries + 1 }
-            })
-            // Retry executeActor with incremented compact count
-            // The current lock will be removed by the finally block below,
-            // and the recursive call will create its own lock.
-            return this.executeActor(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1)
-          }
-
-          await this.store.appendTaskEvent(taskId, workspaceKey, {
-            type: 'actor.compact_failed',
-            actor,
-            run_id: runId,
-            payload: { compact_attempt: compactRetries + 1 }
-          })
-          await this.store.appendTranscript(
-            taskId,
-            workspaceKey,
-            'system',
-            `${actorDisplayName(actor)} 压缩会话失败，按常规错误处理。`,
-            { kind: 'compact_retry_failed', compact_attempt: compactRetries + 1 }
-          )
+          return this.executeActor(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1)
         }
       }
 
@@ -1021,46 +999,194 @@ export class BuddyRunner {
   }
 
   /**
-   * Run a /compact command on the actor's session to reduce context size.
-   * Returns true if compact succeeded, false otherwise.
+   * Reset the session for an actor by clearing the session ID, marking context
+   * as unsent, and generating a compact context summary via LLM so the next
+   * executeActor call will start a fresh session with a slim, high-quality
+   * context instead of the full one.
    */
-  private async runCompact(
+  private async resetSessionForActor(
     taskId: string,
     workspaceKey: string,
     actor: string,
-    sessionId: string,
+    detail: { state: TaskState; task_text: string; context_text: string; transcript: TranscriptEntry[]; settings: TaskSettings }
+  ): Promise<void> {
+    const sessionKey = actor === 'claude' ? 'claude_session_id'
+      : actor === 'codex' ? 'codex_thread_id'
+      : actor === 'opencode' ? 'opencode_session_id'
+      : actor === 'kimi' ? 'kimi_session_id'
+      : null
+
+    if (!sessionKey) return
+
+    // Try to generate a summary via LLM first; fall back to simple truncation
+    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+    const cwd = await existingCwd(detail.state.repo_root)
+    const launcher = detail.settings.launchers[actor] ?? {
+      command: actor,
+      env: {},
+      timeout_seconds: 600
+    }
+    const summaryContext = await this.summarizeContextViaLLM(
+      taskId, workspaceKey, actor, detail, cwd, launcher
+    )
+
+    // Use LLM summary if available, otherwise fall back to simple truncation
+    const compactContext = summaryContext ?? buildCompactContextFallback(
+      detail.task_text,
+      detail.context_text,
+      detail.transcript,
+      actor
+    )
+
+    await this.store.updateTaskState(taskId, workspaceKey, (state) => {
+      const contextSent = { ...(state.context_sent ?? {}) }
+      // Mark context as not sent so the fresh session receives the compact context
+      contextSent[actor] = false
+      return {
+        ...state,
+        [sessionKey]: null,
+        context_sent: contextSent
+      }
+    })
+
+    // Write the compact context to context.md so it gets picked up by
+    // buildActorPrompt on the next executeActor call.
+    // Backup the original context.md first so the full context is not lost.
+    const contextFile = join(taskDirectory, 'context.md')
+    const backupFile = join(taskDirectory, 'context.full.md')
+    try {
+      const original = await readFile(contextFile, 'utf-8')
+      if (original.trim()) {
+        await writeFile(backupFile, original, 'utf-8')
+      }
+    } catch { /* context.md may not exist yet */ }
+    await writeFile(contextFile, compactContext, 'utf-8')
+
+    await this.store.appendTaskEvent(taskId, workspaceKey, {
+      type: 'actor.session_reset',
+      actor,
+      run_id: `reset_${Date.now()}`,
+      payload: {
+        reason: 'context_window_limit',
+        session_key: sessionKey,
+        summary_method: summaryContext ? 'llm' : 'truncation'
+      }
+    })
+  }
+
+  /**
+   * Use an LLM to summarize the task context and transcript into a compact
+   * summary for the fresh session. Returns the summary text, or null if
+   * the LLM call fails (caller should fall back to simple truncation).
+   */
+  private async summarizeContextViaLLM(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    detail: { state: TaskState; task_text: string; context_text: string; transcript: TranscriptEntry[] },
     cwd: string,
     launcher: { command: string; env: Record<string, string>; timeout_seconds: number }
-  ): Promise<boolean> {
-    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
-    const commandKind = commandKindFor(actor, launcher.command)
+  ): Promise<string | null> {
+    // Build the summarization prompt
+    const summarizePrompt = buildSummarizePrompt(
+      detail.task_text,
+      detail.context_text,
+      detail.transcript
+    )
 
-    const compactCommand = buildLauncherCommand({
+    // Pre-check: if the prompt is still very large after size limiting,
+    // skip LLM summarization entirely and go straight to truncation fallback.
+    // This avoids wasting an API call that would likely fail.
+    // Rough estimate: 1 token ≈ 4 chars for English, ≈ 2 chars for CJK.
+    // 50000 chars ≈ 12500-25000 tokens, which is safe for most models.
+    const estimatedTokens = Math.ceil(summarizePrompt.length / 3)
+    const maxTokensForSummarize = 100000 // conservative limit for the input
+    if (estimatedTokens > maxTokensForSummarize) {
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_skipped',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { reason: 'prompt_too_large', estimated_tokens: estimatedTokens, char_count: summarizePrompt.length }
+      })
+      return null
+    }
+
+    // Launch a fresh session (no --resume) with the summarization prompt.
+    // Write the prompt to a temp file so contract launchers can find it too.
+    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+    const summarizePromptFile = join(taskDirectory, 'artifacts', `summarize_${Date.now()}-prompt.md`)
+    await mkdir(join(taskDirectory, 'artifacts'), { recursive: true })
+    await writeFile(summarizePromptFile, summarizePrompt, 'utf-8')
+
+    const summarizeCommand = buildLauncherCommand({
       actor,
       command: launcher.command,
-      mode: 'resume',
-      promptText: '/compact',
-      promptFile: '',
+      mode: 'start', // fresh session, no resume
+      promptText: summarizePrompt,
+      promptFile: summarizePromptFile,
       repoRoot: cwd,
       taskDir: taskDirectory,
-      runId: `compact_${Date.now()}`,
-      sessionId
+      runId: `summarize_${Date.now()}`
     })
+
+    const outputLines: string[] = []
+    const stderrLines: string[] = []
 
     try {
       const result = await runLauncher({
-        command: compactCommand.command,
-        args: compactCommand.args,
+        command: summarizeCommand.command,
+        args: summarizeCommand.args,
         cwd,
-        env: { ...launcher.env, ...(compactCommand.env ?? {}) },
-        stdinText: compactCommand.stdinText,
-        timeoutMs: 120000, // 2 minutes for compact
-        onStdout: () => {},
-        onStderr: () => {}
+        env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
+        stdinText: summarizeCommand.stdinText,
+        timeoutMs: 120000, // 2 minutes for summarization
+        onStdout: (line) => outputLines.push(line),
+        onStderr: (line) => stderrLines.push(line)
       })
-      return result.exitCode === 0
-    } catch {
-      return false
+
+      if (result.exitCode !== 0) {
+        // Log summarization failure
+        const stderrText = stderrLines.join('\n').trim()
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.summarize_failed',
+          actor,
+          run_id: `summarize_${Date.now()}`,
+          payload: { exit_code: result.exitCode, stderr_preview: stderrText.slice(0, 1000) }
+        })
+        return null
+      }
+
+      // Extract text from the LLM output
+      const stdoutText = outputLines.join('\n')
+      const extracted = extractActorOutput(actor, stdoutText)
+
+      if (!extracted.trim()) {
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.summarize_failed',
+          actor,
+          run_id: `summarize_${Date.now()}`,
+          payload: { reason: 'empty_output' }
+        })
+        return null
+      }
+
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_succeeded',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { summary_length: extracted.length }
+      })
+
+      return extracted.trim()
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_failed',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { error: errMsg.slice(0, 1000) }
+      })
+      return null
     }
   }
 }
@@ -1074,6 +1200,146 @@ function canStartFrom(status: TaskState['status']): boolean {
     status === 'DONE' ||
     status === 'PINGING'
   )
+}
+
+/**
+ * Build a summarization prompt that asks the LLM to condense the task context
+ * and transcript into a compact summary for the fresh session.
+ *
+ * Size limits are enforced to prevent the summarize prompt itself from exceeding
+ * the model's context window (which would make summarization always fail):
+ * - Max 10 most recent transcript entries
+ * - Max 2000 chars per entry
+ * - Max 50000 chars total for the prompt
+ */
+const SUMMARIZE_MAX_TRANSCRIPT_ENTRIES = 10
+const SUMMARIZE_MAX_ENTRY_CHARS = 2000
+const SUMMARIZE_MAX_PROMPT_CHARS = 50000
+
+function buildSummarizePrompt(
+  taskText: string,
+  contextText: string,
+  transcript: TranscriptEntry[]
+): string {
+  const parts: string[] = []
+
+  parts.push('请将以下任务上下文和对话记录总结为一份精简摘要。')
+  parts.push('')
+  parts.push('要求：')
+  parts.push('1. 保留关键决策、发现和未解决问题')
+  parts.push('2. 去除冗余和重复信息')
+  parts.push('3. 保持摘要简洁（不超过 2000 字）')
+  parts.push('4. 用 markdown 格式输出')
+  parts.push('5. 直接输出摘要内容，不要有额外的解释或前言')
+  parts.push('')
+
+  if (taskText.trim()) {
+    parts.push('## 任务描述')
+    parts.push(taskText.trim())
+    parts.push('')
+  }
+
+  if (contextText.trim()) {
+    // Truncate context to avoid prompt being too large
+    const ctx = contextText.trim()
+    const maxCtxLen = 10000
+    if (ctx.length > maxCtxLen) {
+      parts.push('## 背景上下文（已截断）')
+      parts.push(ctx.slice(0, maxCtxLen))
+      parts.push('...（上下文已截断）')
+    } else {
+      parts.push('## 背景上下文')
+      parts.push(ctx)
+    }
+    parts.push('')
+  }
+
+  // Include only the most recent transcript entries, with size limits
+  if (transcript.length > 0) {
+    parts.push('## 对话记录')
+    const recentEntries = transcript.slice(-SUMMARIZE_MAX_TRANSCRIPT_ENTRIES)
+    for (const entry of recentEntries) {
+      const roleLabel = entry.role === 'human' ? '用户'
+        : entry.role === 'system' ? '系统'
+        : actorDisplayName(entry.role)
+      const content = entry.content.length > SUMMARIZE_MAX_ENTRY_CHARS
+        ? entry.content.slice(0, SUMMARIZE_MAX_ENTRY_CHARS) + '...（已截断）'
+        : entry.content
+      parts.push(`### ${roleLabel}`)
+      parts.push(content)
+      parts.push('')
+    }
+  }
+
+  parts.push('## 输出要求')
+  parts.push('请输出一份精简的上下文摘要，包含：当前进展、关键发现、待解决问题。不要输出任何其他内容。')
+
+  let result = parts.join('\n')
+
+  // Hard limit: if the prompt exceeds the max size, truncate from the middle
+  if (result.length > SUMMARIZE_MAX_PROMPT_CHARS) {
+    result = result.slice(0, SUMMARIZE_MAX_PROMPT_CHARS) + '\n\n...（提示词已截断，请基于以上内容总结）'
+  }
+
+  return result
+}
+
+/**
+ * Build a compact context fallback for a fresh session when LLM summarization
+ * fails. Uses simple truncation instead of AI-powered summarization.
+ */
+function buildCompactContextFallback(
+  taskText: string,
+  contextText: string,
+  transcript: TranscriptEntry[],
+  _actor: string
+): string {
+  const parts: string[] = []
+
+  parts.push('> ⚠️ 上一轮会话因上下文窗口限制已重置。以下是精简后的上下文摘要。')
+  parts.push('')
+
+  // Include the task text (usually short)
+  if (taskText.trim()) {
+    parts.push('## 任务')
+    parts.push(taskText.trim())
+    parts.push('')
+  }
+
+  // Condense context text: take first 2000 chars if too long
+  if (contextText.trim()) {
+    const trimmed = contextText.trim()
+    if (trimmed.length > 2000) {
+      parts.push('## 背景上下文（已截断）')
+      parts.push(trimmed.slice(0, 2000))
+      parts.push('...（上下文已截断，详细内容请参考代码库）')
+    } else {
+      parts.push('## 背景上下文')
+      parts.push(trimmed)
+    }
+    parts.push('')
+  }
+
+  // Include only the last 2 transcript entries (most recent actor turns)
+  const recentTranscript = transcript.slice(-2)
+  if (recentTranscript.length > 0) {
+    parts.push('## 最近对话（摘要）')
+    for (const entry of recentTranscript) {
+      const roleLabel = entry.role === 'human' ? '用户'
+        : entry.role === 'system' ? '系统'
+        : actorDisplayName(entry.role)
+      // Truncate each entry to 500 chars
+      const content = entry.content.length > 500
+        ? entry.content.slice(0, 500) + '...（已截断）'
+        : entry.content
+      parts.push(`**${roleLabel}**: ${content}`)
+    }
+    parts.push('')
+  }
+
+  parts.push('请基于以上摘要继续工作。如需更多上下文，请查阅代码库。')
+
+  return parts.join('\n')
 }
 
 function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
