@@ -41,6 +41,7 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /exceeded.*token/i,
   /input.*too long/i,
   /request too large/i,
+  /context window likely exhausted/i,
   // Chinese error messages from models like GLM, Qwen, DeepSeek
   /对话内容太长/i,
   /超出.*处理能力/i,
@@ -636,7 +637,7 @@ export class BuddyRunner {
 
       // Ghost output: raw events exist but nothing was extracted (unrecognized error format)
       // However, if parsedLines contain text (e.g. step_start placeholders), use those instead of throwing
-      // Skip noise events (system/hook) that carry no actor content
+      // Skip noise events (system/hook/step_start) that carry no actor content
       const nonNoiseEvents = rawEvents.trim().split(/\r?\n/).filter((line) => {
         if (!line.trim()) return false
         try {
@@ -645,14 +646,21 @@ export class BuddyRunner {
           if (obj.type === 'system' && typeof obj.subtype === 'string' && (obj.subtype as string).startsWith('hook_')) return false
           // Filter out other system events that carry no actor content (e.g. init, warning)
           if (obj.type === 'system' && obj.subtype !== undefined) return false
+          // Filter out step_start noise events (context-exhausted actors emit only these)
+          if (obj.type === 'step_start') return false
           return true
         } catch {
           return true // keep non-JSON lines
         }
       })
       const nonNoiseRaw = nonNoiseEvents.join('\n')
-      if (!outputText.trim() && nonNoiseRaw.trim()) {
-        const parsedText = parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
+      // Check if the only parsed text comes from noise events (step_start placeholders)
+      const nonNoiseParsedText = parsedLines.filter((l) => l.text && !l.noise).map((l) => l.text).join('\n').trim()
+      const hasOnlyNoiseOutput = !outputText.trim() && !nonNoiseParsedText && parsedLines.some((l) => l.noise && l.text)
+      if (hasOnlyNoiseOutput) {
+        throw new Error('Actor exited with only noise events (likely context window exhausted)')
+      } else if (!outputText.trim() && nonNoiseRaw.trim()) {
+        const parsedText = nonNoiseParsedText || parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
         if (parsedText) {
           outputText = parsedText
         } else {
@@ -726,6 +734,21 @@ export class BuddyRunner {
     const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
     const threadId = lastValue(parsedLines.map((line) => line.threadId))
     const message = parseBuddyMessage(text)
+
+    // Degraded response detection: if the output consists only of noise placeholders
+    // (e.g. "..." from step_start events) with no buddy protocol JSON, the actor's
+    // context is likely exhausted. Treat this as a context window limit error so
+    // the session reset / compact logic can kick in, instead of silently accepting
+    // a meaningless "chat" message that would block break requests.
+    // Skip this check when outputText itself contains a valid buddy message
+    // (e.g. contract launchers write buddy JSON directly to the output file).
+    const hasNonNoiseContent = parsedLines.some((l) => l.text && !l.noise)
+    const hasBuddyJsonInOutput = message.kind === 'message' ? message.text !== text : true
+    const isDegradedResponse = !hasNonNoiseContent && !hasBuddyJsonInOutput && message.kind === 'message'
+    if (isDegradedResponse) {
+      throw new Error(`Actor produced only noise events (context window likely exhausted): ${text.slice(0, 200)}`)
+    }
+
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const nextActor = nextActorForSettings(actor, detail.settings)
