@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.20] - 2026-06-04
+
+### Changed
+- 上下文窗口限制时的处理方式从 /compact 改为重置会话：/compact 在 `-p`（pipe）模式下会被当作普通文本输入而非斜杠命令，无法实际压缩会话；现在改为清空会话 ID 并注入 LLM 生成的精简上下文摘要，在新会话中继续执行
+
+### Fixed
+- 修复上下文溢出后 /compact 无效导致反复触发的问题：重置会话后生成高质量摘要，失败时回退到截断式摘要，并备份原始上下文防止信息丢失
+
+---
+
 ## [1.0.19] - 2026-06-03
 
 ### Added
@@ -312,6 +322,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.0.20]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.20
 [1.0.19]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.19
 [1.0.18]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.18
 [1.0.17]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.17
