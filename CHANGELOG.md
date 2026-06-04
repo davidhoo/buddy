@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-06-04
+
+### Fixed
+- 修复 Actor 上下文耗尽时仅输出噪声事件（step_start）导致的无限循环：当 OpenCode/Kimi 上下文窗口耗尽后只发出 step_start 事件时，其占位符 "..." 被当作有效内容处理，导致任务无法触发会话重置而无限循环；现在 step_start 事件标记为 noise，纯噪声输出会正确抛出上下文耗尽错误，触发自动重置机制
+
+---
+
 ## [1.1.0] - 2026-06-04
 
 ### Fixed
@@ -329,6 +336,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.1
 [1.1.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.0
 [1.0.20]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.20
 [1.0.19]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.19
