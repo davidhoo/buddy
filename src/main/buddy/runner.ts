@@ -40,7 +40,16 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /exceeds.*token/i,
   /exceeded.*token/i,
   /input.*too long/i,
-  /request too large/i
+  /request too large/i,
+  // Chinese error messages from models like GLM, Qwen, DeepSeek
+  /对话内容太长/i,
+  /超出.*处理能力/i,
+  /超出.*上下文/i,
+  /超出.*模型.*能力/i,
+  /上下文.*超限/i,
+  /上下文.*超出/i,
+  /内容过长/i,
+  /超出.*长度/i
 ]
 
 const DEFAULT_MAX_COMPACT_RETRIES = 3

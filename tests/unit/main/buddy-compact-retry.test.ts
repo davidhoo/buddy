@@ -49,6 +49,18 @@ describe('isContextWindowLimitError', () => {
     expect(isContextWindowLimitError('CONTEXT WINDOW LIMIT')).toBe(true)
     expect(isContextWindowLimitError('Context Length Exceeded')).toBe(true)
   })
+
+  it('detects Chinese context limit errors', () => {
+    // GLM error: "对话内容太长，已超出当前模型的处理能力"
+    expect(isContextWindowLimitError('对话内容太长，已超出当前模型的处理能力。请新建对话，或换用支持更长上下文的模型继续。')).toBe(true)
+    expect(isContextWindowLimitError('超出当前模型的处理能力')).toBe(true)
+    expect(isContextWindowLimitError('上下文超限')).toBe(true)
+    expect(isContextWindowLimitError('上下文超出限制')).toBe(true)
+    expect(isContextWindowLimitError('超出模型的最大长度')).toBe(true)
+    expect(isContextWindowLimitError('内容过长，请缩短输入')).toBe(true)
+    // Full GLM error with JSON wrapper
+    expect(isContextWindowLimitError('API Error: 400 {"error":{"message":"对话内容太长，已超出当前模型的处理能力。"},"type":"error"}')).toBe(true)
+  })
 })
 
 describe('BuddyRunner context window limit handling', () => {
