@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-06-04
+
+### Fixed
+- 识别中文上下文窗口限制错误信息：新增 8 条中文正则匹配规则，覆盖 GLM、Qwen、DeepSeek 等模型返回的上下文超限错误，确保自动重置会话机制在中文错误场景下正常触发
+
+---
+
 ## [1.0.20] - 2026-06-04
 
 ### Changed
@@ -322,6 +329,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.0
 [1.0.20]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.20
 [1.0.19]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.19
 [1.0.18]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.18
