@@ -37,6 +37,14 @@ describe('isContextWindowLimitError', () => {
     expect(isContextWindowLimitError('Request too large')).toBe(true)
   })
 
+  it('detects "likely context window exhausted" noise-events error (runner.ts:661)', () => {
+    expect(isContextWindowLimitError('Actor exited with only noise events (likely context window exhausted)')).toBe(true)
+  })
+
+  it('detects "context window likely exhausted" degraded-response error (runner.ts:749)', () => {
+    expect(isContextWindowLimitError('Actor produced only noise events (context window likely exhausted): ...')).toBe(true)
+  })
+
   it('does not match unrelated errors', () => {
     expect(isContextWindowLimitError('Connection refused')).toBe(false)
     expect(isContextWindowLimitError('Permission denied')).toBe(false)
