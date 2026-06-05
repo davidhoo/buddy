@@ -41,7 +41,7 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /exceeded.*token/i,
   /input.*too long/i,
   /request too large/i,
-  /context window likely exhausted/i,
+  /context window.*exhausted/i,
   // Chinese error messages from models like GLM, Qwen, DeepSeek
   /对话内容太长/i,
   /超出.*处理能力/i,
