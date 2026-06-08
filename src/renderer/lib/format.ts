@@ -55,7 +55,12 @@ const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'health_check.passed': 'event.healthCheck.passed',
   'health_check.failed': 'event.healthCheck.failed',
   'failure_threshold.reached': 'event.failureThreshold.reached',
-  'permission.detected': 'event.permission.detected'
+  'permission.detected': 'event.permission.detected',
+  'actor.context_limit_detected': 'event.actor.contextLimitDetected',
+  'actor.session_reset': 'event.actor.sessionReset',
+  'actor.summarize_succeeded': 'event.actor.summarizeSucceeded',
+  'actor.summarize_failed': 'event.actor.summarizeFailed',
+  'actor.summarize_skipped': 'event.actor.summarizeSkipped'
 }
 
 export function eventTypeLabel(type: string, lang: Language): string {

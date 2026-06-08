@@ -343,6 +343,11 @@ const en = {
   'event.healthCheck.failed': 'Health check failed',
   'event.failureThreshold.reached': 'Failure limit reached',
   'event.permission.detected': 'Permission',
+  'event.actor.contextLimitDetected': 'Context limit reached',
+  'event.actor.sessionReset': 'Session reset',
+  'event.actor.summarizeSucceeded': 'Context summarized',
+  'event.actor.summarizeFailed': 'Summarization failed',
+  'event.actor.summarizeSkipped': 'Summarization skipped',
 
   // Create task modal
   'modal.create.title': 'New task',
@@ -685,6 +690,11 @@ const zhCN: typeof en = {
   'event.healthCheck.failed': '连通性检查失败',
   'event.failureThreshold.reached': '失败次数达上限',
   'event.permission.detected': '权限请求',
+  'event.actor.contextLimitDetected': '上下文长度超限',
+  'event.actor.sessionReset': '会话重置',
+  'event.actor.summarizeSucceeded': '上下文已精简',
+  'event.actor.summarizeFailed': '精简失败',
+  'event.actor.summarizeSkipped': '精简已跳过',
 
   'modal.create.title': '新建任务',
   'modal.create.taskName': '任务名称',
@@ -1025,6 +1035,11 @@ const zhTW: typeof en = {
   'event.healthCheck.failed': '連通性檢查失敗',
   'event.failureThreshold.reached': '失敗次數達上限',
   'event.permission.detected': '權限請求',
+  'event.actor.contextLimitDetected': '上下文長度超限',
+  'event.actor.sessionReset': '工作階段重設',
+  'event.actor.summarizeSucceeded': '上下文已精簡',
+  'event.actor.summarizeFailed': '精簡失敗',
+  'event.actor.summarizeSkipped': '精簡已跳過',
 
   'modal.create.title': '新增任務',
   'modal.create.taskName': '任務名稱',
