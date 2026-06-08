@@ -28,6 +28,9 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
 
 const PING_TIMEOUT_SECONDS = 120
 
+/** Canonical phrase used in both throw sites and the regex pattern below — keep in sync */
+const CONTEXT_EXHAUSTED_PHRASE = 'context window exhausted'
+
 /** Patterns that indicate an actor hit the context window limit */
 const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /context window limit/i,
@@ -648,6 +651,8 @@ export class BuddyRunner {
           if (obj.type === 'system' && obj.subtype !== undefined) return false
           // Filter out step_start noise events (context-exhausted actors emit only these)
           if (obj.type === 'step_start') return false
+          // Filter out step_finish noise events (lifecycle events, no actor content)
+          if (obj.type === 'step_finish') return false
           return true
         } catch {
           return true // keep non-JSON lines
@@ -658,7 +663,7 @@ export class BuddyRunner {
       const nonNoiseParsedText = parsedLines.filter((l) => l.text && !l.noise).map((l) => l.text).join('\n').trim()
       const hasOnlyNoiseOutput = !outputText.trim() && !nonNoiseParsedText && parsedLines.some((l) => l.noise && l.text)
       if (hasOnlyNoiseOutput) {
-        throw new Error('Actor exited with only noise events (likely context window exhausted)')
+        throw new Error(`Actor exited with only noise events (likely ${CONTEXT_EXHAUSTED_PHRASE})`)
       } else if (!outputText.trim() && nonNoiseRaw.trim()) {
         const parsedText = nonNoiseParsedText || parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
         if (parsedText) {
@@ -746,7 +751,7 @@ export class BuddyRunner {
     const hasBuddyJsonInOutput = message.kind === 'message' ? message.text !== text : true
     const isDegradedResponse = !hasNonNoiseContent && !hasBuddyJsonInOutput && message.kind === 'message'
     if (isDegradedResponse) {
-      throw new Error(`Actor produced only noise events (context window likely exhausted): ${text.slice(0, 200)}`)
+      throw new Error(`Actor produced only noise events (${CONTEXT_EXHAUSTED_PHRASE} likely): ${text.slice(0, 200)}`)
     }
 
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)

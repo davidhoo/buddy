@@ -99,6 +99,12 @@ export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
       rawType: json.type,
       noise: true
     }
+  } else if (json.type === 'step_finish') {
+    return {
+      sessionId: stableSessionIdFromEvent('opencode', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
   } else if (json.type === 'tool_use') {
     const toolName = part?.tool ?? 'tool'
     const state = objectValue(part?.state)
