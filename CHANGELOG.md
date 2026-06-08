@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.2] - 2026-06-08
+
+### Fixed
+- 过滤 OpenCode `step_finish` 噪声事件：上下文耗尽的 Actor 在退出时也会发出 `step_finish` 事件，这些生命周期事件不含实际内容却被当作有效输出，导致任务无法触发会话重置；现在 `step_finish` 与 `step_start` 一样标记为 noise 并在判断纯噪声输出时过滤
+- 统一上下文耗尽短语：将两处错误信息中的上下文耗尽描述统一为 `context window exhausted`，并同步修正正则匹配模式从 `/context window likely exhausted/` 改为 `/context window.*exhausted/`，确保不论错误信息是否含 `likely` 都能正确匹配并触发自动重置
+
+---
+
 ## [1.1.1] - 2026-06-04
 
 ### Fixed
@@ -336,6 +344,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.2
 [1.1.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.1
 [1.1.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.0
 [1.0.20]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.0.20
