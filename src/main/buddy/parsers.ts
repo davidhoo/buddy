@@ -145,6 +145,12 @@ export function parseKimiJSONLine(line: string): ParsedActorLine {
       rawType: json.type,
       noise: true
     }
+  } else if (json.type === 'step_finish') {
+    return {
+      sessionId: stableSessionIdFromEvent('kimi', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
   } else if (json.type === 'tool_use') {
     const toolName = typeof part?.tool === 'string' ? part.tool : 'tool'
     const state = objectValue(part?.state)
