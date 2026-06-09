@@ -179,6 +179,16 @@ export interface BuddyError {
   recoverable?: boolean
 }
 
+export interface TestLauncherResult {
+  actor: string
+  success: boolean
+  phase: 'tool_check' | 'ping'
+  error?: string
+  sessionId?: string
+  threadId?: string
+  responsePreview?: string
+}
+
 export interface TaskEventEnvelope {
   workspace_key: string
   task_id: string

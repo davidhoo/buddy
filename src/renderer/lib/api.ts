@@ -6,6 +6,7 @@ import type {
   InstructionQueueItem,
   RoundEventSummary,
   SendMessageInput,
+  TestLauncherResult,
   StartTaskInput,
   TaskEventEnvelope,
   TaskStats
@@ -64,6 +65,8 @@ export const api = {
     buddy().gitDiffForCommitMessage(repoRoot),
   generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
     buddy().generateCommitMessage(repoRoot, actorCommand, lang),
+  testLauncher: (actor: string, command: string, env?: Record<string, string>) =>
+    buddy().testLauncher(actor, command, env) as Promise<TestLauncherResult>,
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
     buddy().onTaskEvent(callback)
 }

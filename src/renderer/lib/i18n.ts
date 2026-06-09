@@ -182,6 +182,18 @@ const en = {
   'settings.collab.maxFailures.title': 'Max consecutive failures',
   'settings.collab.maxFailures.desc': 'Pause the task when consecutive failures reach this limit, shared across all actors',
 
+  // Settings — Test Launcher
+  'settings.launcher.test': 'Test',
+  'settings.launcher.testing': 'Testing…',
+  'settings.launcher.testPassed': 'Passed',
+  'settings.launcher.testFailed': 'Failed',
+  'settings.launcher.toolCheckFailed': 'Tool not found',
+  'settings.launcher.pingPassed': 'Ping response received',
+  'settings.launcher.pingFailed': 'Ping failed',
+  'settings.launcher.testSuccess': 'Configuration is valid. Actor responded successfully.',
+  'settings.launcher.testError': 'Configuration test failed: {error}',
+  'settings.launcher.testResponse': 'Response preview',
+
   // Settings — Appearance
   'settings.appearance.theme.title': 'Theme',
   'settings.appearance.theme.desc': 'Choose the appearance theme',
@@ -539,6 +551,18 @@ const zhCN: typeof en = {
   'settings.collab.maxFailures.title': '连续失败上限',
   'settings.collab.maxFailures.desc': '连续失败达到此上限时自动暂停任务，所有 actor 共享计数',
 
+  // 设置 — 测试 Launcher
+  'settings.launcher.test': '测试',
+  'settings.launcher.testing': '测试中…',
+  'settings.launcher.testPassed': '通过',
+  'settings.launcher.testFailed': '失败',
+  'settings.launcher.toolCheckFailed': '工具未找到',
+  'settings.launcher.pingPassed': 'Ping 响应已收到',
+  'settings.launcher.pingFailed': 'Ping 失败',
+  'settings.launcher.testSuccess': '配置有效，Actor 响应正常。',
+  'settings.launcher.testError': '配置测试失败：{error}',
+  'settings.launcher.testResponse': '响应预览',
+
   'settings.appearance.theme.title': '主题',
   'settings.appearance.theme.desc': '选择应用的外观主题',
   'settings.appearance.theme.light.label': '浅色',
@@ -882,6 +906,18 @@ const zhTW: typeof en = {
   'settings.collab.timeout.desc': '每個 AI 在單輪協作中的最長執行時間，逾時後自動終止，所有 actor 共用此值',
   'settings.collab.maxFailures.title': '連續失敗上限',
   'settings.collab.maxFailures.desc': '連續失敗達到此上限時自動暫停任務，所有 actor 共用計數',
+
+  // 設定 — 測試 Launcher
+  'settings.launcher.test': '測試',
+  'settings.launcher.testing': '測試中…',
+  'settings.launcher.testPassed': '通過',
+  'settings.launcher.testFailed': '失敗',
+  'settings.launcher.toolCheckFailed': '工具未找到',
+  'settings.launcher.pingPassed': 'Ping 回應已收到',
+  'settings.launcher.pingFailed': 'Ping 失敗',
+  'settings.launcher.testSuccess': '設定有效，Actor 回應正常。',
+  'settings.launcher.testError': '設定測試失敗：{error}',
+  'settings.launcher.testResponse': '回應預覽',
 
   'settings.appearance.theme.title': '主題',
   'settings.appearance.theme.desc': '選擇應用的外觀主題',

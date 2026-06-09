@@ -5,6 +5,8 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutU
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
 import { useUpdateGlobalSettings } from '../hooks/useBuddy'
+import { useTestLauncher } from '../hooks/useBuddy'
+import type { TestLauncherResult } from '../../shared/types'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
 import {
@@ -25,6 +27,7 @@ import {
 } from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
+import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 
 export type SettingsTab = 'general' | 'appearance' | 'keyboard'
 
@@ -355,6 +358,27 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
 
   const dirty = draft !== saved
 
+  const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
+  const testLauncherMutation = useTestLauncher()
+
+  const handleTest = () => {
+    setTestResult(null)
+    testLauncherMutation.mutate(
+      { actor, command: saved },
+      {
+        onSuccess: (result) => setTestResult(result),
+        onError: (err) => {
+          setTestResult({
+            actor,
+            success: false,
+            phase: 'tool_check',
+            error: err instanceof Error ? err.message : String(err)
+          })
+        }
+      }
+    )
+  }
+
   return (
     <div className="px-4 py-4">
       <div className="flex items-center gap-2 mb-1">
@@ -388,7 +412,45 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
         >
           {t('common.save')}
         </button>
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!saved || testLauncherMutation.isPending}
+          className="px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
+          title={t('settings.launcher.test')}
+        >
+          {testLauncherMutation.isPending ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Zap size={12} />
+          )}
+          {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
+        </button>
       </div>
+      {testResult && (
+        <div className={`mt-3 px-3 py-2 rounded-lg text-xs leading-relaxed ${
+          testResult.success
+            ? 'bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400'
+            : 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+        }`}>
+          <div className="flex items-center gap-1.5 mb-1 font-medium">
+            {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+            {testResult.success ? t('settings.launcher.testPassed') : t('settings.launcher.testFailed')}
+          </div>
+          {testResult.phase === 'tool_check' && !testResult.success && (
+            <div className="text-fg-secondary">{t('settings.launcher.toolCheckFailed')}</div>
+          )}
+          {testResult.error && (
+            <div className="mt-1 font-mono text-[11px] break-all opacity-80">{testResult.error}</div>
+          )}
+          {testResult.success && testResult.responsePreview && (
+            <div className="mt-1">
+              <span className="text-fg-secondary">{t('settings.launcher.testResponse')}：</span>
+              <span className="opacity-80">{testResult.responsePreview}</span>
+            </div>
+          )}
+        </div>
+      )}
       {Object.keys(launcher.env).length > 0 && (
         <div className="mt-2 text-xs text-fg-muted font-mono">
           {Object.entries(launcher.env).map(([k, v]) => (

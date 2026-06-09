@@ -29,6 +29,7 @@ describe('registerBuddyHandlers', () => {
       gitCommitAndPush: vi.fn(),
       gitDiffForCommitMessage: vi.fn(),
       generateCommitMessage: vi.fn(),
+      testLauncher: vi.fn(),
       onTaskEvent: vi.fn()
     }
 
@@ -36,6 +37,6 @@ describe('registerBuddyHandlers', () => {
 
     expect(handle).toHaveBeenCalledWith('buddy:bootstrap', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:startTask', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(24)
+    expect(handle).toHaveBeenCalledTimes(25)
   })
 })

@@ -1409,13 +1409,13 @@ function normalizeActorRole(actor: string): TranscriptEntry['role'] {
   return 'system'
 }
 
-function lastValue(values: Array<string | undefined>): string | undefined {
+export function lastValue(values: Array<string | undefined>): string | undefined {
   const filtered = values.filter(Boolean)
   return filtered[filtered.length - 1]
 }
 
 /** Check if stderr text contains only known CLI warnings (not real errors) */
-function isCliWarningOnly(stderrText: string): boolean {
+export function isCliWarningOnly(stderrText: string): boolean {
   // Known CLI warnings that should not be treated as errors
   const warningPatterns = [
     /Running with --dangerously-skip-permissions/i,
@@ -1453,7 +1453,7 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-async function collectRawEvents(
+export async function collectRawEvents(
   eventFile: string,
   stdoutText: string,
   kind: LauncherCommandKind
@@ -1473,7 +1473,7 @@ async function collectRawEvents(
   return ''
 }
 
-async function collectOutputText(
+export async function collectOutputText(
   actor: string,
   kind: LauncherCommandKind,
   outputFile: string,

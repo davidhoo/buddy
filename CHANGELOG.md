@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.4] - 2026-06-09
+
+### Added
+- Launcher 连通性测试：在设置页面为每个 Actor 的命令添加测试按钮，一键验证命令是否可用并实际调用 Actor 获取响应，支持工具检查和 Ping 两阶段检测，测试结果实时展示成功/失败状态及响应预览
+- `TestLauncherResult` 类型和 `buddy:testLauncher` IPC 通道，前后端完整支持 Launcher 测试能力
+
+---
+
 ## [1.1.3] - 2026-06-09
 
 ### Fixed
@@ -352,6 +360,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.4
 [1.1.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.3
 [1.1.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.2
 [1.1.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.1
