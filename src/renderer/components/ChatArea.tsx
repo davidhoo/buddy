@@ -261,7 +261,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
         )}
       </div>
 
-      {showScrollBtn && !detailExpanded && (
+      {showScrollBtn && (
         <div className="flex justify-center -mt-2 mb-1 relative z-10">
           <button
             type="button"
