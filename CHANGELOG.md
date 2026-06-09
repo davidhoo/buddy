@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.3] - 2026-06-09
+
+### Fixed
+- 补充 Actor 上下文管理相关事件的翻译：上下文超限、会话重置、精简成功/失败/跳过等事件在界面中显示为原始 key 而非可读文本，现已补充中英繁三语翻译
+- 过滤 Kimi `step_finish` 噪声事件：Kimi Actor 在上下文耗尽退出时发出 `step_finish` 事件，该事件不含实际内容却被当作有效输出，与 OpenCode 的同类问题一致，现在标记为 noise 并过滤
+
+---
+
 ## [1.1.2] - 2026-06-08
 
 ### Fixed
@@ -344,6 +352,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.3
 [1.1.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.2
 [1.1.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.1
 [1.1.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.0
