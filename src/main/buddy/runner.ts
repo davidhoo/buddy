@@ -12,7 +12,7 @@ import type {
   TranscriptEntry,
   TaskState
 } from '../../shared/types'
-import { buildLauncherCommand, commandKindFor, runLauncher, type LauncherCommandKind } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
@@ -274,6 +274,92 @@ export class BuddyRunner {
     return this.store.clearInstructionQueue(taskId, workspaceKey)
   }
 
+  /**
+   * Run an actor command, using PTY when required (e.g. opencode needs a TTY).
+   * Centralizes the runLauncher vs runLauncherWithPty decision.
+   */
+  private async runActorCommand(
+    command: { command: string; args: string[]; env?: Record<string, string>; kind: LauncherCommandKind; stdinText?: string },
+    cwd: string,
+    env: Record<string, string>,
+    timeoutMs: number,
+    actor: string,
+    workspaceKey: string,
+    taskId: string,
+    runId: string,
+    outputLines: string[],
+    stderrLines: string[]
+  ): Promise<{ exitCode: number | null; signal: string | null }> {
+    const needsPty = kindNeedsPty(command.kind)
+    const parserActor = parserActorForKind(actor, command.kind)
+
+    if (needsPty) {
+      return runLauncherWithPty({
+        command: command.command,
+        args: command.args,
+        cwd,
+        env: { ...env, ...(command.env ?? {}) },
+        timeoutMs,
+        onData: (data) => {
+          for (const line of data.split(/\r?\n/).filter(Boolean)) {
+            outputLines.push(line)
+            if (this.events) {
+              try {
+                const parsed = parseActorLine(parserActor, line)
+                if (parsed.text) {
+                  this.events.publish({
+                    workspace_key: workspaceKey,
+                    task_id: taskId,
+                    event: {
+                      seq: 0,
+                      type: 'actor.stdout',
+                      actor,
+                      ts: new Date().toISOString(),
+                      run_id: runId,
+                      payload: { text: parsed.text }
+                    }
+                  })
+                }
+              } catch { /* ignore parse errors for streaming */ }
+            }
+          }
+        }
+      })
+    }
+
+    return runLauncher({
+      command: command.command,
+      args: command.args,
+      cwd,
+      env: { ...env, ...(command.env ?? {}) },
+      stdinText: command.stdinText,
+      timeoutMs,
+      onStdout: (line) => {
+        outputLines.push(line)
+        if (this.events) {
+          try {
+            const parsed = parseActorLine(parserActor, line)
+            if (parsed.text) {
+              this.events.publish({
+                workspace_key: workspaceKey,
+                task_id: taskId,
+                event: {
+                  seq: 0,
+                  type: 'actor.stdout',
+                  actor,
+                  ts: new Date().toISOString(),
+                  run_id: runId,
+                  payload: { text: parsed.text }
+                }
+              })
+            }
+          } catch { /* ignore parse errors for streaming */ }
+        }
+      },
+      onStderr: (line) => stderrLines.push(line)
+    })
+  }
+
   private async executePing(
     taskId: string,
     workspaceKey: string,
@@ -315,21 +401,16 @@ export class BuddyRunner {
     const stderrLines: string[] = []
 
     try {
-      const result = await runLauncher({
-        command: command.command,
-        args: command.args,
-        cwd,
-        env: { ...launcher.env, ...(command.env ?? {}) },
-        stdinText: command.stdinText,
-        timeoutMs: PING_TIMEOUT_SECONDS * 1000,
-        onStdout: (line) => outputLines.push(line),
-        onStderr: (line) => stderrLines.push(line)
-      })
+      const result = await this.runActorCommand(
+        command, cwd, launcher.env, PING_TIMEOUT_SECONDS * 1000,
+        actor, workspaceKey, taskId, runId,
+        outputLines, stderrLines
+      )
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(actor, rawEvents)
+      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
 
       if (result.exitCode !== 0) {
         const stderrText = stderrLines.join('\n').trim()
@@ -585,43 +666,17 @@ export class BuddyRunner {
 
     try {
       const startedAtMs = Date.now()
-      const result = await runLauncher({
-        command: command.command,
-        args: command.args,
-        cwd,
-        env: { ...launcher.env, ...(command.env ?? {}) },
-        stdinText: command.stdinText,
-        timeoutMs: launcher.timeout_seconds * 1000,
-        onStdout: (line) => {
-          outputLines.push(line)
-          if (this.events) {
-            try {
-              const parsed = parseActorLine(actor, line)
-              if (parsed.text) {
-                this.events.publish({
-                  workspace_key: workspaceKey,
-                  task_id: taskId,
-                  event: {
-                    seq: 0,
-                    type: 'actor.stdout',
-                    actor,
-                    ts: new Date().toISOString(),
-                    run_id: runId,
-                    payload: { text: parsed.text }
-                  }
-                })
-              }
-            } catch { /* ignore parse errors for streaming */ }
-          }
-        },
-        onStderr: (line) => stderrLines.push(line)
-      })
+      const result = await this.runActorCommand(
+        command, cwd, launcher.env, launcher.timeout_seconds * 1000,
+        actor, workspaceKey, taskId, runId,
+        outputLines, stderrLines
+      )
       const elapsedMs = Date.now() - startedAtMs
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(actor, rawEvents)
+      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
       }
@@ -1170,16 +1225,35 @@ export class BuddyRunner {
     const stderrLines: string[] = []
 
     try {
-      const result = await runLauncher({
-        command: summarizeCommand.command,
-        args: summarizeCommand.args,
-        cwd,
-        env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
-        stdinText: summarizeCommand.stdinText,
-        timeoutMs: 120000, // 2 minutes for summarization
-        onStdout: (line) => outputLines.push(line),
-        onStderr: (line) => stderrLines.push(line)
-      })
+      const summarizeRunId = `summarize_${Date.now()}`
+      const needsPty = kindNeedsPty(summarizeCommand.kind)
+      let result: { exitCode: number | null; signal: string | null }
+
+      if (needsPty) {
+        result = await runLauncherWithPty({
+          command: summarizeCommand.command,
+          args: summarizeCommand.args,
+          cwd,
+          env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
+          timeoutMs: 120000,
+          onData: (data) => {
+            for (const line of data.split(/\r?\n/).filter(Boolean)) {
+              outputLines.push(line)
+            }
+          }
+        })
+      } else {
+        result = await runLauncher({
+          command: summarizeCommand.command,
+          args: summarizeCommand.args,
+          cwd,
+          env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
+          stdinText: summarizeCommand.stdinText,
+          timeoutMs: 120000, // 2 minutes for summarization
+          onStdout: (line) => outputLines.push(line),
+          onStderr: (line) => stderrLines.push(line)
+        })
+      }
 
       if (result.exitCode !== 0) {
         // Log summarization failure
@@ -1195,7 +1269,7 @@ export class BuddyRunner {
 
       // Extract text from the LLM output
       const stdoutText = outputLines.join('\n')
-      const extracted = extractActorOutput(actor, stdoutText)
+      const extracted = extractActorOutput(parserActorForKind(actor, summarizeCommand.kind), stdoutText)
 
       if (!extracted.trim()) {
         await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1480,7 +1554,8 @@ export async function collectOutputText(
   stdoutText: string
 ): Promise<string> {
   if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi') {
-    let output = extractActorOutput(actor, stdoutText)
+    const parserActor = parserActorForKind(actor, kind)
+    let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
 
     // Fallback: some models (e.g. DeepSeek via OpenCode/Kimi) output buddy JSON
@@ -1525,7 +1600,7 @@ export async function collectOutputText(
   }
 
   if (await fileExists(outputFile)) return readFile(outputFile, 'utf8')
-  const extracted = extractActorOutput(actor, stdoutText)
+  const extracted = extractActorOutput(parserActorForKind(actor, kind), stdoutText)
   return extracted || stdoutText
 }
 

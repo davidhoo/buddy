@@ -32,7 +32,7 @@ import { BuddyStore } from './store'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
-import { buildLauncherCommand, commandKindFor, runLauncher } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty } from './launchers'
 import { buildPingPrompt } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
@@ -265,21 +265,39 @@ export class BuddyCoreService {
       const stderrLines: string[] = []
 
       try {
-        const result = await runLauncher({
-          command: launcherCommand.command,
-          args: launcherCommand.args,
-          cwd: testDir,
-          env: { ...env, ...(launcherCommand.env ?? {}) },
-          stdinText: launcherCommand.stdinText,
-          timeoutMs: PING_TIMEOUT_SECONDS * 1000,
-          onStdout: (line) => outputLines.push(line),
-          onStderr: (line) => stderrLines.push(line)
-        })
+        const needsPty = kindNeedsPty(launcherCommand.kind)
+        let result: { exitCode: number | null; signal: string | null }
+
+        if (needsPty) {
+          result = await runLauncherWithPty({
+            command: launcherCommand.command,
+            args: launcherCommand.args,
+            cwd: testDir,
+            env: { ...env, ...(launcherCommand.env ?? {}) },
+            timeoutMs: PING_TIMEOUT_SECONDS * 1000,
+            onData: (data) => {
+              for (const line of data.split(/\r?\n/).filter(Boolean)) {
+                outputLines.push(line)
+              }
+            }
+          })
+        } else {
+          result = await runLauncher({
+            command: launcherCommand.command,
+            args: launcherCommand.args,
+            cwd: testDir,
+            env: { ...env, ...(launcherCommand.env ?? {}) },
+            stdinText: launcherCommand.stdinText,
+            timeoutMs: PING_TIMEOUT_SECONDS * 1000,
+            onStdout: (line) => outputLines.push(line),
+            onStderr: (line) => stderrLines.push(line)
+          })
+        }
 
         const stdoutText = outputLines.join('\n')
         const rawEvents = await collectRawEvents(eventFile, stdoutText, launcherCommand.kind)
         const outputText = await collectOutputText(actor, launcherCommand.kind, outputFile, stdoutText)
-        const parsedLines = parseActorEvents(actor, rawEvents)
+        const parsedLines = parseActorEvents(parserActorForKind(actor, launcherCommand.kind), rawEvents)
 
         if (result.exitCode !== 0) {
           const stderrText = stderrLines.join('\n').trim()
