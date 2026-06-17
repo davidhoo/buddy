@@ -29,6 +29,7 @@ import {
 import type { GitStatusResult } from '../../shared/types'
 import { BuddyRunner } from './runner'
 import { BuddyStore } from './store'
+import { createTaskNotifier } from './notifications'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
@@ -51,7 +52,8 @@ export class BuddyCoreService {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
-    this.runner = new BuddyRunner(this.store, { events: normalized.events })
+    const notifier = createTaskNotifier(this.store)
+    this.runner = new BuddyRunner(this.store, { events: normalized.events, notifier })
   }
 
   getStore(): BuddyStore {

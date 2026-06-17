@@ -122,7 +122,8 @@ export const globalSettingsSchema = z.object({
   seed_opencode_session_id: z.string().optional(),
   seed_kimi_session_id: z.string().optional(),
   max_compact_retries: z.number().optional(),
-  auto_generate_commit_message: z.boolean().default(true)
+  auto_generate_commit_message: z.boolean().default(true),
+  system_notifications_enabled: z.boolean().default(true)
 })
 
 export const eventSchema = z.object({

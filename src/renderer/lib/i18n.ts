@@ -183,6 +183,8 @@ const en = {
   'settings.collab.maxFailures.desc': 'Pause the task when consecutive failures reach this limit, shared across all actors',
   'settings.collab.autoGenerateCommit.title': 'Auto-generate commit message',
   'settings.collab.autoGenerateCommit.desc': 'Automatically generate a commit message when opening the commit dialog. Turn off to start with a blank message.',
+  'settings.collab.systemNotifications.title': 'System notifications',
+  'settings.collab.systemNotifications.desc': 'Show a macOS notification when a task completes or fails',
 
   // Settings — Test Launcher
   'settings.launcher.test': 'Test',
@@ -555,6 +557,8 @@ const zhCN: typeof en = {
   'settings.collab.maxFailures.desc': '连续失败达到此上限时自动暂停任务，所有 actor 共享计数',
   'settings.collab.autoGenerateCommit.title': '自动生成 commit message',
   'settings.collab.autoGenerateCommit.desc': '打开提交对话框时自动生成 commit message，关闭后默认为空。',
+  'settings.collab.systemNotifications.title': '系统通知',
+  'settings.collab.systemNotifications.desc': '任务完成或失败时发送 macOS 通知',
 
   // 设置 — 测试 Launcher
   'settings.launcher.test': '测试',
@@ -914,6 +918,8 @@ const zhTW: typeof en = {
   'settings.collab.maxFailures.desc': '連續失敗達到此上限時自動暫停任務，所有 actor 共用計數',
   'settings.collab.autoGenerateCommit.title': '自動生成 commit message',
   'settings.collab.autoGenerateCommit.desc': '打開提交對話框時自動生成 commit message，關閉後預設為空。',
+  'settings.collab.systemNotifications.title': '系統通知',
+  'settings.collab.systemNotifications.desc': '任務完成或失敗時發送 macOS 通知',
 
   // 設定 — 測試 Launcher
   'settings.launcher.test': '測試',

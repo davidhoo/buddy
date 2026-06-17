@@ -346,6 +346,16 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               />
             }
           />
+          <SettingsRow
+            title={t('settings.collab.systemNotifications.title')}
+            description={t('settings.collab.systemNotifications.desc')}
+            right={
+              <Switch
+                checked={normalizedSettings.system_notifications_enabled ?? true}
+                onChange={(v) => save({ system_notifications_enabled: v })}
+              />
+            }
+          />
         </SettingsList>
       </div>
     </div>

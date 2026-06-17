@@ -171,6 +171,7 @@ export interface GlobalSettings {
   seed_kimi_session_id?: string
   max_compact_retries?: number
   auto_generate_commit_message?: boolean
+  system_notifications_enabled?: boolean
 }
 
 export interface BuddyError {

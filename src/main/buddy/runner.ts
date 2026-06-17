@@ -18,6 +18,7 @@ import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
 import { BuddyStore } from './store'
 import { BuddyEventBus } from './events'
+import type { TaskNotifier } from './notifications'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -61,11 +62,13 @@ const DEFAULT_MAX_COMPACT_RETRIES = 3
 interface RunnerOptions {
   executeLaunchers?: boolean
   events?: BuddyEventBus
+  notifier?: TaskNotifier
 }
 
 export class BuddyRunner {
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
+  private readonly notifier?: TaskNotifier
 
   constructor(
     private readonly store: BuddyStore,
@@ -73,6 +76,7 @@ export class BuddyRunner {
   ) {
     this.executeLaunchers = options.executeLaunchers ?? true
     this.events = options.events
+    this.notifier = options.notifier
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
@@ -572,6 +576,10 @@ export class BuddyRunner {
         'health_check.failed',
         { kind: 'health_check_failed', failed_actor: failedActor ?? '', failed_reason: failedReason ?? '' }
       )
+      // Send system notification for health check failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskFailed(taskId, workspaceKey, failedActor ?? 'unknown', `健康检查失败：${failedReason ?? '未知错误'}`)
+      }
       throw new Error(`连通性检查失败：${actorDisplayName(failedActor)} — ${failedReason ?? '未知错误'}`)
     }
   }
@@ -924,6 +932,13 @@ export class BuddyRunner {
             round
           }
         })
+        // Send system notification for task completion
+        if (this.notifier) {
+          await this.notifier.notifyTaskDone(taskId, workspaceKey, 'dual_break_confirmed', {
+            first: pendingBreak?.actor,
+            second: actor
+          })
+        }
         return
       }
     }
@@ -1051,6 +1066,13 @@ export class BuddyRunner {
           round
         }
       })
+      // Send system notification for task completion via failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskDone(taskId, workspaceKey, 'break_confirmed_on_failure', {
+          first: otherActorBreak.actor,
+          second: actor
+        })
+      }
       return
     }
 
@@ -1087,6 +1109,15 @@ export class BuddyRunner {
         type: 'failure_threshold.reached',
         payload: { consecutive_failures: newConsecutiveFailures, max_consecutive_failures: maxConsecutiveFailures }
       })
+      // Send system notification for task paused due to consecutive failures
+      if (this.notifier) {
+        await this.notifier.notifyTaskPaused(taskId, workspaceKey, actor, newConsecutiveFailures, maxConsecutiveFailures)
+      }
+    } else {
+      // Send system notification for regular task failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskFailed(taskId, workspaceKey, actor, message)
+      }
     }
   }
 
