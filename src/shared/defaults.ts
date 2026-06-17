@@ -60,6 +60,7 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     seed_codex_thread_id: settings?.seed_codex_thread_id ?? '',
     seed_opencode_session_id: settings?.seed_opencode_session_id ?? '',
     seed_kimi_session_id: settings?.seed_kimi_session_id ?? '',
-    max_compact_retries: settings?.max_compact_retries ?? 3
+    max_compact_retries: settings?.max_compact_retries ?? 3,
+    auto_generate_commit_message: settings?.auto_generate_commit_message ?? true
   }
 }

@@ -336,6 +336,16 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               />
             }
           />
+          <SettingsRow
+            title={t('settings.collab.autoGenerateCommit.title')}
+            description={t('settings.collab.autoGenerateCommit.desc')}
+            right={
+              <Switch
+                checked={normalizedSettings.auto_generate_commit_message ?? true}
+                onChange={(v) => save({ auto_generate_commit_message: v })}
+              />
+            }
+          />
         </SettingsList>
       </div>
     </div>
@@ -1071,6 +1081,22 @@ function SettingsRow({ title, description, right }: {
   )
 }
 
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${checked ? 'bg-accent-primary' : 'bg-border'}`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
+  )
+}
+
 function EditableNumber({ value, min, max, onSave }: {
   value: number
   min: number
@@ -1105,7 +1131,7 @@ function EditableNumber({ value, min, max, onSave }: {
             ; (e.target as HTMLInputElement).blur()
         }
       }}
-      className="w-20 px-2 py-1 text-sm text-fg font-mono text-right bg-transparent border border-transparent hover:border-border focus:border-accent focus:bg-bg rounded outline-none transition-colors"
+      className="w-20 px-2 py-1 text-sm text-fg font-mono text-right bg-bg border border-border hover:border-accent focus:border-accent focus:ring-1 focus:ring-accent rounded outline-none transition-colors"
     />
   )
 }

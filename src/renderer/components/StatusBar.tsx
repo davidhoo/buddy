@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Copy, Play, RotateCw } from 'lucide-react'
-import { TaskState, TaskSettings, TaskStatus, Event, Failure } from '../../shared/types'
+import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
 import { useGitStatus, type GitStatusResult } from '../hooks/useBuddy'
@@ -25,6 +25,7 @@ interface StatusBarProps {
   taskSettings: TaskSettings | null
   events: Event[]
   latestFailure: Failure | null
+  globalSettings: GlobalSettings | null
   onInterrupt: () => void
   onRetry: () => void
   onResume: () => void
@@ -63,6 +64,7 @@ export function StatusBar({
   taskSettings,
   events,
   latestFailure,
+  globalSettings,
   onInterrupt: _onInterrupt,
   onRetry,
   onResume,
@@ -176,6 +178,7 @@ export function StatusBar({
         <CommitModal
           gitStatus={gitStatus}
           repoRoot={repoRoot}
+          globalSettings={globalSettings}
           onClose={() => {
             setShowCommitModal(false)
             requestAnimationFrame(() => {

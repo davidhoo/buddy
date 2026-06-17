@@ -181,6 +181,8 @@ const en = {
   'settings.collab.timeout.desc': 'Maximum execution time per round for each actor, shared across all actors',
   'settings.collab.maxFailures.title': 'Max consecutive failures',
   'settings.collab.maxFailures.desc': 'Pause the task when consecutive failures reach this limit, shared across all actors',
+  'settings.collab.autoGenerateCommit.title': 'Auto-generate commit message',
+  'settings.collab.autoGenerateCommit.desc': 'Automatically generate a commit message when opening the commit dialog. Turn off to start with a blank message.',
 
   // Settings — Test Launcher
   'settings.launcher.test': 'Test',
@@ -369,6 +371,7 @@ const en = {
   'modal.create.taskNameError': 'Only letters, digits, CJK, dots, underscores, dashes, spaces, and brackets, max 64 chars',
   'modal.create.repoRoot': 'Working directory',
   'modal.create.repoRootSelect': 'Select directory',
+  'modal.create.gitBranch': 'Branch',
   'modal.create.implementer': 'Implementer',
   'modal.create.reviewer': 'Reviewer',
   'modal.create.implementerSession': 'Implementer session ID',
@@ -550,6 +553,8 @@ const zhCN: typeof en = {
   'settings.collab.timeout.desc': '每个 AI 在单轮协作中的最长运行时间，超时后自动终止，所有 actor 共享此值',
   'settings.collab.maxFailures.title': '连续失败上限',
   'settings.collab.maxFailures.desc': '连续失败达到此上限时自动暂停任务，所有 actor 共享计数',
+  'settings.collab.autoGenerateCommit.title': '自动生成 commit message',
+  'settings.collab.autoGenerateCommit.desc': '打开提交对话框时自动生成 commit message，关闭后默认为空。',
 
   // 设置 — 测试 Launcher
   'settings.launcher.test': '测试',
@@ -727,6 +732,7 @@ const zhCN: typeof en = {
   'modal.create.taskNameError': '只能使用中文、字母、数字、点、下划线、短横线、空格及「」【】{}等，最长 64 字符',
   'modal.create.repoRoot': '工作目录',
   'modal.create.repoRootSelect': '选择目录',
+  'modal.create.gitBranch': '分支',
   'modal.create.implementer': '执行者',
   'modal.create.reviewer': '审查者',
   'modal.create.implementerSession': '执行者会话 ID',
@@ -906,6 +912,8 @@ const zhTW: typeof en = {
   'settings.collab.timeout.desc': '每個 AI 在單輪協作中的最長執行時間，逾時後自動終止，所有 actor 共用此值',
   'settings.collab.maxFailures.title': '連續失敗上限',
   'settings.collab.maxFailures.desc': '連續失敗達到此上限時自動暫停任務，所有 actor 共用計數',
+  'settings.collab.autoGenerateCommit.title': '自動生成 commit message',
+  'settings.collab.autoGenerateCommit.desc': '打開提交對話框時自動生成 commit message，關閉後預設為空。',
 
   // 設定 — 測試 Launcher
   'settings.launcher.test': '測試',
@@ -1084,6 +1092,7 @@ const zhTW: typeof en = {
   'modal.create.taskNameError': '只能使用中文、字母、數字、點、底線、短橫線、空格及「」【】{}等，最長 64 字元',
   'modal.create.repoRoot': '工作目錄',
   'modal.create.repoRootSelect': '選擇目錄',
+  'modal.create.gitBranch': '分支',
   'modal.create.implementer': '執行者',
   'modal.create.reviewer': '審查者',
   'modal.create.implementerSession': '執行者工作階段 ID',

@@ -170,6 +170,7 @@ export interface GlobalSettings {
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
   max_compact_retries?: number
+  auto_generate_commit_message?: boolean
 }
 
 export interface BuddyError {

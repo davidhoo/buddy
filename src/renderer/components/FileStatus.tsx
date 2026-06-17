@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
-import type { GitStatusResult, GitFileStatusCode, GitRemote } from '../../shared/types'
+import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
 import { useLanguage } from '../hooks/useI18n'
@@ -155,17 +155,19 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
 interface CommitModalProps {
   gitStatus: GitStatusResult | null
   repoRoot: string
+  globalSettings: GlobalSettings | null
   onClose: () => void
   onSuccess: (message: string) => void
   onError: (message: string) => void
 }
 
-export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }: CommitModalProps) {
+export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSuccess, onError }: CommitModalProps) {
   const t = useT()
   const lang = useLanguage()
   const queryClient = useQueryClient()
+  const autoGenerate = globalSettings?.auto_generate_commit_message ?? true
   const [message, setMessage] = useState('')
-  const [isGenerating, setIsGenerating] = useState(true)
+  const [isGenerating, setIsGenerating] = useState(autoGenerate)
   const [generateFailed, setGenerateFailed] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
   const [isCommitting, setIsCommitting] = useState(false)
@@ -232,8 +234,12 @@ export function CommitModal({ gitStatus, repoRoot, onClose, onSuccess, onError }
 
   // 打开时自动生成
   useEffect(() => {
+    if (!autoGenerate) {
+      setIsGenerating(false)
+      return
+    }
     handleGenerate()
-  }, [handleGenerate])
+  }, [handleGenerate, autoGenerate])
 
   useEffect(() => {
     if (!isGenerating) {

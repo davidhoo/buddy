@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { FolderOpen } from 'lucide-react'
-import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert } from './hooks/useBuddy'
+import { FolderOpen, GitBranch } from 'lucide-react'
+import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
 import { setServerLocale } from './lib/i18n'
@@ -637,6 +637,7 @@ export default function App() {
                 taskSettings={taskDetail?.settings ?? null}
                 events={taskDetail?.events ?? []}
                 latestFailure={taskDetail?.latest_failure ?? null}
+                globalSettings={bootstrap?.global_settings ?? null}
                 onInterrupt={handleInterrupt}
                 onRetry={() => handleStartTask()}
                 onResume={() => handleStartTask()}
@@ -696,6 +697,16 @@ function CreateTaskModal({
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
+
+  // Debounced git branch query — avoids firing on every keystroke in the path input
+  const [debouncedRepoRoot, setDebouncedRepoRoot] = useState(repoRoot.trim())
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedRepoRoot(repoRoot.trim()), 500)
+    return () => clearTimeout(timer)
+  }, [repoRoot])
+
+  const { data: gitStatusResult } = useGitStatus(debouncedRepoRoot || null)
+  const gitBranchName = gitStatusResult?.branch || ''
 
   // Handle Escape at document level so it works regardless of focus position
   useEffect(() => {
@@ -850,6 +861,13 @@ function CreateTaskModal({
                 {t('common.select')}
               </button>
             </div>
+            {gitBranchName && (
+              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted">
+                <GitBranch size={12} className="flex-shrink-0" />
+                <span className="text-fg-secondary">{t('modal.create.gitBranch')}</span>
+                <span className="font-mono">{gitBranchName}</span>
+              </div>
+            )}
           </div>
 
           {/* 执行者 / 审查者 */}
