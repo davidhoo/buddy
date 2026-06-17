@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.6] - 2026-06-17
+
+### Added
+- 任务状态系统通知：任务完成、失败、暂停时发送 macOS 系统通知，完成通知附带轮次、耗时和 Token 用量统计，可在设置页关闭
+- 自动生成 commit message 开关：新增全局设置项（默认开启），关闭后提交对话框不再自动生成提交信息
+- 创建任务弹窗中显示当前 git 分支名，方便确认工作目录
+
+### Fixed
+- 修复 execGit 中 child process `error` 与 `exit` 事件竞态导致的双重 resolve/reject
+
+---
+
 ## [1.1.4] - 2026-06-09
 
 ### Added
@@ -360,6 +372,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.6
 [1.1.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.4
 [1.1.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.3
 [1.1.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.2
