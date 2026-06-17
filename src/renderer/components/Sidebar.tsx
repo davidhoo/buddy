@@ -285,10 +285,20 @@ function ChatSidebar({
 
   const toggleProject = useCallback((projectKey: string) => {
     setCollapsedProjectKeys(prev => {
-      const next = prev.includes(projectKey)
+      const wasCollapsed = prev.includes(projectKey)
+      const next = wasCollapsed
         ? prev.filter(key => key !== projectKey)
         : [...prev, projectKey]
       writeStringArraySetting('buddy.collapsedProjectKeys', next)
+      // When expanding a project, reset task expand state so only first 10 tasks show
+      if (wasCollapsed) {
+        setExpandedTaskProjects(p => {
+          if (!p.has(projectKey)) return p
+          const s = new Set(p)
+          s.delete(projectKey)
+          return s
+        })
+      }
       return next
     })
   }, [])
