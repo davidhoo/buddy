@@ -574,6 +574,11 @@ export class BuddyStore {
     })
   }
 
+  async updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void> {
+    const dir = this.taskDirectory(taskId, workspaceKey)
+    await atomicWriteText(join(dir, 'task.md'), taskMarkdownContent(taskText))
+  }
+
   private async readTaskMeta(taskId: string, workspaceKey: string): Promise<TaskMeta> {
     const markdown = await this.readMarkdownTaskMeta(taskId, workspaceKey)
     if (markdown) return markdown

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ArrowUp, ChevronDown, Square, X, FileText, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon } from 'lucide-react'
+import { ArrowUp, ChevronDown, Square, X, Image as ImageIcon } from 'lucide-react'
 import { Attachment, TaskSettings, TaskState } from '../../shared/types'
 import { taskActors, ACTOR_LABEL_KEY, Actor } from '../lib/format'
 import { useT, useSendShortcut } from '../hooks/useI18n'
+import { IMAGE_EXTS, EXT_ICON_MAP, generateAttachmentId, isImageAttachment, fileExt, fileIconForName, mimeTypeForExt } from '../lib/attachments'
 
 interface ComposerProps {
   onSend: (message: string, actor?: string, attachments?: Attachment[]) => void
@@ -17,63 +18,6 @@ interface ComposerProps {
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
-}
-
-function generateId(): string {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-}
-
-function fileExt(name: string): string {
-  return name.split('.').pop()?.toUpperCase() ?? ''
-}
-
-function isImageAttachment(att: Attachment): boolean {
-  if (att.category === 'image' || att.mimeType.startsWith('image/')) return true
-  if (!att.mimeType) {
-    const ext = att.name.split('.').pop()?.toLowerCase() ?? ''
-    if (IMAGE_EXTS.has(ext)) return true
-  }
-  return false
-}
-
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
-
-const EXT_ICON_MAP: Record<string, typeof File> = {
-  json: FileJson,
-  zip: FileArchive, tar: FileArchive, gz: FileArchive, rar: FileArchive, '7z': FileArchive,
-  csv: FileSpreadsheet, xls: FileSpreadsheet, xlsx: FileSpreadsheet,
-  ts: FileCode2, tsx: FileCode2, js: FileCode2, jsx: FileCode2,
-  py: FileCode2, go: FileCode2, rs: FileCode2, rb: FileCode2,
-  java: FileCode2, c: FileCode2, cpp: FileCode2, h: FileCode2,
-  swift: FileCode2, kt: FileCode2,
-  md: FileText, txt: FileText, rtf: FileText,
-  doc: FileText, docx: FileText, pdf: FileText,
-  xml: FileText, yaml: FileText, yml: FileText, toml: FileText,
-  png: ImageIcon, jpg: ImageIcon, jpeg: ImageIcon, gif: ImageIcon,
-  webp: ImageIcon, svg: ImageIcon, bmp: ImageIcon, ico: ImageIcon,
-}
-
-function fileIconForName(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return EXT_ICON_MAP[ext] ?? File
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function mimeTypeForExt(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, string> = {
-    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-    bmp: 'image/bmp', pdf: 'application/pdf',
-    txt: 'text/plain', md: 'text/markdown',
-    json: 'application/json', csv: 'text/csv',
-  }
-  return map[ext] ?? 'application/octet-stream'
 }
 
 export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
@@ -141,7 +85,7 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
         const bufferBase64 = btoa(binary)
 
         newAttachments.push({
-          id: generateId(),
+          id: generateAttachmentId(),
           name: file.name || `paste-${Date.now()}.png`,
           category: 'image',
           mimeType: item.type,
@@ -172,7 +116,7 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
             }
           }
           newAttachments.push({
-            id: generateId(),
+            id: generateAttachmentId(),
             name,
             category: isImage ? 'image' : 'file',
             mimeType,

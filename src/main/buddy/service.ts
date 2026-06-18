@@ -60,6 +60,10 @@ export class BuddyCoreService {
     return this.store
   }
 
+  async updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void> {
+    return this.store.updateTaskText(taskId, workspaceKey, taskText)
+  }
+
   async checkHealth(): Promise<boolean> {
     return true
   }

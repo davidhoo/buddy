@@ -77,6 +77,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang) as Promise<string>,
     testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>
       ipc.invoke('buddy:testLauncher', actor, command, env) as Promise<TestLauncherResult>,
+    updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
+      ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {
       const listener: Listener = (_event, payload) => callback(payload)
       ipc.on('buddy:event', listener)
