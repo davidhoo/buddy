@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.7] - 2026-06-18
+
+### Added
+- 创建任务时支持添加附件：可在任务创建弹窗中附加文件，附件会保存到任务目录并自动写入 task.md，支持图片预览和多种文件类型图标
+
+### Changed
+- 展开侧边栏项目时自动折叠任务列表，避免一次性展开过多任务
+
+---
+
 ## [1.1.6] - 2026-06-17
 
 ### Added
@@ -372,6 +382,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.7
 [1.1.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.6
 [1.1.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.4
 [1.1.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.3
