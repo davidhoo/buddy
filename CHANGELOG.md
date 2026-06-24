@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.8] - 2026-06-24
+
+### Fixed
+- 连通性检查失败后支持重试：检查失败时任务状态改为 FAILED（而非直接完成），并在失败提示与状态栏中提供"重新检查"按钮，无需重新创建任务即可重新发起连通性检查；重试前自动清除上次的失败记录
+
+---
+
 ## [1.1.7] - 2026-06-18
 
 ### Added
@@ -382,6 +389,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.8
 [1.1.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.7
 [1.1.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.6
 [1.1.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.4
