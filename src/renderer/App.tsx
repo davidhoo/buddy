@@ -122,6 +122,12 @@ export default function App() {
   const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
   const currentAttachments = selectedTaskId ? (taskAttachments[selectedTaskId] ?? []) : []
 
+  // A startTask mutation is "retrying the health check" when it is in flight, not already
+  // showing PINGING, and the task was previously in a connectivity-failed state.
+  const taskStatus = taskDetail?.state?.status ?? null
+  const healthCheckFailed = taskStatus === 'FAILED' || !!taskDetail?.state?.health_check?.failed_actor
+  const isRetryingHealthCheck = startTask.isPending && taskStatus !== 'PINGING' && healthCheckFailed
+
   const handleDraftChange = useCallback((value: string) => {
     if (!selectedTaskId) return
     setDrafts(prev => ({ ...prev, [selectedTaskId]: value }))
@@ -344,6 +350,18 @@ export default function App() {
       taskId: selectedTaskId,
       data: {
         actor,
+        workspace_key: selectedWorkspaceKey ?? undefined
+      }
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, startTask])
+
+  // Retry connectivity check: re-run health check without resuming an actor run.
+  // The runner clears the stale failed health_check and re-pings both actors.
+  const handleRetryHealthCheck = useCallback(() => {
+    if (!selectedTaskId) return
+    startTask.mutate({
+      taskId: selectedTaskId,
+      data: {
         workspace_key: selectedWorkspaceKey ?? undefined
       }
     })
@@ -646,6 +664,8 @@ export default function App() {
                 onEditInstruction={handleEditInstruction}
                 onClearInstructionQueue={handleClearInstructionQueue}
                 onCreateTask={handleOpenCreateModal}
+                onRetryHealthCheck={handleRetryHealthCheck}
+                isRetryingHealthCheck={isRetryingHealthCheck}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}
@@ -664,6 +684,8 @@ export default function App() {
                 onInterrupt={handleInterrupt}
                 onRetry={() => handleStartTask()}
                 onResume={() => handleStartTask()}
+                onRetryHealthCheck={handleRetryHealthCheck}
+                isRetryingHealthCheck={isRetryingHealthCheck}
                 onResize={handleStatusBarResize}
               />
             </>

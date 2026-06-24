@@ -103,6 +103,7 @@ const en = {
   'health_check.actorFailed': '{actor} check failed: {reason}',
   'health_check.allPassed': 'All actors ready, starting task',
   'health_check.failed': 'Health check failed, task terminated',
+  'health_check.retry': 'Retry connectivity check',
 
   // Sidebar
   'sidebar.collapse': 'Collapse sidebar',
@@ -481,6 +482,7 @@ const zhCN: typeof en = {
   'health_check.actorFailed': '{actor} 检测失败：{reason}',
   'health_check.allPassed': '所有 actor 就绪，开始执行任务',
   'health_check.failed': '连通性检查失败，任务已终止',
+  'health_check.retry': '重新进行连通性检查',
 
   'sidebar.collapse': '收起侧边栏',
   'sidebar.expand': '展开侧边栏',
@@ -843,6 +845,7 @@ const zhTW: typeof en = {
   'health_check.actorFailed': '{actor} 偵測失敗：{reason}',
   'health_check.allPassed': '所有 actor 就緒，開始執行任務',
   'health_check.failed': '連通性檢查失敗，任務已終止',
+  'health_check.retry': '重新進行連通性檢查',
 
   'sidebar.collapse': '收合側邊欄',
   'sidebar.expand': '展開側邊欄',

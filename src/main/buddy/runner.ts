@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type {
   AttachmentMeta,
   CountdownInput,
+  Failure,
   GlobalSettings,
   InstructionQueueItem,
   SendMessageInput,
@@ -86,9 +87,18 @@ export class BuddyRunner {
 
     // Health check: on first start (round 0, no sessions, no prior health check), ping both actors.
     // Skip when an explicit actor is requested (caller knows what they want) or in test mode.
+    // Also re-run when the previous attempt failed connectivity (FAILED + health_check) so the
+    // user can retry connectivity directly without resuming an actor run.
     if (this.executeLaunchers && !input.actor && needsHealthCheck(detail.state, detail.settings)) {
       const implementer = resolveImplementerActor(detail.settings)
       const reviewer = nextActorForSettings(implementer, detail.settings)
+      // Clear the stale failed health_check result so the retry can re-trigger.
+      await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+        ...state,
+        health_check: null,
+        latest_failure: null,
+        last_error: null
+      }))
       const healthRunId = await this.runHealthCheck(taskId, workspaceKey, implementer, reviewer)
       return { run_id: healthRunId }
     }
@@ -557,13 +567,21 @@ export class BuddyRunner {
       }
       return `ping_ok_${Date.now()}`
     } else {
+      const failedAt = new Date().toISOString()
+      const failureRecord: Failure = {
+        actor: failedActor ?? undefined,
+        message: `连通性检查失败：${failedActor ? actorDisplayName(failedActor) : '未知'} — ${failedReason ?? '未知错误'}`,
+        ts: failedAt
+      }
       await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
         ...state,
-        status: 'DONE',
+        status: 'FAILED',
         active_run: null,
+        latest_failure: failureRecord,
+        last_error: failureRecord,
         health_check: { actors: finalResults, failed_actor: failedActor, failed_reason: failedReason },
         ...sessionUpdates,
-        updated_at: new Date().toISOString()
+        updated_at: failedAt
       }))
       await this.store.appendTaskEvent(taskId, workspaceKey, {
         type: 'health_check.failed',
@@ -1484,9 +1502,12 @@ function buildCompactContextFallback(
   return parts.join('\n')
 }
 
-function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
+export function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
   if (state.round > 0) return false
-  if (state.health_check !== null && state.health_check !== undefined) return false
+  // A prior health check that succeeded means no ping is needed. A failed health check
+  // leaves health_check populated with a failed actor, which we DO want to retry — so only
+  // bail out when the stored result has no failed actor (i.e. it was a clean pass).
+  if (state.health_check && !state.health_check.failed_actor) return false
   const implementer = settings.implementer_actor
     ?? (settings.role_mode === 'codex_implements' ? 'codex' : 'claude')
   const reviewer = settings.reviewer_actor

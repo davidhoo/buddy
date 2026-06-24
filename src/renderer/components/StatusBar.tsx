@@ -29,6 +29,8 @@ interface StatusBarProps {
   onInterrupt: () => void
   onRetry: () => void
   onResume: () => void
+  onRetryHealthCheck: () => void
+  isRetryingHealthCheck: boolean
   onResize: (delta: number) => void
 }
 
@@ -68,6 +70,8 @@ export function StatusBar({
   onInterrupt: _onInterrupt,
   onRetry,
   onResume,
+  onRetryHealthCheck,
+  isRetryingHealthCheck,
   onResize
 }: StatusBarProps) {
   const t = useT()
@@ -107,6 +111,10 @@ export function StatusBar({
     ? formatTimeWithRelativeDate(taskState.updated_at, lang)
     : t('statusBar.updatedWaiting')
 
+  // Connectivity check failed: status FAILED with a populated health_check that recorded a failed actor.
+  const healthCheck = taskState?.health_check
+  const isHealthCheckFailed = taskState?.status === 'FAILED' && !!healthCheck?.failed_actor
+
   return (
     <div className="flex h-full">
       <ResizeHandle direction="left" onResize={onResize} />
@@ -132,6 +140,17 @@ export function StatusBar({
             t={t}
             lang={lang}
           />
+
+          {isHealthCheckFailed && (
+            <button
+              onClick={onRetryHealthCheck}
+              disabled={isRetryingHealthCheck}
+              className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border-primary bg-bg-base text-fg hover:bg-bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCw size={12} strokeWidth={2.5} className={isRetryingHealthCheck ? 'animate-spin' : ''} />
+              {t('health_check.retry')}
+            </button>
+          )}
 
           <div className="flex items-center justify-between text-xs text-fg-secondary mb-3">
             <span>{roundLabel}</span>
