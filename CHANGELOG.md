@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.9] - 2026-06-25
+
+### Added
+- 子进程自动升级后自动重试：当 Actor CLI（如 wecode 等）因自动升级而提前退出时，自动识别升级场景并保留会话重试当前轮次，无需人工干预
+- 新增 `max_upgrade_retries` 全局设置项，可配置升级退出后的最大重试次数（默认 3 次）
+
+### Fixed
+- 修复子进程因自动升级提前退出时管道关闭触发 EPIPE 异常导致主进程崩溃的问题
+- 增加全局未捕获异常守卫，兜底处理 EPIPE 等意外异常并记录日志，避免主进程直接崩溃
+
+---
+
 ## [1.1.8] - 2026-06-24
 
 ### Fixed
@@ -389,6 +401,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.9
 [1.1.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.8
 [1.1.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.7
 [1.1.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.6
