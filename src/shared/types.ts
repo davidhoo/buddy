@@ -172,6 +172,7 @@ export interface GlobalSettings {
   max_compact_retries?: number
   auto_generate_commit_message?: boolean
   system_notifications_enabled?: boolean
+  max_upgrade_retries?: number
 }
 
 export interface BuddyError {

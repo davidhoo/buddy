@@ -65,6 +65,27 @@ interface RunnerOptions {
   events?: BuddyEventBus
   notifier?: TaskNotifier
 }
+const DEFAULT_MAX_UPGRADE_RETRIES = 3
+const UPGRADE_WAIT_MS = 5000
+
+/** Patterns that indicate the child process exited because it is auto-upgrading */
+const UPGRADE_PATTERNS = [
+  /upgrade.*complete/i,
+  /updated.*restart/i,
+  /restart.*required/i,
+  /new version/i,
+  /auto.?update/i,
+  /自动更新/i,
+  /自动升级/i,
+  /升级完成/i,
+  /请重启/i,
+  /已更新/i
+]
+
+/** Check if an error/stderr message indicates the child exited for an auto-upgrade */
+export function isUpgradeExitError(message: string): boolean {
+  return UPGRADE_PATTERNS.some((p) => p.test(message))
+}
 
 export class BuddyRunner {
   private readonly executeLaunchers: boolean
@@ -636,6 +657,10 @@ export class BuddyRunner {
   }
 
   private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = '', compactRetries = 0): Promise<void> {
+    return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, 0)
+  }
+
+  private async executeActorInner(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage: string, compactRetries: number, upgradeRetries: number): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const launcher = detail.settings.launchers[actor] ?? {
@@ -788,9 +813,32 @@ export class BuddyRunner {
             { kind: 'session_reset', reset_attempt: compactRetries + 1 }
           )
           await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
-
-          return this.executeActor(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1)
+          return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1, upgradeRetries)
         }
+      }
+
+      // Auto-retry when the child process exits due to an auto-upgrade (e.g. wecode/codex).
+      // The CLI detects a new version, exits to upgrade itself, then the user restarts.
+      // We wait briefly for the upgrade to settle, then retry the same round (keeping
+      // the existing session so the conversation continues seamlessly).
+      const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
+      const combinedMessage = `${failureMessage}\n${stderrText}`.trim()
+      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.upgrade_detected',
+          actor,
+          run_id: runId,
+          payload: { retry_attempt: upgradeRetries + 1, max_retries: maxUpgradeRetries, error: failureMessage.slice(0, 500) }
+        })
+        await this.store.appendTranscript(
+          taskId,
+          workspaceKey,
+          'system',
+          `${actorDisplayName(actor)} 检测到自动升级，等待升级完成后重试 (${upgradeRetries + 1}/${maxUpgradeRetries})...`,
+          { kind: 'upgrade_retry', retry_attempt: upgradeRetries + 1 }
+        )
+        await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
+        return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, upgradeRetries + 1)
       }
 
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
