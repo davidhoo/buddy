@@ -2,6 +2,19 @@
 process.env.ELECTRON_UPDATER_ALLOW_HTTP = '1'
 
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+
+// Guard against EPIPE and other stream errors crashing the main process.
+// Child processes (e.g. wecode) may exit early during auto-upgrade, closing
+// their stdin pipe before we finish writing. Node emits 'write EPIPE' as an
+// uncaught exception in that case. Log and swallow rather than crash.
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    console.error('[main] EPIPE (child pipe closed early, likely wecode auto-upgrade):', err.message)
+    return
+  }
+  console.error('[main] Uncaught exception:', err)
+})
+
 import { WindowManager } from './window-manager'
 import { registerBuddyHandlers } from './ipc/buddy-handlers'
 import { BuddyCoreService } from './buddy/service'

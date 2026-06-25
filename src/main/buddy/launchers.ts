@@ -318,7 +318,19 @@ export async function runLauncher(input: {
     for (const line of chunk.split(/\r?\n/).filter(Boolean)) input.onStderr(line)
   })
 
-  child.stdin!.end(input.stdinText ?? '')
+  // Write prompt text to stdin, then close the writable side.
+  // The child may exit before we finish writing (e.g. wecode auto-upgrades
+  // and relaunches itself, closing the pipe). Guard against EPIPE so the
+  // main process does not crash with an uncaught exception.
+  child.stdin!.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+    // EPIPE is expected when the child exits early; swallow silently.
+  })
+  try {
+    child.stdin!.end(input.stdinText ?? '')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EPIPE') throw err
+  }
 
   const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
   const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
