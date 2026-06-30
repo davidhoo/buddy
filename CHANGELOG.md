@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.10] - 2026-06-30
+
+### Added
+- 自定义提示词：在设置页新增「提示词」标签页，可编写一段自定义指令追加到系统提示词末尾，对每个 Actor 的每一轮生效，方便统一注入项目规范、编码偏好或输出格式要求
+
+---
+
 ## [1.1.9] - 2026-06-25
 
 ### Added
@@ -401,6 +408,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.10
 [1.1.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.9
 [1.1.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.8
 [1.1.7]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.7
