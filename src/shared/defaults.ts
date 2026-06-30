@@ -63,6 +63,7 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     max_compact_retries: settings?.max_compact_retries ?? 3,
     auto_generate_commit_message: settings?.auto_generate_commit_message ?? true,
     system_notifications_enabled: settings?.system_notifications_enabled ?? true,
-    max_upgrade_retries: settings?.max_upgrade_retries ?? 3
+    max_upgrade_retries: settings?.max_upgrade_retries ?? 3,
+    custom_prompt: settings?.custom_prompt ?? undefined
   }
 }

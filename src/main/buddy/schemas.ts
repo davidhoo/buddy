@@ -96,6 +96,14 @@ export const launcherSchema = z.object({
   timeout_seconds: z.number().default(600)
 })
 
+// Empty/whitespace custom_prompt is normalized to undefined so an emptied
+// field means "no custom prompt" rather than an empty trailing section.
+const optionalNonEmptyString = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v ? v : undefined))
+
 export const taskSettingsSchema = z.object({
   protocol_version: z.string().default('1'),
   flow_policy: z.string().default('claude_then_codex'),
@@ -124,7 +132,8 @@ export const globalSettingsSchema = z.object({
   max_compact_retries: z.number().optional(),
   auto_generate_commit_message: z.boolean().default(true),
   system_notifications_enabled: z.boolean().default(true),
-  max_upgrade_retries: z.number().optional()
+  max_upgrade_retries: z.number().optional(),
+  custom_prompt: optionalNonEmptyString
 })
 
 export const eventSchema = z.object({

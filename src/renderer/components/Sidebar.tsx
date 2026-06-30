@@ -5,6 +5,7 @@ import {
   Folder,
   FolderOpen,
   Keyboard,
+  MessageSquare,
   PanelLeft,
   Pin,
   Settings as SettingsIcon,
@@ -191,6 +192,13 @@ function SettingsSidebar({
           icon={<Keyboard size={15} strokeWidth={1.7} />}
           active={settingsTab === 'keyboard'}
           onClick={() => onSelectSettingsTab('keyboard')}
+        />
+
+        <SettingsMenuItem
+          label={t('settings.tab.prompts')}
+          icon={<MessageSquare size={15} strokeWidth={1.7} />}
+          active={settingsTab === 'prompts'}
+          onClick={() => onSelectSettingsTab('prompts')}
         />
       </div>
     </>

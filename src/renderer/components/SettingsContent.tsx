@@ -29,7 +29,7 @@ import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 
-export type SettingsTab = 'general' | 'appearance' | 'keyboard'
+export type SettingsTab = 'general' | 'appearance' | 'keyboard' | 'prompts'
 
 interface SettingsContentProps {
   tab: SettingsTab
@@ -87,7 +87,9 @@ export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
     ? t('settings.tab.general')
     : tab === 'appearance'
       ? t('settings.tab.appearance')
-      : t('settings.tab.keyboard')
+      : tab === 'keyboard'
+        ? t('settings.tab.keyboard')
+        : t('settings.tab.prompts')
   return (
     <div className="flex-1 overflow-y-auto bg-bg-elevated">
       <div className="max-w-4xl mx-auto px-10 py-10">
@@ -96,8 +98,10 @@ export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
           <GeneralSettings globalSettings={globalSettings} />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
-        ) : (
+        ) : tab === 'keyboard' ? (
           <KeyboardSettings />
+        ) : (
+          <PromptsSettings globalSettings={globalSettings} />
         )}
       </div>
     </div>
@@ -357,6 +361,76 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
             }
           />
         </SettingsList>
+      </div>
+    </div>
+  )
+}
+
+function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | null }) {
+  const t = useT()
+  const updateMutation = useUpdateGlobalSettings()
+  const normalizedSettings = normalizeGlobalSettings(globalSettings)
+  const saved = normalizedSettings.custom_prompt ?? ''
+
+  const save = (patch: Partial<GlobalSettings>) => {
+    updateMutation.mutate({ ...normalizedSettings, ...patch })
+  }
+
+  const [draft, setDraft] = useState(saved)
+
+  useEffect(() => {
+    setDraft(normalizedSettings.custom_prompt ?? '')
+  }, [normalizedSettings.custom_prompt])
+
+  const dirty = draft !== saved
+
+  const handleSave = () => {
+    save({ custom_prompt: draft.trim() || undefined })
+  }
+
+  const handleReset = () => {
+    if (!window.confirm(t('settings.prompts.resetConfirm'))) return
+    setDraft('')
+    save({ custom_prompt: undefined })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-fg mb-1">{t('settings.prompts.title')}</h2>
+        <p className="text-sm text-fg-secondary">{t('settings.prompts.desc')}</p>
+      </div>
+
+      <SettingsList>
+        <div className="px-4 py-4">
+          <div className="text-sm font-medium text-fg mb-2">{t('settings.prompts.customLabel')}</div>
+          <textarea
+            value={draft}
+            rows={8}
+            placeholder={t('settings.prompts.placeholder')}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-y"
+          />
+        </div>
+      </SettingsList>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty}
+          className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle transition-colors"
+        >
+          <RotateCcw size={12} />
+          {t('settings.prompts.resetToDefault')}
+        </button>
       </div>
     </div>
   )

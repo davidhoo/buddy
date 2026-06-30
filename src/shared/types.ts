@@ -173,6 +173,7 @@ export interface GlobalSettings {
   auto_generate_commit_message?: boolean
   system_notifications_enabled?: boolean
   max_upgrade_retries?: number
+  custom_prompt?: string
 }
 
 export interface BuddyError {

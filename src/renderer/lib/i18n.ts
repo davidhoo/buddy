@@ -143,6 +143,7 @@ const en = {
   'settings.tab.general': 'General',
   'settings.tab.appearance': 'Appearance',
   'settings.tab.keyboard': 'Keyboard Shortcuts',
+  'settings.tab.prompts': 'Prompts',
 
   // Settings — General
   'settings.general.section.title': 'General',
@@ -186,6 +187,12 @@ const en = {
   'settings.collab.autoGenerateCommit.desc': 'Automatically generate a commit message when opening the commit dialog. Turn off to start with a blank message.',
   'settings.collab.systemNotifications.title': 'System notifications',
   'settings.collab.systemNotifications.desc': 'Show a macOS notification when a task completes or fails',
+  'settings.prompts.title': 'Custom prompt',
+  'settings.prompts.desc': 'A custom prompt appended to the end of the system prompt sent to each actor every round. Leave empty to send no custom prompt.',
+  'settings.prompts.customLabel': 'Custom prompt (appended after the system prompt)',
+  'settings.prompts.placeholder': 'Optional; leave empty to append nothing',
+  'settings.prompts.resetToDefault': 'Clear',
+  'settings.prompts.resetConfirm': 'Clear the custom prompt?',
 
   // Settings — Test Launcher
   'settings.launcher.test': 'Test',
@@ -520,6 +527,7 @@ const zhCN: typeof en = {
   'settings.tab.general': '常规',
   'settings.tab.appearance': '外观',
   'settings.tab.keyboard': '键盘快捷键',
+  'settings.tab.prompts': '提示词',
 
   'settings.general.section.title': '常规',
   'settings.general.section.desc': '语言与发送方式偏好。',
@@ -561,6 +569,12 @@ const zhCN: typeof en = {
   'settings.collab.autoGenerateCommit.desc': '打开提交对话框时自动生成 commit message，关闭后默认为空。',
   'settings.collab.systemNotifications.title': '系统通知',
   'settings.collab.systemNotifications.desc': '任务完成或失败时发送 macOS 通知',
+  'settings.prompts.title': '自定义提示词',
+  'settings.prompts.desc': '一段自定义提示词，会追加在每轮发送给各 actor 的系统提示词末尾。留空则不追加。',
+  'settings.prompts.customLabel': '自定义提示词（追加在系统提示词后面）',
+  'settings.prompts.placeholder': '可选；留空则不追加任何内容',
+  'settings.prompts.resetToDefault': '清空',
+  'settings.prompts.resetConfirm': '确定清空自定义提示词吗？',
 
   // 设置 — 测试 Launcher
   'settings.launcher.test': '测试',
@@ -923,6 +937,12 @@ const zhTW: typeof en = {
   'settings.collab.autoGenerateCommit.desc': '打開提交對話框時自動生成 commit message，關閉後預設為空。',
   'settings.collab.systemNotifications.title': '系統通知',
   'settings.collab.systemNotifications.desc': '任務完成或失敗時發送 macOS 通知',
+  'settings.prompts.title': '自訂提示詞',
+  'settings.prompts.desc': '一段自訂提示詞，會追加在每輪發送給各 actor 的系統提示詞末尾。留空則不追加。',
+  'settings.prompts.customLabel': '自訂提示詞（追加在系統提示詞後面）',
+  'settings.prompts.placeholder': '可選；留空則不追加任何內容',
+  'settings.prompts.resetToDefault': '清空',
+  'settings.prompts.resetConfirm': '確定清空自訂提示詞嗎？',
 
   // 設定 — 測試 Launcher
   'settings.launcher.test': '測試',
@@ -1115,6 +1135,7 @@ const zhTW: typeof en = {
 
   // Settings - Keyboard shortcuts tab
   'settings.tab.keyboard': '鍵盤快速鍵',
+  'settings.tab.prompts': '提示詞',
   'shortcuts.search': '搜尋快速鍵…',
   'shortcuts.resetAll': '全部恢復預設',
   'shortcuts.resetAllConfirm': '確定將所有快速鍵恢復為預設值？',
