@@ -603,7 +603,7 @@ function buildActorPrompt(input) {
 `;
 }
 function runtimeSettingsLines(settings, state, actor, repoRoot = "") {
-  const maxRounds = numberValue$1(settings.max_rounds, 10);
+  const maxRounds = numberValue$1(settings.max_rounds, 9999);
   const roundsInWindow = numberValue$1(state.rounds_in_window, 0);
   const remaining = maxRounds > 0 ? Math.max(0, maxRounds - roundsInWindow) : "unlimited";
   const lines = [
@@ -696,21 +696,33 @@ class BuddyRunner {
     if (!canStartFrom(detail.state.status)) {
       throw new Error(`Cannot start task from ${detail.state.status}`);
     }
-    const maxRounds = detail.settings.max_rounds ?? 10;
+    const maxRounds = detail.settings.max_rounds ?? 9999;
     const roundsInWindow = detail.state.rounds_in_window ?? 0;
     if (maxRounds > 0 && roundsInWindow >= maxRounds) {
-      await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
-        ...state,
-        status: "PAUSED",
-        active_run: null,
-        countdown: null,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }));
-      await this.store.appendTaskEvent(taskId, workspaceKey, {
-        type: "round_window.paused",
-        payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
-      });
-      throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`);
+      if (detail.state.status === "PAUSED") {
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          rounds_in_window: 0,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        }));
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: "round_window.reset",
+          payload: { previous_rounds_in_window: roundsInWindow, max_rounds: maxRounds }
+        });
+      } else {
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          status: "PAUSED",
+          active_run: null,
+          countdown: null,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        }));
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: "round_window.paused",
+          payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
+        });
+        throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`);
+      }
     }
     const runId = `run_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
     const startedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -915,7 +927,7 @@ class BuddyRunner {
     const nextActor$1 = nextActor(actor, detail.settings);
     const round = (detail.state.round ?? 0) + 1;
     const roundsInWindow = (detail.state.rounds_in_window ?? 0) + 1;
-    const maxRounds = detail.settings.max_rounds ?? 10;
+    const maxRounds = detail.settings.max_rounds ?? 9999;
     const roundWindowReached = maxRounds > 0 && roundsInWindow >= maxRounds;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const buddyType = message.kind === "break" ? "break" : "chat";
@@ -1223,7 +1235,7 @@ function normalizeGlobalSettings(settings) {
   return {
     protocol_version: settings?.protocol_version ?? "1",
     countdown_seconds: settings?.countdown_seconds ?? 30,
-    max_rounds: settings?.max_rounds ?? 10,
+    max_rounds: settings?.max_rounds ?? 9999,
     max_consecutive_failures: settings?.max_consecutive_failures ?? 3,
     launchers: normalizeLaunchers(settings?.launchers),
     seed_claude_session_id: settings?.seed_claude_session_id ?? "",
@@ -1352,7 +1364,7 @@ const taskSettingsSchema = zod.z.object({
 const globalSettingsSchema = zod.z.object({
   protocol_version: zod.z.string().default("1"),
   countdown_seconds: zod.z.number().default(30),
-  max_rounds: zod.z.number().default(10),
+  max_rounds: zod.z.number().default(9999),
   max_consecutive_failures: zod.z.number().default(3),
   launchers: zod.z.record(zod.z.string(), launcherSchema).default({}),
   seed_claude_session_id: zod.z.string().optional(),

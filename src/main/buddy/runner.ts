@@ -137,18 +137,32 @@ export class BuddyRunner {
     const maxRounds = globalSettings.max_rounds ?? 9999
     const roundsInWindow = detail.state.rounds_in_window ?? 0
     if (maxRounds > 0 && roundsInWindow >= maxRounds) {
-      await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
-        ...state,
-        status: 'PAUSED',
-        active_run: null,
-        countdown: null,
-        updated_at: new Date().toISOString()
-      }))
-      await this.store.appendTaskEvent(taskId, workspaceKey, {
-        type: 'round_window.paused',
-        payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
-      })
-      throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`)
+      if (detail.state.status === 'PAUSED') {
+        // User is explicitly resuming from a round-window pause - reset the window
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          rounds_in_window: 0,
+          updated_at: new Date().toISOString()
+        }))
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'round_window.reset',
+          payload: { previous_rounds_in_window: roundsInWindow, max_rounds: maxRounds }
+        })
+      } else {
+        // Auto-start attempted but window is exhausted - pause and wait for manual resume
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          status: 'PAUSED',
+          active_run: null,
+          countdown: null,
+          updated_at: new Date().toISOString()
+        }))
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'round_window.paused',
+          payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
+        })
+        throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`)
+      }
     }
 
     const runId = `run_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`

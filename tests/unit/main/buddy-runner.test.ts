@@ -91,4 +91,37 @@ describe('BuddyRunner state transitions', () => {
       })
     ]))
   })
+
+  it('resets rounds_in_window when resuming from a round-window pause', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-round-window-reset-'))
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo'
+    })
+    // Simulate the state after completeActor paused due to round window limit
+    await store.updateTaskState('demo', created.workspace_key, (state) => ({
+      ...state,
+      status: 'PAUSED',
+      rounds_in_window: 1
+    }))
+    const runner = new BuddyRunner(store, { executeLaunchers: false })
+
+    const result = await runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'claude'
+    })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(result.run_id).toMatch(/^run_/)
+    expect(detail.state.status).toBe('RUNNING_CLAUDE')
+    expect(detail.state.rounds_in_window).toBe(0)
+    expect(detail.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'round_window.reset',
+        payload: expect.objectContaining({ previous_rounds_in_window: 1, max_rounds: 1 })
+      })
+    ]))
+  })
 })
