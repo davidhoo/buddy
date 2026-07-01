@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.11] - 2026-07-01
+
+### Fixed
+- 修复任务因轮次窗口上限被暂停后，手动继续时重复报错无法推进的问题：从暂停状态恢复时自动重置窗口计数器，恢复正常运行
+
+### Changed
+- max_rounds 默认值从 10 改为 9999，避免低默认值意外触发自动轮次限制
+
+---
+
 ## [1.1.10] - 2026-06-30
 
 ### Added
@@ -408,6 +418,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.11
 [1.1.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.10
 [1.1.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.9
 [1.1.8]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.8
