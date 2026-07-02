@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.12] - 2026-07-02
 
 ### Fixed
 - 连通性检查兼容 CLI 自动升级：当 Actor CLI（如 wecode-cli-cc）在首次启动时因自动升级而退出（升级成功要求重启，或升级脚本下载失败），健康检查现在会识别升级场景并自动重试 ping，而不再直接判失败、要求用户手动「重新检查」。复用 `max_upgrade_retries` 设置，并在事件日志与转录中记录重试过程
@@ -425,6 +425,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.1.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.12
 [1.1.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.11
 [1.1.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.10
 [1.1.9]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.9
