@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-02
+
 ### Fixed
 - 运行时 Actor 执行兼容 stdout 升级提示：wecode 将升级进度（如 `A new version is available`、`upgrade complete`）输出到 stdout，而 `extractActorOutput` 会将其过滤掉，导致运行中遇到升级退出时检测漏判、轮次直接失败。现在升级检测综合 stderr + 原始 stdout，运行中遇到升级也会自动保留会话重试当前轮次（与连通性检查的升级重试对称）
 
@@ -437,6 +439,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.1
 [1.2.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.0
 [1.1.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.12
 [1.1.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.11
