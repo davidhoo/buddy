@@ -881,7 +881,12 @@ export class BuddyRunner {
       // We wait briefly for the upgrade to settle, then retry the same round (keeping
       // the existing session so the conversation continues seamlessly).
       const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
-      const combinedMessage = `${failureMessage}\n${stderrText}`.trim()
+      // Include raw stdout: wecode prints upgrade progress (e.g. "A new version is
+      // available", "upgrade complete", "Please run your command again with the new
+      // version") to stdout, which extractActorOutput filters out of outputText. Without
+      // the raw stdout the upgrade exit goes undetected at runtime and the round fails
+      // instead of retrying. Mirrors the executePing combined-message fix.
+      const combinedMessage = `${failureMessage}\n${stderrText}\n${outputLines.join('\n')}`.trim()
       if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'actor.upgrade_detected',

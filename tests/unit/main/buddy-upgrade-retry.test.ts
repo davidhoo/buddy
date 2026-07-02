@@ -149,6 +149,46 @@ process.exit(1);
     expect(upgradeEvents.length).toBe(0)
     expect(detail.state.status).toBe('FAILED')
   })
+
+  it('detects an upgrade exit reported on stdout (wecode prints progress to stdout)', { timeout: 30000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-upgrade-stdout-'))
+    const fake = join(root, 'fake-upgrade-stdout.js')
+    // wecode writes the upgrade banner/progress to STDOUT (not stderr); extractActorOutput
+    // filters it out of outputText, so the runtime path must consult raw stdout to detect it.
+    await writeFile(fake, `
+process.stdout.write('A new version is available. Upgrade complete, restart required.\\n');
+process.exit(1);
+`)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_upgrade_retries: 1, max_compact_retries: 0 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        launchers: {
+          claude: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    await store.updateTaskState('demo', created.workspace_key, (state) => ({
+      ...state,
+      claude_session_id: 'upgrade-stdout-session'
+    }))
+
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'claude'
+    })).rejects.toThrow()
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+
+    const upgradeEvents = detail.events.filter((e) => e.type === 'actor.upgrade_detected')
+    expect(upgradeEvents.length).toBeGreaterThanOrEqual(1)
+    expect(detail.state.status).toBe('FAILED')
+  })
 })
 
 describe('BuddyRunner health-check upgrade auto-retry', () => {
