@@ -414,6 +414,46 @@ export class BuddyRunner {
     workspaceKey: string,
     actor: string
   ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string }> {
+    const globalSettings = await this.store.readGlobalSettings()
+    const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
+
+    let upgradeRetries = 0
+    // wecode/claude and similar CLIs may exit on first launch to auto-upgrade themselves,
+    // then expect to be relaunched. A connectivity ping that hits this used to fail the
+    // health check outright, forcing a manual retry. Mirror executeActorInner: detect the
+    // upgrade exit (across stderr+stdout, since wecode prints upgrade progress to stdout
+    // and the failure reason to stderr), wait for it to settle, and retry the ping.
+    for (;;) {
+      const attempt = await this.executePingAttempt(taskId, workspaceKey, actor)
+      if (attempt.success) return attempt
+
+      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}\n${attempt.error ?? ''}`.trim()
+      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
+        upgradeRetries++
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'health_check.actor_upgrade_retry',
+          actor,
+          payload: { retry_attempt: upgradeRetries, max_retries: maxUpgradeRetries, error: (attempt.error ?? '').slice(0, 500) }
+        })
+        await this.store.appendTranscript(
+          taskId,
+          workspaceKey,
+          'system',
+          `${actorDisplayName(actor)} 连通性检查检测到自动升级，等待升级完成后重试 (${upgradeRetries}/${maxUpgradeRetries})...`,
+          { kind: 'health_check_upgrade_retry', retry_attempt: upgradeRetries, actor }
+        )
+        await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
+        continue
+      }
+      return { success: false, error: attempt.error, sessionId: attempt.sessionId, threadId: attempt.threadId }
+    }
+  }
+
+  private async executePingAttempt(
+    taskId: string,
+    workspaceKey: string,
+    actor: string
+  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const launcher = detail.settings.launchers[actor] ?? {
       command: actor,
@@ -460,11 +500,11 @@ export class BuddyRunner {
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      const stderrText = stderrLines.join('\n').trim()
 
       if (result.exitCode !== 0) {
-        const stderrText = stderrLines.join('\n').trim()
         const error = stderrText || outputText.trim() || exitErrorMessage(result.exitCode, result.signal)
-        return { success: false, error: error.slice(0, 300) }
+        return { success: false, error: error.slice(0, 300), stderr: stderrText, stdout: stdoutText }
       }
 
       // Verify the actor responded with a valid buddy message
@@ -473,7 +513,7 @@ export class BuddyRunner {
         ? message.text.trim().length > 0
         : message.content.trim().length > 0
       if (!hasContent) {
-        return { success: false, error: 'Actor responded with empty content' }
+        return { success: false, error: 'Actor responded with empty content', stderr: stderrText, stdout: stdoutText }
       }
 
       const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
@@ -483,7 +523,12 @@ export class BuddyRunner {
       const message = error instanceof Error ? error.message : String(error)
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
-      return { success: false, error: (message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')).slice(0, 300) }
+      return {
+        success: false,
+        error: (message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')).slice(0, 300),
+        stderr: stderrText,
+        stdout: outputLines.join('\n')
+      }
     }
   }
 

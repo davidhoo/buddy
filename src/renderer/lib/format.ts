@@ -54,6 +54,7 @@ const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'health_check.actor_failed': 'event.healthCheck.actorFailed',
   'health_check.passed': 'event.healthCheck.passed',
   'health_check.failed': 'event.healthCheck.failed',
+  'health_check.actor_upgrade_retry': 'event.healthCheck.actorUpgradeRetry',
   'failure_threshold.reached': 'event.failureThreshold.reached',
   'permission.detected': 'event.permission.detected',
   'actor.context_limit_detected': 'event.actor.contextLimitDetected',

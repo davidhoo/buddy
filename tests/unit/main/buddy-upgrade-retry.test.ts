@@ -150,3 +150,102 @@ process.exit(1);
     expect(detail.state.status).toBe('FAILED')
   })
 })
+
+describe('BuddyRunner health-check upgrade auto-retry', () => {
+  // wecode-cli-cc (and similar CLIs) exit on first launch to auto-upgrade, then expect a
+  // relaunch. A connectivity ping that hits this used to fail the health check outright.
+  // The ping path now detects the upgrade exit and retries, mirroring executeActorInner.
+  it('retries a connectivity ping that exits to auto-upgrade, then fails after max retries', { timeout: 30000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-ping-upgrade-'))
+    const fake = join(root, 'fake-upgrade.js')
+    await writeFile(fake, `
+process.stderr.write('A new version is available. Upgrade complete, restart required.\\n');
+process.exit(1);
+`)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_upgrade_retries: 1, max_compact_retries: 0 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        role_mode: 'claude_implements',
+        launchers: {
+          claude: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 },
+          codex: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+
+    const runner = new BuddyRunner(store)
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key })).rejects.toThrow()
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+
+    const retryEvents = detail.events.filter((e) => e.type === 'health_check.actor_upgrade_retry')
+    expect(retryEvents.length).toBeGreaterThanOrEqual(1)
+    expect(retryEvents[0]?.payload.retry_attempt).toBe(1)
+
+    const retryTranscript = detail.transcript.find((t) => t.meta?.kind === 'health_check_upgrade_retry')
+    expect(retryTranscript).toBeDefined()
+    expect(retryTranscript?.content).toContain('自动升级')
+
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.health_check?.failed_actor).toBeTruthy()
+  })
+
+  it('recovers the health check when an auto-upgrading CLI succeeds on retry', { timeout: 30000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-ping-upgrade-ok-'))
+    const fake = join(root, 'fake-upgrade-once.js')
+    // First invocation: exit to auto-upgrade. Subsequent invocations: emit a valid buddy
+    // message plus a claude init session line so the ping captures a session id.
+    await writeFile(fake, `
+const fs = require('fs');
+const path = require('path');
+const actor = process.env.BUDDY_ACTOR || 'default';
+const dir = process.env.BUDDY_COUNTER_DIR;
+const counterFile = dir ? path.join(dir, 'ping-' + actor + '.cnt') : null;
+let n = 0;
+if (counterFile) {
+  try { n = parseInt(fs.readFileSync(counterFile, 'utf8'), 10) || 0; } catch {}
+  n += 1;
+  fs.writeFileSync(counterFile, String(n));
+}
+if (n <= 1) {
+  process.stderr.write('A new version is available. Upgrade complete, restart required.\\n');
+  process.exit(1);
+}
+process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sid-' + actor }) + '\\n');
+const out = process.env.BUDDY_OUTPUT_FILE;
+if (out) fs.writeFileSync(out, JSON.stringify({ type: 'chat', content: 'ready' }));
+process.exit(0);
+`)
+
+    const store = new BuddyStore(root)
+    // max_rounds: 1 stops the buddy loop after the first actor round so the test
+    // terminates (the fake always responds with a chat message and never breaks).
+    await store.updateGlobalSettings({ max_upgrade_retries: 2, max_compact_retries: 0, max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        role_mode: 'claude_implements',
+        launchers: {
+          claude: { command: `${process.execPath} ${fake}`, env: { BUDDY_COUNTER_DIR: root }, timeout_seconds: 5 },
+          codex: { command: `${process.execPath} ${fake}`, env: { BUDDY_COUNTER_DIR: root }, timeout_seconds: 5 }
+        }
+      }
+    })
+
+    const runner = new BuddyRunner(store)
+    await runner.startTask('demo', { workspace_key: created.workspace_key })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    const retryEvents = detail.events.filter((e) => e.type === 'health_check.actor_upgrade_retry')
+    expect(retryEvents.length).toBeGreaterThanOrEqual(1)
+    const passedEvents = detail.events.filter((e) => e.type === 'health_check.passed')
+    expect(passedEvents.length).toBe(1)
+    expect(detail.state.health_check).toBeNull()
+    expect(detail.state.claude_session_id).toBe('sid-claude')
+  })
+})
