@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-07-02
+
+### Changed
+- 重做应用图标：由渐变背景配 "B" 字样的旧方案改为全新路径图形设计，同步更新 SVG / PNG / ICNS 三套素材
+
+---
+
 ## [1.1.12] - 2026-07-02
 
 ### Fixed
@@ -425,6 +432,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.0
 [1.1.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.12
 [1.1.11]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.11
 [1.1.10]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.10
