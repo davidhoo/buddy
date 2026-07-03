@@ -23,6 +23,7 @@ import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
 import type { UpdateStatus } from '../hooks/useUpdater'
 import { projectNameForTask, readStringArraySetting, writeStringArraySetting, isTaskUnread, readTaskNames, writeTaskNames, displayNameForTask } from '../lib/taskList'
+import logo from '../assets/logo.png'
 
 import type { SettingsTab } from './SettingsContent'
 
@@ -366,7 +367,10 @@ function ChatSidebar({
     <>
       <div className="px-4 pt-2 pb-2">
         <div className="flex items-center gap-2">
-          <div className="text-xl font-bold flex-1">{t('app.brand')}</div>
+          <div className="text-xl font-bold flex-1 flex items-center gap-2">
+            <img src={logo} alt="Buddy" className="w-7 h-7 shrink-0" draggable={false} />
+            {t('app.brand')}
+          </div>
           {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded') && (
             <button
               onClick={onUpdateClick}
