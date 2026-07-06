@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.2] - 2026-07-07
+
+### Added
+- 项目从 GitLab 迁移至 GitHub 并重命名为 Buddy，作为迁移后首个正式发布
+- 同步 buddy-macos v1.0.18 → v1.2.2 的全部功能：任务状态系统通知、任务附件处理、健康检查、紧凑重试与升级重试等
+- 新增 GitHub Pages 官网与最佳实践文档，支持 push 到 main 自动部署
+- Composer 支持附件上传，ChatArea / MessageBubble / Sidebar / SettingsContent 等界面同步增强
+
+### Changed
+- Runner 重构，扩展任务状态机与轮次处理逻辑（+808 行）
+- i18n 扩展中英文资源，新增大量 UI 文案
+- 应用图标同步更新
+
+### Fixed
+- 修复 README 章节顺序：特性列表曾被官网章节截断
+- 官网首页卡片栅格宽度扩展至整段宽度（1400px）
+
+---
+
 ## [1.0.18] - 2026-06-03
 
 ### Added
@@ -304,6 +323,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.2]: https://github.com/davidhoo/buddy/releases/tag/v1.2.2
 [1.0.18]: https://github.com/davidhoo/buddy/releases/tag/v1.0.18
 [1.0.17]: https://github.com/davidhoo/buddy/releases/tag/v1.0.17
 [1.0.16]: https://github.com/davidhoo/buddy/releases/tag/v1.0.16
