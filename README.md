@@ -8,15 +8,6 @@
 
 ## 特性
 
-## 官网
-
-Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包含：
-
-- **首页**（`index.html`）：产品介绍、核心特性、工作原理、架构设计、支持的 AI Actor、下载、FAQ
-- **最佳实践**（`best-practices.html`）：任务说明模板、推荐用法、避坑指南
-
-推送 `docs/` 目录的变更到 `main` 分支会自动触发 GitHub Actions 部署。
-
 - **双 Actor 协作**：执行方实现代码，审查方检查修正，循环推进直到双方确认完成
 - **4 种 AI Actor**：Claude Code、Codex、OpenCode、Kimi Code
 - **双确认结束**：双方均发出 `type=break` 才结束任务，单方 break 不终止
@@ -25,6 +16,15 @@ Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包
 - **23 套预设主题**：CSS 自定义属性驱动的主题引擎，支持自定义颜色
 - **国际化**：中文简体 / 中文繁体 / 英文，CJK 自动检测
 - **可恢复**：应用崩溃或重启后，任务状态从磁盘文件完整恢复
+
+## 官网
+
+Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包含：
+
+- **首页**（`index.html`）：产品介绍、核心特性、工作原理、架构设计、支持的 AI Actor、下载、FAQ
+- **最佳实践**（`best-practices.html`）：任务说明模板、推荐用法、避坑指南
+
+推送 `docs/` 目录的变更到 `main` 分支会自动触发 GitHub Actions 部署（见 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)）。
 
 ## 系统要求
 
