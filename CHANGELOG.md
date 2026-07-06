@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-07-06
+
+### Added
+- 侧边栏品牌区显示应用图标：在应用名称前渲染 logo，强化品牌识别
+
+### Fixed
+- 修复运行详情折叠按钮图标方向：将折叠按钮图标由 `PanelBottomClose` 改为 `PanelBottomOpen`，使其与「折叠」操作的视觉语义一致
+
 ## [1.2.1] - 2026-07-02
 
 ### Fixed
@@ -439,6 +447,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.2
 [1.2.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.1
 [1.2.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.0
 [1.1.12]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.1.12
