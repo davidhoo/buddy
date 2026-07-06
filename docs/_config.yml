@@ -1,0 +1,5 @@
+title: Buddy
+description: 双 AI Agent 协作编码的 macOS 桌面应用
+# 部署使用 GitHub Actions 直接上传 docs/ 静态文件（见 .github/workflows/deploy-pages.yml），
+# 不经 Jekyll 处理，故不设置 theme。
+show_downloads: false

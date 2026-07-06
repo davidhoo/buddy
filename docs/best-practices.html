@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buddy — 最佳实践</title>
+  <meta name="description" content="让 Buddy 更好用的做法。先把问题说清楚，再让两个 AI 工具轮流工作。">
+  <meta property="og:title" content="Buddy — 最佳实践">
+  <meta property="og:description" content="让 Buddy 更好用的做法">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#fafaf9">
+  <link rel="icon" href="assets/favicon.ico">
+  <link rel="icon" href="assets/icon.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/buddy-apple-icon.png" sizes="180x180" type="image/png">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="nav scrolled">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-brand">
+      <img src="assets/buddy-logo.png" alt="Buddy" class="nav-logo">
+      <span>Buddy</span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="index.html#how-it-works">工作原理</a>
+      <a href="index.html#guide">新手指南</a>
+      <a href="index.html#features">功能</a>
+      <a href="index.html#actors">支持工具</a>
+      <a href="index.html#faq">常见问题</a>
+      <a href="best-practices.html" class="nav-active">最佳实践</a>
+      <a href="index.html#download" class="nav-download">下载</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="菜单"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<main>
+
+<section class="bp-hero">
+  <div class="bp-hero-left">
+    <div class="section-label">最佳实践</div>
+    <h1 class="bp-title">让 Buddy 更好用的做法</h1>
+    <p class="bp-subtitle">先把问题说清楚，再让两个 AI 工具轮流工作。任务越清楚，审查越有效，最后越容易收敛。</p>
+  </div>
+  <div class="bp-template">
+    <div class="bp-template-header">
+      <svg class="bp-template-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+      <span class="bp-template-title">任务说明模板</span>
+    </div>
+    <div class="bp-template-body">
+      <p><span class="bp-tpl-label">目标：</span><span class="bp-tpl-text">一句话说明要交付什么。</span></p>
+      <p><span class="bp-tpl-label">资料：</span><span class="bp-tpl-text">放上 plan.md 路径、会话 ID、截图或关键文件路径。</span></p>
+      <p><span class="bp-tpl-label">边界：</span><span class="bp-tpl-text">说明哪些文件、行为或方案不要碰。</span></p>
+      <p><span class="bp-tpl-label">完成标准：</span><span class="bp-tpl-text">写清楚测试、页面效果、审查结论或其他可验证结果。</span></p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2 class="section-title">一些非常不错的用法</h2>
+    <p class="section-desc">Buddy 的价值不是让两个 AI 同时说话，而是让一个负责推进，一个负责检查，直到问题真正收口。</p>
+  </div>
+  <div class="bp-cards">
+    <article class="card bp-card">
+      <svg class="bp-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+      <h3 class="bp-card-title">方案定好后，结对开发</h3>
+      <p class="bp-card-desc">先和人或其他工具把需求梳理清楚，形成 plan.md。启动 Buddy 时，把 plan.md 路径写进任务说明。</p>
+      <div class="bp-card-note">
+        <p>一个 AI 按方案实现，另一个 AI 持续检查方向、遗漏和风险。</p>
+      </div>
+    </article>
+    <article class="card bp-card">
+      <svg class="bp-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg>
+      <h3 class="bp-card-title">先写完，再协作审查</h3>
+      <p class="bp-card-desc">单个 AI 已经完成一轮编码后，把原会话 ID 接入 Buddy，让两边沿着同一段上下文继续。</p>
+      <div class="bp-card-note">
+        <p>适合修复遗漏、补测试、清理边界问题。</p>
+      </div>
+    </article>
+    <article class="card bp-card">
+      <svg class="bp-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M7 11h10"/><path d="M7 15h6"/><path d="M7 7h8"/></svg>
+      <h3 class="bp-card-title">拿不准时，先充分讨论</h3>
+      <p class="bp-card-desc">如果你对方案、取舍或判断拿不准，直接把问题写进任务说明，要求双方先讨论。</p>
+      <div class="bp-card-note">
+        <p>输出重点应是清晰结论、理由和下一步建议，而不是马上改代码。</p>
+      </div>
+    </article>
+    <article class="card bp-card">
+      <svg class="bp-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
+      <h3 class="bp-card-title">自定义提示词，给 Agent 立规矩</h3>
+      <p class="bp-card-desc">在「设置 - 提示词」里写自定义提示词，它会追加到每个 Agent 的系统提示词末尾。可以调高或调低两个 Agent 的对抗强度，也可以明确禁止某些行为。</p>
+      <div class="bp-card-note">
+        <p>想让双方更激烈地辩论就调高强度，想更克制地推进就调低。也能用来固定输出格式、保护关键文件。</p>
+      </div>
+    </article>
+  </div>
+  <div class="bp-avoid">
+    <div class="bp-avoid-header">
+      <svg class="bp-avoid-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+      <span>这些情况不必硬上 Buddy</span>
+    </div>
+    <div class="bp-avoid-list">
+      <div class="bp-avoid-item"><span class="bp-avoid-dot"></span>一条命令或几行代码能解决的小事，直接做更快。</div>
+      <div class="bp-avoid-item"><span class="bp-avoid-dot"></span>需求还没边界时，先把问题问清楚。</div>
+      <div class="bp-avoid-item"><span class="bp-avoid-dot"></span>结果无法检查时，先补充可验证的完成标准。</div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="assets/buddy-logo.png" alt="Buddy" class="footer-logo">
+      <div>
+        <div class="footer-name">Buddy</div>
+        <div class="footer-tagline">Convergent AI Engineering Collaboration</div>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="index.html#features">功能</a>
+      <a href="https://github.com/davidhoo/buddy/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      <a href="index.html#download">下载</a>
+      <a href="https://github.com/davidhoo/buddy" target="_blank" rel="noopener">源码</a>
+      <a href="https://github.com/davidhoo/buddy/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">反馈</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2026 Buddy</span>
+    <span>Made with Buddy</span>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

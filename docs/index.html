@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buddy — Convergent AI Engineering</title>
+  <meta name="description" content="Dual AI collaboration for convergent coding. An implementer builds code, a reviewer audits quality. They alternate until both confirm convergence.">
+  <meta property="og:title" content="Buddy — Convergent AI Engineering">
+  <meta property="og:description" content="双 Agent 协作，收敛式编程。执行者构建代码，审查者审计质量，交替轮转直至双方确认收敛。">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Buddy — Convergent AI Engineering">
+  <meta name="twitter:description" content="双 Agent 协作，收敛式编程">
+  <meta name="theme-color" content="#fafaf9">
+  <link rel="icon" href="assets/favicon.ico">
+  <link rel="icon" href="assets/icon.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/buddy-apple-icon.png" sizes="180x180" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <img src="assets/buddy-logo.png" alt="Buddy" class="nav-logo">
+      <span>Buddy</span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#how-it-works">工作原理</a>
+      <a href="#guide">新手指南</a>
+      <a href="#features">功能</a>
+      <a href="#actors">支持工具</a>
+      <a href="#faq">常见问题</a>
+      <a href="best-practices.html">最佳实践</a>
+      <a href="#download" class="nav-download">下载</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="菜单"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<main>
+
+<section id="hero" class="hero">
+  <div class="hero-inner">
+    <div class="hero-label">Convergent AI Engineering</div>
+    <h1 class="hero-title">双 Agent 协作，收敛式编程</h1>
+    <p class="hero-subtitle">执行者构建代码，审查者审计质量。交替轮转，直至双方确认收敛。你随时可以介入校准方向。</p>
+    <div class="hero-actions">
+      <a href="#download" class="btn btn-accent">立即下载</a>
+      <a href="https://github.com/davidhoo/buddy" target="_blank" rel="noopener" class="btn btn-outline">查看源码 →</a>
+    </div>
+  </div>
+  <div class="hero-flow">
+    <div class="flow-chip"><span class="dot dot-claude"></span> Implementer</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-chip"><span class="dot dot-codex"></span> Reviewer</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-chip">Auto Handoff</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-chip flow-chip--accent">Converge</div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div class="section-label">The Problem</div>
+    <h2 class="section-title">单 Agent 容易跑偏，全程盯防太累</h2>
+  </div>
+  <div class="card-grid card-grid-3">
+    <div class="card">
+      <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
+      <h3 class="card-title">执行者盲区</h3>
+      <p class="card-text">单个 AI agent 编写代码时，容易陷入方向偏差、遗漏边界情况、重复犯错</p>
+    </div>
+    <div class="card">
+      <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h.01"/><path d="M10 7v6"/><path d="M14 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2"/><path d="M22 14v-4"/><path d="M6 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"/></svg>
+      <h3 class="card-title">人类疲于校准</h3>
+      <p class="card-text">全程监控 AI 输出耗尽精力，频繁打断思路，本该用来思考的时间被消耗在盯屏上</p>
+    </div>
+    <div class="card">
+      <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8"/></svg>
+      <h3 class="card-title">循环无收敛</h3>
+      <p class="card-text">没有审查闭环，修复 A 引入 Bug B，代码质量在反复修补中逐渐失控</p>
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works" class="section">
+  <div class="section-head">
+    <div class="section-label">How It Works</div>
+    <h2 class="section-title">执行 → 审查 → 交替 → 收敛</h2>
+  </div>
+  <div class="flow-steps">
+    <div class="flow-step flow-step--solid">
+      <div class="flow-step-label">执行者</div>
+      <div class="flow-step-text">构建代码</div>
+    </div>
+    <span class="flow-step-arrow">→</span>
+    <div class="flow-step flow-step--bordered">
+      <div class="flow-step-label">审查者</div>
+      <div class="flow-step-text">审计质量</div>
+    </div>
+    <span class="flow-step-arrow">→</span>
+    <div class="flow-step flow-step--light">
+      <div class="flow-step-label">Auto Handoff</div>
+      <div class="flow-step-text">交替轮转</div>
+    </div>
+    <span class="flow-step-arrow">→</span>
+    <div class="flow-step flow-step--accent">
+      <div class="flow-step-label">Dual Break</div>
+      <div class="flow-step-text">收敛完成</div>
+    </div>
+  </div>
+  <p class="flow-desc">双方独立确认「完成」才会停止。不会因为一方过早判定而遗漏问题。Actor 完成后自动切换至对手方，你随时可以介入校准。</p>
+  <p class="flow-note">若一方说完成、另一方却继续改了代码，break 会被撤回，任务继续运行——收敛必须建立在双方都无新改动之上。</p>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div class="section-label">Reliability &amp; Transparency</div>
+    <h2 class="section-title">无人值守，全程可追踪</h2>
+    <p class="section-desc">长任务跑到上下文耗尽也能自己续跑，每一轮的模型、Token、耗时都可回溯。Buddy 让两个 AI 真正跑完一个长任务而不崩。</p>
+  </div>
+  <div class="card-grid card-grid-2">
+    <div class="card card-tall">
+      <div class="card-tag">Reliability</div>
+      <h3 class="card-title-lg">不中断闭环</h3>
+      <div class="card-feature">
+        <h4 class="card-feature-title">上下文耗尽自动重置续跑</h4>
+        <p class="card-feature-text">长任务跑到上下文窗口耗尽时，自动识别中英文超限错误，重置会话并用 LLM 生成精简摘要在新会话续跑；摘要失败则回退截断摘要并备份原上下文。无需全程盯防，长任务自己跑完。</p>
+      </div>
+    </div>
+    <div class="card card-tall">
+      <div class="card-tag">Transparency</div>
+      <h3 class="card-title-lg">透明运行记录</h3>
+      <div class="card-feature">
+        <h4 class="card-feature-title">运行详情面板</h4>
+        <p class="card-feature-text">每一轮的模型、Token、耗时一目了然，并实时流式输出 stdout，过程完全可见。</p>
+      </div>
+      <div class="card-feature">
+        <h4 class="card-feature-title">完成统计表</h4>
+        <p class="card-feature-text">任务结束时显示双 actor 汇总表：模型、Token（含缓存读取）、耗时、轮次。每一轮对话都可追溯、可审计。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="guide" class="section">
+  <div class="section-head">
+    <div class="section-label">新手指南</div>
+    <h2 class="section-title">新用户指南</h2>
+    <p class="section-desc">Buddy 是一个桌面应用（macOS），让两个 AI 编程工具围绕你的本地代码仓库轮流工作。一个负责写代码，一个负责检查，交替进行，直到双方都认为任务完成。</p>
+  </div>
+  <div class="guide-box">
+    <h3 class="guide-box-title">
+      <svg class="guide-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>
+      使用前必须准备
+    </h3>
+    <p class="guide-box-text">Buddy 本身不内置 AI 能力。你需要先在自己的电脑上安装准备使用的 AI 命令行工具，并确认这些工具已经登录、授权可用。默认双 AI 协作建议先装好 Claude Code 和 Codex CLI。</p>
+    <div class="actor-chips">
+      <span class="actor-chip"><span class="dot dot-claude"></span> Claude Code — Anthropic 出品的编程命令行工具</span>
+      <span class="actor-chip"><span class="dot dot-codex"></span> Codex CLI — OpenAI 出品的编程命令行工具</span>
+      <span class="actor-chip"><span class="dot dot-opencode"></span> OpenCode — 开源编程命令行工具</span>
+      <span class="actor-chip"><span class="dot dot-kimi"></span> Kimi Code — 月之暗面出品的编程命令行工具</span>
+    </div>
+    <p class="guide-tip">
+      <svg class="guide-tip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+      安装后，先在终端里运行一次并确认能正常使用。只检查版本号不够；如果没有登录、登录态过期或权限不足，Buddy 也无法替你调用它。
+    </p>
+  </div>
+  <div class="guide-steps">
+    <h3 class="guide-steps-title">基本用法</h3>
+    <div class="guide-step">
+      <div class="guide-step-num">1</div>
+      <div class="guide-step-body">
+        <h4 class="guide-step-title">安装并登录 AI 命令行工具</h4>
+        <p class="guide-step-text">先安装你想用的 AI 工具，比如 Claude Code 或 Codex。安装后在终端里运行一次，确认已经登录且能正常使用。</p>
+      </div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">2</div>
+      <div class="guide-step-body">
+        <h4 class="guide-step-title">配置启动命令</h4>
+        <p class="guide-step-text">打开 Buddy 的设置，填写 AI 工具的启动命令。默认配置通常可以直接用，也可以自定义路径和参数。</p>
+      </div>
+    </div>
+    <div class="guide-step">
+      <div class="guide-step-num">3</div>
+      <div class="guide-step-body">
+        <h4 class="guide-step-title">选择本地仓库</h4>
+        <p class="guide-step-text">在 Buddy 中选择一个本地 Git 仓库作为工作目录。两个 Actor 都会在这个目录里读写代码。</p>
+      </div>
+    </div>
+    <div class="guide-step guide-step--last">
+      <div class="guide-step-num">4</div>
+      <div class="guide-step-body">
+        <h4 class="guide-step-title">写任务说明，开始运行</h4>
+        <p class="guide-step-text">写清楚你想要什么，然后点开始。执行者先写代码，完成后审查者检查，交替进行直到双方都确认完成。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="section">
+  <div class="section-head">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">为协作而生的每一个细节</h2>
+  </div>
+  <div class="card-grid card-grid-bento">
+    <div class="card card-wide">
+      <div class="card-tag">Session Persistence</div>
+      <h3 class="card-title">会话持久化</h3>
+      <p class="card-text">复用原生 CLI 会话（Claude Session ID / Codex Thread ID），上下文跨轮次保留，中断后无缝恢复</p>
+    </div>
+    <div class="card">
+      <div class="card-tag">Git Integration</div>
+      <h3 class="card-title">Git 集成</h3>
+      <p class="card-text">本地化 conventional commit 消息生成、变更查看、提交与推送</p>
+    </div>
+    <div class="card">
+      <div class="card-tag">Desktop Notifications</div>
+      <h3 class="card-title">桌面通知</h3>
+      <p class="card-text">任务完成、失败或暂停时推送系统通知，完成通知附带轮次、耗时与 Token 统计，不用全程盯屏</p>
+    </div>
+    <div class="card card-wide">
+      <div class="card-tag">Instruction Queue</div>
+      <h3 class="card-title">指令队列</h3>
+      <p class="card-text">Actor 运行期间即可排队发送指令，轮次结束后自动执行</p>
+    </div>
+    <div class="card">
+      <div class="card-tag">Keyboard Shortcuts</div>
+      <h3 class="card-title">可定制快捷键</h3>
+      <p class="card-text">任务导航、侧栏切换、操作快捷键均可自定义，适配你的肌肉记忆</p>
+    </div>
+    <div class="card">
+      <div class="card-tag">Crash Recovery</div>
+      <h3 class="card-title">崩溃恢复</h3>
+      <p class="card-text">全量 JSON/JSONL/MD 持久化，重启自动恢复</p>
+    </div>
+    <div class="card card-wide">
+      <div class="card-tag">Themes &amp; i18n</div>
+      <h3 class="card-title">23 主题 + 三语支持</h3>
+      <p class="card-text">15 暗色 + 8 亮色主题，英文 / 简中 / 繁中完整支持，CJK 自动检测</p>
+    </div>
+  </div>
+</section>
+
+<section id="actors" class="section">
+  <div class="section-head">
+    <div class="section-label">Supported Actors</div>
+    <h2 class="section-title">接入你熟悉的 AI 工具</h2>
+  </div>
+  <div class="card-grid card-grid-4">
+    <div class="card card-actor">
+      <div class="actor-name text-claude">Claude Code</div>
+      <div class="actor-role">Default Implementer</div>
+      <p class="card-text">Anthropic 旗舰编程 Agent，会话持久化，上下文深度最强</p>
+    </div>
+    <div class="card card-actor">
+      <div class="actor-name text-codex">Codex</div>
+      <div class="actor-role">Default Reviewer</div>
+      <p class="card-text">OpenAI CLI 编程助手，线程级上下文，审查视角互补</p>
+    </div>
+    <div class="card card-actor">
+      <div class="actor-name text-opencode">OpenCode</div>
+      <div class="actor-role">Alternative</div>
+      <p class="card-text">开源编程 Agent，灵活可定制，支持多种 LLM 后端</p>
+    </div>
+    <div class="card card-actor">
+      <div class="actor-name text-kimi">Kimi Code</div>
+      <div class="actor-role">Alternative</div>
+      <p class="card-text">月之暗面出品，中文场景优化，自动检测 kimi-code/kimi-cli</p>
+    </div>
+  </div>
+  <p class="actors-note">支持任意遵循 Launcher Protocol 的自定义命令</p>
+</section>
+
+<section id="faq" class="section">
+  <div class="section-head">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">常见问题</h2>
+  </div>
+  <div class="faq-list">
+    <details class="faq-item">
+      <summary>Buddy 和单个 AI CLI 工具有什么区别？</summary>
+      <p>Buddy 让两个 AI Actor（执行方 + 审查方）轮流工作：执行方写代码，审查方挑毛病，循环推进。这比单次对话更接近真实团队协作，能显著提升一次通过率与代码质量。</p>
+    </details>
+    <details class="faq-item">
+      <summary>任务什么时候会结束？</summary>
+      <p>采用「双确认结束」机制：执行方和审查方都必须发出 <code>type=break</code> 信号，任务才会转为 DONE。单方 break 不会终止任务，避免一方偷懒提前结束。</p>
+    </details>
+    <details class="faq-item">
+      <summary>崩溃或重启后任务还在吗？</summary>
+      <p>在。所有任务状态以文件形式持久化在 <code>~/Library/Application Support/buddy/</code>。重启时，处于 <code>RUNNING</code> 的任务会自动重置为 <code>PAUSED</code>，方便你继续。</p>
+    </details>
+    <details class="faq-item">
+      <summary>能边运行边追加指令吗？</summary>
+      <p>可以。Actor 运行期间发送的指令会进入指令队列，当前轮次结束后自动执行，无需打断。</p>
+    </details>
+    <details class="faq-item">
+      <summary>数据会离开本地吗？</summary>
+      <p>Buddy 本身不联网传输你的任务数据，所有状态、对话记录、产物都保存在本地文件系统。AI 推理由你配置的 CLI 工具各自完成。</p>
+    </details>
+  </div>
+</section>
+
+<section id="download" class="download-section">
+  <h2 class="download-title">Let's Buddy!</h2>
+  <p class="download-subtitle">双 Agent 协作，收敛式编程</p>
+  <div class="download-actions">
+    <a href="https://github.com/davidhoo/buddy/releases/latest" target="_blank" rel="noopener" class="btn btn-accent btn-lg">下载 macOS 版</a>
+    <a href="https://github.com/davidhoo/buddy" target="_blank" rel="noopener" class="btn btn-outline-dark btn-lg">查看源码</a>
+  </div>
+  <p class="download-note">系统要求：macOS 12+ (Monterey)</p>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="assets/buddy-logo.png" alt="Buddy" class="footer-logo">
+      <div>
+        <div class="footer-name">Buddy</div>
+        <div class="footer-tagline">Convergent AI Engineering Collaboration</div>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="#features">功能</a>
+      <a href="best-practices.html">最佳实践</a>
+      <a href="https://github.com/davidhoo/buddy/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      <a href="#download">下载</a>
+      <a href="https://github.com/davidhoo/buddy" target="_blank" rel="noopener">源码</a>
+      <a href="https://github.com/davidhoo/buddy/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">反馈</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Buddy</span>
+    <span>Made with Buddy</span>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

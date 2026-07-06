@@ -4,9 +4,18 @@
 
 双 AI Agent 协作编码的 macOS 桌面应用。两个 AI Actor（执行方 + 审查方）轮流工作，逐步收敛至正确结果，支持人工校准窗口与双确认结束机制。
 
-官网：[GitHub Releases](../../releases)
+官网：[https://davidhoo.github.io/buddy/](https://davidhoo.github.io/buddy/) · [下载](../../releases)
 
 ## 特性
+
+## 官网
+
+Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包含：
+
+- **首页**（`index.html`）：产品介绍、核心特性、工作原理、架构设计、支持的 AI Actor、下载、FAQ
+- **最佳实践**（`best-practices.html`）：任务说明模板、推荐用法、避坑指南
+
+推送 `docs/` 目录的变更到 `main` 分支会自动触发 GitHub Actions 部署。
 
 - **双 Actor 协作**：执行方实现代码，审查方检查修正，循环推进直到双方确认完成
 - **4 种 AI Actor**：Claude Code、Codex、OpenCode、Kimi Code
