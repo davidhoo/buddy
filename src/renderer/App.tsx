@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { FolderOpen } from 'lucide-react'
-import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert } from './hooks/useBuddy'
+import { FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
+import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
 import { setServerLocale } from './lib/i18n'
@@ -18,20 +18,7 @@ import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart } from './lib/taskState'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
-
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
-const MIME_MAP: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon',
-  pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown',
-  json: 'application/json', csv: 'text/csv',
-}
-
-function ensureMimeType(att: Attachment): string {
-  if (att.mimeType) return att.mimeType
-  const ext = att.name.split('.').pop()?.toLowerCase() ?? ''
-  return MIME_MAP[ext] ?? 'application/octet-stream'
-}
+import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
 
 export default function App() {
@@ -135,6 +122,12 @@ export default function App() {
   const currentDraft = selectedTaskId ? (drafts[selectedTaskId] ?? '') : ''
   const currentAttachments = selectedTaskId ? (taskAttachments[selectedTaskId] ?? []) : []
 
+  // A startTask mutation is "retrying the health check" when it is in flight, not already
+  // showing PINGING, and the task was previously in a connectivity-failed state.
+  const taskStatus = taskDetail?.state?.status ?? null
+  const healthCheckFailed = taskStatus === 'FAILED' || !!taskDetail?.state?.health_check?.failed_actor
+  const isRetryingHealthCheck = startTask.isPending && taskStatus !== 'PINGING' && healthCheckFailed
+
   const handleDraftChange = useCallback((value: string) => {
     if (!selectedTaskId) return
     setDrafts(prev => ({ ...prev, [selectedTaskId]: value }))
@@ -210,7 +203,8 @@ export default function App() {
     taskId: string,
     taskText: string,
     repoRoot: string,
-    settings: Record<string, unknown>
+    settings: Record<string, unknown>,
+    attachments?: Attachment[]
   ) => {
     try {
       const finalRepoRoot = (repoRoot && repoRoot !== '/' && repoRoot !== '[object Object]' ? repoRoot : null)
@@ -221,6 +215,41 @@ export default function App() {
         task_text: taskText,
         settings
       })
+
+      // Save attachments to the newly created task directory and update task.md
+      if (attachments && attachments.length > 0) {
+        const savedPaths: string[] = []
+        for (const att of attachments) {
+          try {
+            let savedPath: string
+            if (att.bufferBase64) {
+              savedPath = await window.api.saveAttachmentBuffer(
+                result.task,
+                result.workspace_key,
+                att.name,
+                att.bufferBase64
+              )
+            } else if (att.filePath) {
+              savedPath = att.filePath
+            } else {
+              continue
+            }
+            savedPaths.push(savedPath)
+          } catch (err) {
+            console.error('Failed to save attachment:', att.name, err)
+          }
+        }
+        // Append attachment paths to task text
+        if (savedPaths.length > 0) {
+          const attachmentBlock = '\n\n[Attachments]\n' + savedPaths.map(p => `- file://${p}`).join('\n')
+          try {
+            await window.buddy.updateTaskText(result.task, result.workspace_key, taskText + attachmentBlock)
+          } catch (err) {
+            console.error('Failed to update task text with attachment paths:', err)
+          }
+        }
+      }
+
       if (finalRepoRoot && finalRepoRoot !== '[object Object]') {
         try { localStorage.setItem('buddy.lastRepoRoot', finalRepoRoot) } catch {}
       }
@@ -245,7 +274,7 @@ export default function App() {
       const apiMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || msg
       window.alert(t('modal.create.failed', { message: apiMsg }))
     }
-  }, [bootstrap, createTask, t])
+  }, [bootstrap, createTask, startTask, t])
 
   const handleOpenCreateModal = useCallback((repoRoot?: unknown) => {
     setPendingRepoRoot(typeof repoRoot === 'string' && repoRoot ? repoRoot : null)
@@ -321,6 +350,18 @@ export default function App() {
       taskId: selectedTaskId,
       data: {
         actor,
+        workspace_key: selectedWorkspaceKey ?? undefined
+      }
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, startTask])
+
+  // Retry connectivity check: re-run health check without resuming an actor run.
+  // The runner clears the stale failed health_check and re-pings both actors.
+  const handleRetryHealthCheck = useCallback(() => {
+    if (!selectedTaskId) return
+    startTask.mutate({
+      taskId: selectedTaskId,
+      data: {
         workspace_key: selectedWorkspaceKey ?? undefined
       }
     })
@@ -430,7 +471,7 @@ export default function App() {
           }
         }
         restored.push({
-          id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+          id: generateAttachmentId(),
           name: meta.name,
           category: isImage ? 'image' : 'file',
           mimeType: resolvedMime,
@@ -623,6 +664,8 @@ export default function App() {
                 onEditInstruction={handleEditInstruction}
                 onClearInstructionQueue={handleClearInstructionQueue}
                 onCreateTask={handleOpenCreateModal}
+                onRetryHealthCheck={handleRetryHealthCheck}
+                isRetryingHealthCheck={isRetryingHealthCheck}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}
@@ -637,9 +680,12 @@ export default function App() {
                 taskSettings={taskDetail?.settings ?? null}
                 events={taskDetail?.events ?? []}
                 latestFailure={taskDetail?.latest_failure ?? null}
+                globalSettings={bootstrap?.global_settings ?? null}
                 onInterrupt={handleInterrupt}
                 onRetry={() => handleStartTask()}
                 onResume={() => handleStartTask()}
+                onRetryHealthCheck={handleRetryHealthCheck}
+                isRetryingHealthCheck={isRetryingHealthCheck}
                 onResize={handleStatusBarResize}
               />
             </>
@@ -679,7 +725,7 @@ function CreateTaskModal({
   t
 }: {
   onClose: () => void
-  onCreate: (taskId: string, taskText: string, repoRoot: string, settings: Record<string, unknown>) => void
+  onCreate: (taskId: string, taskText: string, repoRoot: string, settings: Record<string, unknown>, attachments?: Attachment[]) => void
   defaultRepoRoot: string
   globalSettings: GlobalSettings | null
   t: TFunction
@@ -687,6 +733,7 @@ function CreateTaskModal({
   const [taskId, setTaskId] = useState('')
   const [repoRoot, setRepoRoot] = useState(defaultRepoRoot)
   const [taskText, setTaskText] = useState(() => t('modal.create.taskBriefDefault'))
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [implementer, setImplementer] = useState<Actor>(() => {
     try { return (localStorage.getItem('buddy.lastImplementer') as Actor) || 'claude' } catch { return 'claude' }
   })
@@ -695,7 +742,100 @@ function CreateTaskModal({
   })
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
+
+  // --- Attachment helpers (same logic as Composer.tsx) ---
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => {
+      if (a.id === id) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+        return false
+      }
+      return true
+    }))
+  }, [])
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items
+    if (!items || items.length === 0) return
+
+    const newAttachments: Attachment[] = []
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) continue
+        const previewUrl = URL.createObjectURL(file)
+        const buffer = await file.arrayBuffer()
+        const bytes = new Uint8Array(buffer)
+        let binary = ''
+        for (let j = 0; j < bytes.length; j++) {
+          binary += String.fromCharCode(bytes[j])
+        }
+        const bufferBase64 = btoa(binary)
+        newAttachments.push({
+          id: generateAttachmentId(),
+          name: file.name || `paste-${Date.now()}.png`,
+          category: 'image',
+          mimeType: item.type,
+          size: file.size,
+          previewUrl,
+          bufferBase64,
+        })
+      }
+    }
+
+    if (newAttachments.length === 0 && e.clipboardData.files.length > 0) {
+      e.preventDefault()
+      try {
+        const fileEntries: Array<{ path: string; size: number }> = await window.api.readClipboardFilePaths()
+        for (const entry of fileEntries) {
+          if (attachments.some(a => a.filePath === entry.path)) continue
+          const name = entry.path.split('/').pop() ?? entry.path
+          const ext = name.split('.').pop()?.toLowerCase() ?? ''
+          const mimeType = MIME_MAP[ext] ?? 'application/octet-stream'
+          const isImage = mimeType.startsWith('image/')
+          let previewUrl: string | undefined
+          if (isImage) {
+            try { previewUrl = await window.api.readFileAsDataURL(entry.path, mimeType) } catch {}
+          }
+          newAttachments.push({
+            id: generateAttachmentId(),
+            name,
+            category: isImage ? 'image' : 'file',
+            mimeType,
+            size: entry.size,
+            filePath: entry.path,
+            previewUrl,
+          })
+        }
+      } catch {}
+    }
+
+    if (newAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...newAttachments])
+    }
+  }, [attachments])
+
+  const imageAttachments = attachments.filter(a => {
+    if (a.category === 'image' || a.mimeType.startsWith('image/')) return true
+    const ext = a.name.split('.').pop()?.toLowerCase() ?? ''
+    return IMAGE_EXTS.has(ext)
+  })
+  const fileAttachments = attachments.filter(a => !imageAttachments.includes(a))
+
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
+
+  // Debounced git branch query — avoids firing on every keystroke in the path input
+  const [debouncedRepoRoot, setDebouncedRepoRoot] = useState(repoRoot.trim())
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedRepoRoot(repoRoot.trim()), 500)
+    return () => clearTimeout(timer)
+  }, [repoRoot])
+
+  const { data: gitStatusResult } = useGitStatus(debouncedRepoRoot || null)
+  const gitBranchName = gitStatusResult?.branch || ''
 
   // Handle Escape at document level so it works regardless of focus position
   useEffect(() => {
@@ -751,7 +891,7 @@ function CreateTaskModal({
       ...seedFor(implementer, implementerSession),
       ...seedFor(reviewer, reviewerSession)
     }
-    onCreate(taskId.trim(), taskText, repoRoot.trim(), settings)
+    onCreate(taskId.trim(), taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined)
   }
 
   const handleSelectDirectory = async () => {
@@ -822,9 +962,72 @@ function CreateTaskModal({
             <textarea
               value={taskText}
               onChange={(e) => setTaskText(e.target.value)}
+              onPaste={handlePaste}
               rows={10}
               className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
             />
+            {/* Attachment previews — same layout as Composer */}
+            {attachments.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {imageAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {imageAttachments.map(att => (
+                      <div
+                        key={att.id}
+                        className="group relative rounded-lg overflow-hidden border border-border bg-bg-base"
+                      >
+                        {att.previewUrl ? (
+                          <img
+                            src={att.previewUrl}
+                            alt={att.name}
+                            className="h-20 w-auto max-w-[160px] object-cover"
+                          />
+                        ) : (
+                          <div className="h-20 w-20 flex items-center justify-center bg-bg-subtle">
+                            <ImageIcon size={20} className="text-fg-muted" />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => removeAttachment(att.id)}
+                          className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger"
+                          title={t('composer.attachment.remove')}
+                        >
+                          <X size={12} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fileAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {fileAttachments.map(att => {
+                      const ext = att.name.split('.').pop()?.toUpperCase() ?? ''
+                      const extL = att.name.split('.').pop()?.toLowerCase() ?? ''
+                      const Icon = EXT_ICON_MAP[extL] ?? FileIcon
+                      return (
+                        <div
+                          key={att.id}
+                          className="group relative rounded-lg border border-border bg-bg-base px-2.5 py-1.5 flex items-center gap-2.5 max-w-[220px] hover:border-border-primary transition-colors"
+                        >
+                          <Icon size={28} className="flex-shrink-0 text-fg-muted" />
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate text-xs text-fg-secondary">{att.name}</div>
+                            {ext && <div className="text-[10px] text-fg-muted">{ext}</div>}
+                          </div>
+                          <button
+                            onClick={() => removeAttachment(att.id)}
+                            className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger"
+                            title={t('composer.attachment.remove')}
+                          >
+                            <X size={12} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 工作目录 */}
@@ -850,6 +1053,13 @@ function CreateTaskModal({
                 {t('common.select')}
               </button>
             </div>
+            {gitBranchName && (
+              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted">
+                <GitBranch size={12} className="flex-shrink-0" />
+                <span className="text-fg-secondary">{t('modal.create.gitBranch')}</span>
+                <span className="font-mono">{gitBranchName}</span>
+              </div>
+            )}
           </div>
 
           {/* 执行者 / 审查者 */}

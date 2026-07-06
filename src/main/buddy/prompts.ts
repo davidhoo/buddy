@@ -154,6 +154,13 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
     parts.push(`默认使用最近 human message 的语言输出；当前任务使用${humanLang}。除 JSON 等编程语言外，所有自然语言内容都用${humanLang}输出。`)
   }
 
+  // User-defined custom prompt, appended verbatim after the system prompt so
+  // it applies to every actor on every round. Optional; omitted when empty.
+  const customPrompt = input.globalSettings?.custom_prompt?.trim()
+  if (customPrompt) {
+    parts.push('', '## Custom instructions', customPrompt)
+  }
+
   return `${parts.join('\n').trimEnd()}\n`
 }
 

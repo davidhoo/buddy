@@ -72,6 +72,7 @@ export interface TaskState {
   break_rejected_by?: { actor?: string; round?: number } | null
   latest_failure?: Failure | null
   health_check?: HealthCheckResult | null
+  compact_retries?: number
 }
 
 export interface Countdown {
@@ -168,6 +169,11 @@ export interface GlobalSettings {
   seed_codex_thread_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  max_compact_retries?: number
+  auto_generate_commit_message?: boolean
+  system_notifications_enabled?: boolean
+  max_upgrade_retries?: number
+  custom_prompt?: string
 }
 
 export interface BuddyError {
@@ -175,6 +181,16 @@ export interface BuddyError {
   message: string
   details?: unknown
   recoverable?: boolean
+}
+
+export interface TestLauncherResult {
+  actor: string
+  success: boolean
+  phase: 'tool_check' | 'ping'
+  error?: string
+  sessionId?: string
+  threadId?: string
+  responsePreview?: string
 }
 
 export interface TaskEventEnvelope {

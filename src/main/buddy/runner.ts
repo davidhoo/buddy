@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type {
   AttachmentMeta,
   CountdownInput,
+  Failure,
   GlobalSettings,
   InstructionQueueItem,
   SendMessageInput,
@@ -12,12 +13,13 @@ import type {
   TranscriptEntry,
   TaskState
 } from '../../shared/types'
-import { buildLauncherCommand, commandKindFor, runLauncher, type LauncherCommandKind } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
 import { BuddyStore } from './store'
 import { BuddyEventBus } from './events'
+import type { TaskNotifier } from './notifications'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -28,14 +30,67 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
 
 const PING_TIMEOUT_SECONDS = 120
 
+/** Canonical phrase used in both throw sites and the regex pattern below — keep in sync */
+const CONTEXT_EXHAUSTED_PHRASE = 'context window exhausted'
+
+/** Patterns that indicate an actor hit the context window limit */
+const CONTEXT_WINDOW_LIMIT_PATTERNS = [
+  /context window limit/i,
+  /context length exceeded/i,
+  /context\.length\.exceeded/i,
+  /maximum context length/i,
+  /max.*context.*length/i,
+  /token limit/i,
+  /too many tokens/i,
+  /exceeds.*token/i,
+  /exceeded.*token/i,
+  /input.*too long/i,
+  /request too large/i,
+  /context window.*exhausted/i,
+  // Chinese error messages from models like GLM, Qwen, DeepSeek
+  /对话内容太长/i,
+  /超出.*处理能力/i,
+  /超出.*上下文/i,
+  /超出.*模型.*能力/i,
+  /上下文.*超限/i,
+  /上下文.*超出/i,
+  /内容过长/i,
+  /超出.*长度/i
+]
+
+const DEFAULT_MAX_COMPACT_RETRIES = 3
+
 interface RunnerOptions {
   executeLaunchers?: boolean
   events?: BuddyEventBus
+  notifier?: TaskNotifier
+}
+const DEFAULT_MAX_UPGRADE_RETRIES = 3
+const UPGRADE_WAIT_MS = 5000
+
+/** Patterns that indicate the child process exited because it is auto-upgrading */
+const UPGRADE_PATTERNS = [
+  /upgrade.*complete/i,
+  /updated.*restart/i,
+  /restart.*required/i,
+  /new version/i,
+  /auto.?update/i,
+  /自动更新/i,
+  /自动升级/i,
+  /升级完成/i,
+  /请重启/i,
+  /已更新/i
+]
+
+/** Check if an error/stderr message indicates the child exited for an auto-upgrade */
+export function isUpgradeExitError(message: string): boolean {
+  return UPGRADE_PATTERNS.some((p) => p.test(message))
 }
 
 export class BuddyRunner {
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
+  private readonly notifier?: TaskNotifier
 
   constructor(
     private readonly store: BuddyStore,
@@ -43,6 +98,7 @@ export class BuddyRunner {
   ) {
     this.executeLaunchers = options.executeLaunchers ?? true
     this.events = options.events
+    this.notifier = options.notifier
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
@@ -52,9 +108,18 @@ export class BuddyRunner {
 
     // Health check: on first start (round 0, no sessions, no prior health check), ping both actors.
     // Skip when an explicit actor is requested (caller knows what they want) or in test mode.
+    // Also re-run when the previous attempt failed connectivity (FAILED + health_check) so the
+    // user can retry connectivity directly without resuming an actor run.
     if (this.executeLaunchers && !input.actor && needsHealthCheck(detail.state, detail.settings)) {
       const implementer = resolveImplementerActor(detail.settings)
       const reviewer = nextActorForSettings(implementer, detail.settings)
+      // Clear the stale failed health_check result so the retry can re-trigger.
+      await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+        ...state,
+        health_check: null,
+        latest_failure: null,
+        last_error: null
+      }))
       const healthRunId = await this.runHealthCheck(taskId, workspaceKey, implementer, reviewer)
       return { run_id: healthRunId }
     }
@@ -72,18 +137,32 @@ export class BuddyRunner {
     const maxRounds = globalSettings.max_rounds ?? 9999
     const roundsInWindow = detail.state.rounds_in_window ?? 0
     if (maxRounds > 0 && roundsInWindow >= maxRounds) {
-      await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
-        ...state,
-        status: 'PAUSED',
-        active_run: null,
-        countdown: null,
-        updated_at: new Date().toISOString()
-      }))
-      await this.store.appendTaskEvent(taskId, workspaceKey, {
-        type: 'round_window.paused',
-        payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
-      })
-      throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`)
+      if (detail.state.status === 'PAUSED') {
+        // User is explicitly resuming from a round-window pause - reset the window
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          rounds_in_window: 0,
+          updated_at: new Date().toISOString()
+        }))
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'round_window.reset',
+          payload: { previous_rounds_in_window: roundsInWindow, max_rounds: maxRounds }
+        })
+      } else {
+        // Auto-start attempted but window is exhausted - pause and wait for manual resume
+        await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
+          ...state,
+          status: 'PAUSED',
+          active_run: null,
+          countdown: null,
+          updated_at: new Date().toISOString()
+        }))
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'round_window.paused',
+          payload: { max_rounds: maxRounds, rounds_in_window: roundsInWindow }
+        })
+        throw new Error(`本次自动推进已达到自动轮次上限。点击“继续”可以再推进 ${maxRounds} 轮。`)
+      }
     }
 
     const runId = `run_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
@@ -244,11 +323,137 @@ export class BuddyRunner {
     return this.store.clearInstructionQueue(taskId, workspaceKey)
   }
 
+  /**
+   * Run an actor command, using PTY when required (e.g. opencode needs a TTY).
+   * Centralizes the runLauncher vs runLauncherWithPty decision.
+   */
+  private async runActorCommand(
+    command: { command: string; args: string[]; env?: Record<string, string>; kind: LauncherCommandKind; stdinText?: string },
+    cwd: string,
+    env: Record<string, string>,
+    timeoutMs: number,
+    actor: string,
+    workspaceKey: string,
+    taskId: string,
+    runId: string,
+    outputLines: string[],
+    stderrLines: string[]
+  ): Promise<{ exitCode: number | null; signal: string | null }> {
+    const needsPty = kindNeedsPty(command.kind)
+    const parserActor = parserActorForKind(actor, command.kind)
+
+    if (needsPty) {
+      return runLauncherWithPty({
+        command: command.command,
+        args: command.args,
+        cwd,
+        env: { ...env, ...(command.env ?? {}) },
+        timeoutMs,
+        onData: (data) => {
+          for (const line of data.split(/\r?\n/).filter(Boolean)) {
+            outputLines.push(line)
+            if (this.events) {
+              try {
+                const parsed = parseActorLine(parserActor, line)
+                if (parsed.text) {
+                  this.events.publish({
+                    workspace_key: workspaceKey,
+                    task_id: taskId,
+                    event: {
+                      seq: 0,
+                      type: 'actor.stdout',
+                      actor,
+                      ts: new Date().toISOString(),
+                      run_id: runId,
+                      payload: { text: parsed.text }
+                    }
+                  })
+                }
+              } catch { /* ignore parse errors for streaming */ }
+            }
+          }
+        }
+      })
+    }
+
+    return runLauncher({
+      command: command.command,
+      args: command.args,
+      cwd,
+      env: { ...env, ...(command.env ?? {}) },
+      stdinText: command.stdinText,
+      timeoutMs,
+      onStdout: (line) => {
+        outputLines.push(line)
+        if (this.events) {
+          try {
+            const parsed = parseActorLine(parserActor, line)
+            if (parsed.text) {
+              this.events.publish({
+                workspace_key: workspaceKey,
+                task_id: taskId,
+                event: {
+                  seq: 0,
+                  type: 'actor.stdout',
+                  actor,
+                  ts: new Date().toISOString(),
+                  run_id: runId,
+                  payload: { text: parsed.text }
+                }
+              })
+            }
+          } catch { /* ignore parse errors for streaming */ }
+        }
+      },
+      onStderr: (line) => stderrLines.push(line)
+    })
+  }
+
   private async executePing(
     taskId: string,
     workspaceKey: string,
     actor: string
   ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string }> {
+    const globalSettings = await this.store.readGlobalSettings()
+    const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
+
+    let upgradeRetries = 0
+    // wecode/claude and similar CLIs may exit on first launch to auto-upgrade themselves,
+    // then expect to be relaunched. A connectivity ping that hits this used to fail the
+    // health check outright, forcing a manual retry. Mirror executeActorInner: detect the
+    // upgrade exit (across stderr+stdout, since wecode prints upgrade progress to stdout
+    // and the failure reason to stderr), wait for it to settle, and retry the ping.
+    for (;;) {
+      const attempt = await this.executePingAttempt(taskId, workspaceKey, actor)
+      if (attempt.success) return attempt
+
+      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}\n${attempt.error ?? ''}`.trim()
+      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
+        upgradeRetries++
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'health_check.actor_upgrade_retry',
+          actor,
+          payload: { retry_attempt: upgradeRetries, max_retries: maxUpgradeRetries, error: (attempt.error ?? '').slice(0, 500) }
+        })
+        await this.store.appendTranscript(
+          taskId,
+          workspaceKey,
+          'system',
+          `${actorDisplayName(actor)} 连通性检查检测到自动升级，等待升级完成后重试 (${upgradeRetries}/${maxUpgradeRetries})...`,
+          { kind: 'health_check_upgrade_retry', retry_attempt: upgradeRetries, actor }
+        )
+        await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
+        continue
+      }
+      return { success: false, error: attempt.error, sessionId: attempt.sessionId, threadId: attempt.threadId }
+    }
+  }
+
+  private async executePingAttempt(
+    taskId: string,
+    workspaceKey: string,
+    actor: string
+  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const launcher = detail.settings.launchers[actor] ?? {
       command: actor,
@@ -285,26 +490,21 @@ export class BuddyRunner {
     const stderrLines: string[] = []
 
     try {
-      const result = await runLauncher({
-        command: command.command,
-        args: command.args,
-        cwd,
-        env: { ...launcher.env, ...(command.env ?? {}) },
-        stdinText: command.stdinText,
-        timeoutMs: PING_TIMEOUT_SECONDS * 1000,
-        onStdout: (line) => outputLines.push(line),
-        onStderr: (line) => stderrLines.push(line)
-      })
+      const result = await this.runActorCommand(
+        command, cwd, launcher.env, PING_TIMEOUT_SECONDS * 1000,
+        actor, workspaceKey, taskId, runId,
+        outputLines, stderrLines
+      )
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(actor, rawEvents)
+      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      const stderrText = stderrLines.join('\n').trim()
 
       if (result.exitCode !== 0) {
-        const stderrText = stderrLines.join('\n').trim()
         const error = stderrText || outputText.trim() || exitErrorMessage(result.exitCode, result.signal)
-        return { success: false, error: error.slice(0, 300) }
+        return { success: false, error: error.slice(0, 300), stderr: stderrText, stdout: stdoutText }
       }
 
       // Verify the actor responded with a valid buddy message
@@ -313,7 +513,7 @@ export class BuddyRunner {
         ? message.text.trim().length > 0
         : message.content.trim().length > 0
       if (!hasContent) {
-        return { success: false, error: 'Actor responded with empty content' }
+        return { success: false, error: 'Actor responded with empty content', stderr: stderrText, stdout: stdoutText }
       }
 
       const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
@@ -323,7 +523,12 @@ export class BuddyRunner {
       const message = error instanceof Error ? error.message : String(error)
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
-      return { success: false, error: (message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')).slice(0, 300) }
+      return {
+        success: false,
+        error: (message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')).slice(0, 300),
+        stderr: stderrText,
+        stdout: outputLines.join('\n')
+      }
     }
   }
 
@@ -442,13 +647,21 @@ export class BuddyRunner {
       }
       return `ping_ok_${Date.now()}`
     } else {
+      const failedAt = new Date().toISOString()
+      const failureRecord: Failure = {
+        actor: failedActor ?? undefined,
+        message: `连通性检查失败：${failedActor ? actorDisplayName(failedActor) : '未知'} — ${failedReason ?? '未知错误'}`,
+        ts: failedAt
+      }
       await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
         ...state,
-        status: 'DONE',
+        status: 'FAILED',
         active_run: null,
+        latest_failure: failureRecord,
+        last_error: failureRecord,
         health_check: { actors: finalResults, failed_actor: failedActor, failed_reason: failedReason },
         ...sessionUpdates,
-        updated_at: new Date().toISOString()
+        updated_at: failedAt
       }))
       await this.store.appendTaskEvent(taskId, workspaceKey, {
         type: 'health_check.failed',
@@ -461,6 +674,10 @@ export class BuddyRunner {
         'health_check.failed',
         { kind: 'health_check_failed', failed_actor: failedActor ?? '', failed_reason: failedReason ?? '' }
       )
+      // Send system notification for health check failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskFailed(taskId, workspaceKey, failedActor ?? 'unknown', `健康检查失败：${failedReason ?? '未知错误'}`)
+      }
       throw new Error(`连通性检查失败：${actorDisplayName(failedActor)} — ${failedReason ?? '未知错误'}`)
     }
   }
@@ -498,7 +715,11 @@ export class BuddyRunner {
     })
   }
 
-  private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = ''): Promise<void> {
+  private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = '', compactRetries = 0): Promise<void> {
+    return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, 0)
+  }
+
+  private async executeActorInner(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage: string, compactRetries: number, upgradeRetries: number): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const launcher = detail.settings.launchers[actor] ?? {
@@ -555,43 +776,17 @@ export class BuddyRunner {
 
     try {
       const startedAtMs = Date.now()
-      const result = await runLauncher({
-        command: command.command,
-        args: command.args,
-        cwd,
-        env: { ...launcher.env, ...(command.env ?? {}) },
-        stdinText: command.stdinText,
-        timeoutMs: launcher.timeout_seconds * 1000,
-        onStdout: (line) => {
-          outputLines.push(line)
-          if (this.events) {
-            try {
-              const parsed = parseActorLine(actor, line)
-              if (parsed.text) {
-                this.events.publish({
-                  workspace_key: workspaceKey,
-                  task_id: taskId,
-                  event: {
-                    seq: 0,
-                    type: 'actor.stdout',
-                    actor,
-                    ts: new Date().toISOString(),
-                    run_id: runId,
-                    payload: { text: parsed.text }
-                  }
-                })
-              }
-            } catch { /* ignore parse errors for streaming */ }
-          }
-        },
-        onStderr: (line) => stderrLines.push(line)
-      })
+      const result = await this.runActorCommand(
+        command, cwd, launcher.env, launcher.timeout_seconds * 1000,
+        actor, workspaceKey, taskId, runId,
+        outputLines, stderrLines
+      )
       const elapsedMs = Date.now() - startedAtMs
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(actor, rawEvents)
+      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
       }
@@ -610,7 +805,7 @@ export class BuddyRunner {
 
       // Ghost output: raw events exist but nothing was extracted (unrecognized error format)
       // However, if parsedLines contain text (e.g. step_start placeholders), use those instead of throwing
-      // Skip noise events (system/hook) that carry no actor content
+      // Skip noise events (system/hook/step_start) that carry no actor content
       const nonNoiseEvents = rawEvents.trim().split(/\r?\n/).filter((line) => {
         if (!line.trim()) return false
         try {
@@ -619,14 +814,23 @@ export class BuddyRunner {
           if (obj.type === 'system' && typeof obj.subtype === 'string' && (obj.subtype as string).startsWith('hook_')) return false
           // Filter out other system events that carry no actor content (e.g. init, warning)
           if (obj.type === 'system' && obj.subtype !== undefined) return false
+          // Filter out step_start noise events (context-exhausted actors emit only these)
+          if (obj.type === 'step_start') return false
+          // Filter out step_finish noise events (lifecycle events, no actor content)
+          if (obj.type === 'step_finish') return false
           return true
         } catch {
           return true // keep non-JSON lines
         }
       })
       const nonNoiseRaw = nonNoiseEvents.join('\n')
-      if (!outputText.trim() && nonNoiseRaw.trim()) {
-        const parsedText = parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
+      // Check if the only parsed text comes from noise events (step_start placeholders)
+      const nonNoiseParsedText = parsedLines.filter((l) => l.text && !l.noise).map((l) => l.text).join('\n').trim()
+      const hasOnlyNoiseOutput = !outputText.trim() && !nonNoiseParsedText && parsedLines.some((l) => l.noise && l.text)
+      if (hasOnlyNoiseOutput) {
+        throw new Error(`Actor exited with only noise events (likely ${CONTEXT_EXHAUSTED_PHRASE})`)
+      } else if (!outputText.trim() && nonNoiseRaw.trim()) {
+        const parsedText = nonNoiseParsedText || parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
         if (parsedText) {
           outputText = parsedText
         } else {
@@ -645,6 +849,62 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
+
+      // Auto-reset session on context window limit errors
+      // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
+      // not a slash command. So we skip /compact entirely and go straight to session reset.
+      const maxCompactRetries = globalSettings.max_compact_retries ?? DEFAULT_MAX_COMPACT_RETRIES
+      if (isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
+        const sessionId = sessionIdForActor(actor, detail.state, detail.settings)
+        if (sessionId) {
+          await this.store.appendTaskEvent(taskId, workspaceKey, {
+            type: 'actor.context_limit_detected',
+            actor,
+            run_id: runId,
+            payload: { error: failureMessage, reset_attempt: compactRetries + 1, max_reset_attempts: maxCompactRetries }
+          })
+
+          await this.store.appendTranscript(
+            taskId,
+            workspaceKey,
+            'system',
+            `${actorDisplayName(actor)} 达到上下文窗口限制，正在重置会话并注入精简上下文 (${compactRetries + 1}/${maxCompactRetries})...`,
+            { kind: 'session_reset', reset_attempt: compactRetries + 1 }
+          )
+          await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
+          return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1, upgradeRetries)
+        }
+      }
+
+      // Auto-retry when the child process exits due to an auto-upgrade (e.g. wecode/codex).
+      // The CLI detects a new version, exits to upgrade itself, then the user restarts.
+      // We wait briefly for the upgrade to settle, then retry the same round (keeping
+      // the existing session so the conversation continues seamlessly).
+      const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
+      // Include raw stdout: wecode prints upgrade progress (e.g. "A new version is
+      // available", "upgrade complete", "Please run your command again with the new
+      // version") to stdout, which extractActorOutput filters out of outputText. Without
+      // the raw stdout the upgrade exit goes undetected at runtime and the round fails
+      // instead of retrying. Mirrors the executePing combined-message fix.
+      const combinedMessage = `${failureMessage}\n${stderrText}\n${outputLines.join('\n')}`.trim()
+      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.upgrade_detected',
+          actor,
+          run_id: runId,
+          payload: { retry_attempt: upgradeRetries + 1, max_retries: maxUpgradeRetries, error: failureMessage.slice(0, 500) }
+        })
+        await this.store.appendTranscript(
+          taskId,
+          workspaceKey,
+          'system',
+          `${actorDisplayName(actor)} 检测到自动升级，等待升级完成后重试 (${upgradeRetries + 1}/${maxUpgradeRetries})...`,
+          { kind: 'upgrade_retry', retry_attempt: upgradeRetries + 1 }
+        )
+        await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
+        return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, upgradeRetries + 1)
+      }
+
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
       throw error
     } finally {
@@ -672,6 +932,21 @@ export class BuddyRunner {
     const sessionId = lastValue(parsedLines.map((line) => line.sessionId))
     const threadId = lastValue(parsedLines.map((line) => line.threadId))
     const message = parseBuddyMessage(text)
+
+    // Degraded response detection: if the output consists only of noise placeholders
+    // (e.g. "..." from step_start events) with no buddy protocol JSON, the actor's
+    // context is likely exhausted. Treat this as a context window limit error so
+    // the session reset / compact logic can kick in, instead of silently accepting
+    // a meaningless "chat" message that would block break requests.
+    // Skip this check when outputText itself contains a valid buddy message
+    // (e.g. contract launchers write buddy JSON directly to the output file).
+    const hasNonNoiseContent = parsedLines.some((l) => l.text && !l.noise)
+    const hasBuddyJsonInOutput = message.kind === 'message' ? message.text !== text : true
+    const isDegradedResponse = !hasNonNoiseContent && !hasBuddyJsonInOutput && message.kind === 'message'
+    if (isDegradedResponse) {
+      throw new Error(`Actor produced only noise events (${CONTEXT_EXHAUSTED_PHRASE} likely): ${text.slice(0, 200)}`)
+    }
+
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const nextActor = nextActorForSettings(actor, detail.settings)
@@ -715,6 +990,7 @@ export class BuddyRunner {
         latest_failure: null,
         last_error: null,
         consecutive_failures: 0,
+        compact_retries: 0,
         updated_at: now
       }
       if (actor === 'claude' && sessionId) next.claude_session_id = sessionId
@@ -786,6 +1062,13 @@ export class BuddyRunner {
             round
           }
         })
+        // Send system notification for task completion
+        if (this.notifier) {
+          await this.notifier.notifyTaskDone(taskId, workspaceKey, 'dual_break_confirmed', {
+            first: pendingBreak?.actor,
+            second: actor
+          })
+        }
         return
       }
     }
@@ -913,6 +1196,13 @@ export class BuddyRunner {
           round
         }
       })
+      // Send system notification for task completion via failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskDone(taskId, workspaceKey, 'break_confirmed_on_failure', {
+          first: otherActorBreak.actor,
+          second: actor
+        })
+      }
       return
     }
 
@@ -928,6 +1218,7 @@ export class BuddyRunner {
       consecutive_failures: newConsecutiveFailures,
       last_error: failure,
       latest_failure: failure,
+      compact_retries: 0,
       updated_at: failure.ts
     }))
     await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -948,6 +1239,226 @@ export class BuddyRunner {
         type: 'failure_threshold.reached',
         payload: { consecutive_failures: newConsecutiveFailures, max_consecutive_failures: maxConsecutiveFailures }
       })
+      // Send system notification for task paused due to consecutive failures
+      if (this.notifier) {
+        await this.notifier.notifyTaskPaused(taskId, workspaceKey, actor, newConsecutiveFailures, maxConsecutiveFailures)
+      }
+    } else {
+      // Send system notification for regular task failure
+      if (this.notifier) {
+        await this.notifier.notifyTaskFailed(taskId, workspaceKey, actor, message)
+      }
+    }
+  }
+
+  /**
+   * Reset the session for an actor by clearing the session ID, marking context
+   * as unsent, and generating a compact context summary via LLM so the next
+   * executeActor call will start a fresh session with a slim, high-quality
+   * context instead of the full one.
+   */
+  private async resetSessionForActor(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    detail: { state: TaskState; task_text: string; context_text: string; transcript: TranscriptEntry[]; settings: TaskSettings }
+  ): Promise<void> {
+    const sessionKey = actor === 'claude' ? 'claude_session_id'
+      : actor === 'codex' ? 'codex_thread_id'
+      : actor === 'opencode' ? 'opencode_session_id'
+      : actor === 'kimi' ? 'kimi_session_id'
+      : null
+
+    if (!sessionKey) return
+
+    // Try to generate a summary via LLM first; fall back to simple truncation
+    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+    const cwd = await existingCwd(detail.state.repo_root)
+    const launcher = detail.settings.launchers[actor] ?? {
+      command: actor,
+      env: {},
+      timeout_seconds: 600
+    }
+    const summaryContext = await this.summarizeContextViaLLM(
+      taskId, workspaceKey, actor, detail, cwd, launcher
+    )
+
+    // Use LLM summary if available, otherwise fall back to simple truncation
+    const compactContext = summaryContext ?? buildCompactContextFallback(
+      detail.task_text,
+      detail.context_text,
+      detail.transcript,
+      actor
+    )
+
+    await this.store.updateTaskState(taskId, workspaceKey, (state) => {
+      const contextSent = { ...(state.context_sent ?? {}) }
+      // Mark context as not sent so the fresh session receives the compact context
+      contextSent[actor] = false
+      return {
+        ...state,
+        [sessionKey]: null,
+        context_sent: contextSent
+      }
+    })
+
+    // Write the compact context to context.md so it gets picked up by
+    // buildActorPrompt on the next executeActor call.
+    // Backup the original context.md first so the full context is not lost.
+    const contextFile = join(taskDirectory, 'context.md')
+    const backupFile = join(taskDirectory, 'context.full.md')
+    try {
+      const original = await readFile(contextFile, 'utf-8')
+      if (original.trim()) {
+        await writeFile(backupFile, original, 'utf-8')
+      }
+    } catch { /* context.md may not exist yet */ }
+    await writeFile(contextFile, compactContext, 'utf-8')
+
+    await this.store.appendTaskEvent(taskId, workspaceKey, {
+      type: 'actor.session_reset',
+      actor,
+      run_id: `reset_${Date.now()}`,
+      payload: {
+        reason: 'context_window_limit',
+        session_key: sessionKey,
+        summary_method: summaryContext ? 'llm' : 'truncation'
+      }
+    })
+  }
+
+  /**
+   * Use an LLM to summarize the task context and transcript into a compact
+   * summary for the fresh session. Returns the summary text, or null if
+   * the LLM call fails (caller should fall back to simple truncation).
+   */
+  private async summarizeContextViaLLM(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    detail: { state: TaskState; task_text: string; context_text: string; transcript: TranscriptEntry[] },
+    cwd: string,
+    launcher: { command: string; env: Record<string, string>; timeout_seconds: number }
+  ): Promise<string | null> {
+    // Build the summarization prompt
+    const summarizePrompt = buildSummarizePrompt(
+      detail.task_text,
+      detail.context_text,
+      detail.transcript
+    )
+
+    // Pre-check: if the prompt is still very large after size limiting,
+    // skip LLM summarization entirely and go straight to truncation fallback.
+    // This avoids wasting an API call that would likely fail.
+    // Rough estimate: 1 token ≈ 4 chars for English, ≈ 2 chars for CJK.
+    // 50000 chars ≈ 12500-25000 tokens, which is safe for most models.
+    const estimatedTokens = Math.ceil(summarizePrompt.length / 3)
+    const maxTokensForSummarize = 100000 // conservative limit for the input
+    if (estimatedTokens > maxTokensForSummarize) {
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_skipped',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { reason: 'prompt_too_large', estimated_tokens: estimatedTokens, char_count: summarizePrompt.length }
+      })
+      return null
+    }
+
+    // Launch a fresh session (no --resume) with the summarization prompt.
+    // Write the prompt to a temp file so contract launchers can find it too.
+    const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+    const summarizePromptFile = join(taskDirectory, 'artifacts', `summarize_${Date.now()}-prompt.md`)
+    await mkdir(join(taskDirectory, 'artifacts'), { recursive: true })
+    await writeFile(summarizePromptFile, summarizePrompt, 'utf-8')
+
+    const summarizeCommand = buildLauncherCommand({
+      actor,
+      command: launcher.command,
+      mode: 'start', // fresh session, no resume
+      promptText: summarizePrompt,
+      promptFile: summarizePromptFile,
+      repoRoot: cwd,
+      taskDir: taskDirectory,
+      runId: `summarize_${Date.now()}`
+    })
+
+    const outputLines: string[] = []
+    const stderrLines: string[] = []
+
+    try {
+      const summarizeRunId = `summarize_${Date.now()}`
+      const needsPty = kindNeedsPty(summarizeCommand.kind)
+      let result: { exitCode: number | null; signal: string | null }
+
+      if (needsPty) {
+        result = await runLauncherWithPty({
+          command: summarizeCommand.command,
+          args: summarizeCommand.args,
+          cwd,
+          env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
+          timeoutMs: 120000,
+          onData: (data) => {
+            for (const line of data.split(/\r?\n/).filter(Boolean)) {
+              outputLines.push(line)
+            }
+          }
+        })
+      } else {
+        result = await runLauncher({
+          command: summarizeCommand.command,
+          args: summarizeCommand.args,
+          cwd,
+          env: { ...launcher.env, ...(summarizeCommand.env ?? {}) },
+          stdinText: summarizeCommand.stdinText,
+          timeoutMs: 120000, // 2 minutes for summarization
+          onStdout: (line) => outputLines.push(line),
+          onStderr: (line) => stderrLines.push(line)
+        })
+      }
+
+      if (result.exitCode !== 0) {
+        // Log summarization failure
+        const stderrText = stderrLines.join('\n').trim()
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.summarize_failed',
+          actor,
+          run_id: `summarize_${Date.now()}`,
+          payload: { exit_code: result.exitCode, stderr_preview: stderrText.slice(0, 1000) }
+        })
+        return null
+      }
+
+      // Extract text from the LLM output
+      const stdoutText = outputLines.join('\n')
+      const extracted = extractActorOutput(parserActorForKind(actor, summarizeCommand.kind), stdoutText)
+
+      if (!extracted.trim()) {
+        await this.store.appendTaskEvent(taskId, workspaceKey, {
+          type: 'actor.summarize_failed',
+          actor,
+          run_id: `summarize_${Date.now()}`,
+          payload: { reason: 'empty_output' }
+        })
+        return null
+      }
+
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_succeeded',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { summary_length: extracted.length }
+      })
+
+      return extracted.trim()
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      await this.store.appendTaskEvent(taskId, workspaceKey, {
+        type: 'actor.summarize_failed',
+        actor,
+        run_id: `summarize_${Date.now()}`,
+        payload: { error: errMsg.slice(0, 1000) }
+      })
+      return null
     }
   }
 }
@@ -963,9 +1474,152 @@ function canStartFrom(status: TaskState['status']): boolean {
   )
 }
 
-function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
+/**
+ * Build a summarization prompt that asks the LLM to condense the task context
+ * and transcript into a compact summary for the fresh session.
+ *
+ * Size limits are enforced to prevent the summarize prompt itself from exceeding
+ * the model's context window (which would make summarization always fail):
+ * - Max 10 most recent transcript entries
+ * - Max 2000 chars per entry
+ * - Max 50000 chars total for the prompt
+ */
+const SUMMARIZE_MAX_TRANSCRIPT_ENTRIES = 10
+const SUMMARIZE_MAX_ENTRY_CHARS = 2000
+const SUMMARIZE_MAX_PROMPT_CHARS = 50000
+
+function buildSummarizePrompt(
+  taskText: string,
+  contextText: string,
+  transcript: TranscriptEntry[]
+): string {
+  const parts: string[] = []
+
+  parts.push('请将以下任务上下文和对话记录总结为一份精简摘要。')
+  parts.push('')
+  parts.push('要求：')
+  parts.push('1. 保留关键决策、发现和未解决问题')
+  parts.push('2. 去除冗余和重复信息')
+  parts.push('3. 保持摘要简洁（不超过 2000 字）')
+  parts.push('4. 用 markdown 格式输出')
+  parts.push('5. 直接输出摘要内容，不要有额外的解释或前言')
+  parts.push('')
+
+  if (taskText.trim()) {
+    parts.push('## 任务描述')
+    parts.push(taskText.trim())
+    parts.push('')
+  }
+
+  if (contextText.trim()) {
+    // Truncate context to avoid prompt being too large
+    const ctx = contextText.trim()
+    const maxCtxLen = 10000
+    if (ctx.length > maxCtxLen) {
+      parts.push('## 背景上下文（已截断）')
+      parts.push(ctx.slice(0, maxCtxLen))
+      parts.push('...（上下文已截断）')
+    } else {
+      parts.push('## 背景上下文')
+      parts.push(ctx)
+    }
+    parts.push('')
+  }
+
+  // Include only the most recent transcript entries, with size limits
+  if (transcript.length > 0) {
+    parts.push('## 对话记录')
+    const recentEntries = transcript.slice(-SUMMARIZE_MAX_TRANSCRIPT_ENTRIES)
+    for (const entry of recentEntries) {
+      const roleLabel = entry.role === 'human' ? '用户'
+        : entry.role === 'system' ? '系统'
+        : actorDisplayName(entry.role)
+      const content = entry.content.length > SUMMARIZE_MAX_ENTRY_CHARS
+        ? entry.content.slice(0, SUMMARIZE_MAX_ENTRY_CHARS) + '...（已截断）'
+        : entry.content
+      parts.push(`### ${roleLabel}`)
+      parts.push(content)
+      parts.push('')
+    }
+  }
+
+  parts.push('## 输出要求')
+  parts.push('请输出一份精简的上下文摘要，包含：当前进展、关键发现、待解决问题。不要输出任何其他内容。')
+
+  let result = parts.join('\n')
+
+  // Hard limit: if the prompt exceeds the max size, truncate from the middle
+  if (result.length > SUMMARIZE_MAX_PROMPT_CHARS) {
+    result = result.slice(0, SUMMARIZE_MAX_PROMPT_CHARS) + '\n\n...（提示词已截断，请基于以上内容总结）'
+  }
+
+  return result
+}
+
+/**
+ * Build a compact context fallback for a fresh session when LLM summarization
+ * fails. Uses simple truncation instead of AI-powered summarization.
+ */
+function buildCompactContextFallback(
+  taskText: string,
+  contextText: string,
+  transcript: TranscriptEntry[],
+  _actor: string
+): string {
+  const parts: string[] = []
+
+  parts.push('> ⚠️ 上一轮会话因上下文窗口限制已重置。以下是精简后的上下文摘要。')
+  parts.push('')
+
+  // Include the task text (usually short)
+  if (taskText.trim()) {
+    parts.push('## 任务')
+    parts.push(taskText.trim())
+    parts.push('')
+  }
+
+  // Condense context text: take first 2000 chars if too long
+  if (contextText.trim()) {
+    const trimmed = contextText.trim()
+    if (trimmed.length > 2000) {
+      parts.push('## 背景上下文（已截断）')
+      parts.push(trimmed.slice(0, 2000))
+      parts.push('...（上下文已截断，详细内容请参考代码库）')
+    } else {
+      parts.push('## 背景上下文')
+      parts.push(trimmed)
+    }
+    parts.push('')
+  }
+
+  // Include only the last 2 transcript entries (most recent actor turns)
+  const recentTranscript = transcript.slice(-2)
+  if (recentTranscript.length > 0) {
+    parts.push('## 最近对话（摘要）')
+    for (const entry of recentTranscript) {
+      const roleLabel = entry.role === 'human' ? '用户'
+        : entry.role === 'system' ? '系统'
+        : actorDisplayName(entry.role)
+      // Truncate each entry to 500 chars
+      const content = entry.content.length > 500
+        ? entry.content.slice(0, 500) + '...（已截断）'
+        : entry.content
+      parts.push(`**${roleLabel}**: ${content}`)
+    }
+    parts.push('')
+  }
+
+  parts.push('请基于以上摘要继续工作。如需更多上下文，请查阅代码库。')
+
+  return parts.join('\n')
+}
+
+export function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
   if (state.round > 0) return false
-  if (state.health_check !== null && state.health_check !== undefined) return false
+  // A prior health check that succeeded means no ping is needed. A failed health check
+  // leaves health_check populated with a failed actor, which we DO want to retry — so only
+  // bail out when the stored result has no failed actor (i.e. it was a clean pass).
+  if (state.health_check && !state.health_check.failed_actor) return false
   const implementer = settings.implementer_actor
     ?? (settings.role_mode === 'codex_implements' ? 'codex' : 'claude')
   const reviewer = settings.reviewer_actor
@@ -993,13 +1647,13 @@ function normalizeActorRole(actor: string): TranscriptEntry['role'] {
   return 'system'
 }
 
-function lastValue(values: Array<string | undefined>): string | undefined {
+export function lastValue(values: Array<string | undefined>): string | undefined {
   const filtered = values.filter(Boolean)
   return filtered[filtered.length - 1]
 }
 
 /** Check if stderr text contains only known CLI warnings (not real errors) */
-function isCliWarningOnly(stderrText: string): boolean {
+export function isCliWarningOnly(stderrText: string): boolean {
   // Known CLI warnings that should not be treated as errors
   const warningPatterns = [
     /Running with --dangerously-skip-permissions/i,
@@ -1011,6 +1665,11 @@ function isCliWarningOnly(stderrText: string): boolean {
   return lines.length > 0 && lines.every((line) =>
     warningPatterns.some((p) => p.test(line))
   )
+}
+
+/** Check if an error message indicates a context window limit error */
+export function isContextWindowLimitError(message: string): boolean {
+  return CONTEXT_WINDOW_LIMIT_PATTERNS.some((p) => p.test(message))
 }
 
 async function existingCwd(path?: string): Promise<string> {
@@ -1032,7 +1691,7 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-async function collectRawEvents(
+export async function collectRawEvents(
   eventFile: string,
   stdoutText: string,
   kind: LauncherCommandKind
@@ -1052,14 +1711,15 @@ async function collectRawEvents(
   return ''
 }
 
-async function collectOutputText(
+export async function collectOutputText(
   actor: string,
   kind: LauncherCommandKind,
   outputFile: string,
   stdoutText: string
 ): Promise<string> {
   if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi') {
-    let output = extractActorOutput(actor, stdoutText)
+    const parserActor = parserActorForKind(actor, kind)
+    let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
 
     // Fallback: some models (e.g. DeepSeek via OpenCode/Kimi) output buddy JSON
@@ -1104,7 +1764,7 @@ async function collectOutputText(
   }
 
   if (await fileExists(outputFile)) return readFile(outputFile, 'utf8')
-  const extracted = extractActorOutput(actor, stdoutText)
+  const extracted = extractActorOutput(parserActorForKind(actor, kind), stdoutText)
   return extracted || stdoutText
 }
 
