@@ -32,6 +32,100 @@ export interface LauncherCommand {
   stdinText?: string
 }
 
+/** Whether the given command kind requires a PTY to function correctly. */
+export function kindNeedsPty(kind: LauncherCommandKind): boolean {
+  // opencode CLI hangs when spawned with piped stdio (no TTY).
+  // It needs a PTY to produce output in --format json mode.
+  return kind === 'native_opencode'
+}
+
+/** Map a command kind to the parser actor name for correct output parsing.
+ * When the command is opencode but the actor is kimi (e.g. opencode -m provider/kimi-k2.6),
+ * the output format is opencode's JSON, so we need the opencode parser. */
+export function parserActorForKind(actor: string, kind: LauncherCommandKind): string {
+  if (kind === 'native_opencode') return 'opencode'
+  if (kind === 'native_kimi') return 'kimi'
+  if (kind === 'native_claude') return 'claude'
+  if (kind === 'native_codex') return 'codex'
+  return actor
+}
+
+/** ANSI escape sequence pattern for stripping TTY output */
+const ANSI_PATTERN = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g
+
+/** Result from a PTY-based launcher run */
+export interface PtyRunResult {
+  exitCode: number | null
+  signal: string | null
+}
+
+/**
+ * Run a launcher command using a PTY (pseudo-terminal).
+ * Required for CLI tools (like opencode) that hang when spawned with piped stdio.
+ */
+export async function runLauncherWithPty(input: {
+  command: string
+  args: string[]
+  cwd: string
+  env?: Record<string, string>
+  timeoutMs: number
+  onData(data: string): void
+}): Promise<PtyRunResult> {
+  // Lazy-load node-pty so it's only required when actually needed
+  let pty: typeof import('node-pty')
+  try {
+    pty = await import('node-pty')
+  } catch {
+    throw new Error(
+      'node-pty is required for PTY-based launcher but could not be loaded. ' +
+      'Please ensure node-pty is installed: pnpm add node-pty'
+    )
+  }
+
+  const [command, ...prefixArgs] = splitCommand(input.command)
+  const fullArgs = [...prefixArgs, ...input.args]
+
+  const child = pty.spawn(command, fullArgs, {
+    name: 'xterm-256color',
+    cols: 200,
+    rows: 50,
+    cwd: input.cwd,
+    env: { ...process.env, ...input.env }
+  })
+
+  let exited = false
+
+  child.onData((data: string) => {
+    // Strip ANSI escape codes and carriage returns before forwarding
+    const cleaned = data.replace(ANSI_PATTERN, '').replace(/\r\n/g, '\n').replace(/\r/g, '')
+    if (cleaned) input.onData(cleaned)
+  })
+
+  const exitPromise = new Promise<{ exitCode: number | null; signal?: number }>((resolve) => {
+    child.onExit(({ exitCode, signal }) => {
+      exited = true
+      resolve({ exitCode, signal })
+    })
+  })
+
+  // Set timeout
+  const timeoutPromise = new Promise<{ exitCode: number | null; signal?: number }>((resolve) => {
+    setTimeout(() => {
+      if (!exited) {
+        child.kill('SIGTERM')
+        resolve({ exitCode: null, signal: 15 })
+      }
+    }, input.timeoutMs)
+  })
+
+  const result = await Promise.race([exitPromise, timeoutPromise])
+
+  return {
+    exitCode: result.exitCode,
+    signal: result.signal != null ? String(result.signal) : null
+  }
+}
+
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
   let baseCmd = splitCommand(input.command)
   const kind = commandKindFor(input.actor, baseCmd)
@@ -163,11 +257,14 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
 export function commandKindFor(actor: string, command: string | string[]): LauncherCommandKind {
   const baseCmd = Array.isArray(command) ? command : splitCommand(command)
   const executable = basename(baseCmd[0] ?? '')
-  if (actor === 'claude' && (executable === 'claude' || executable === 'wecode')) return 'native_claude'
-  if (actor === 'codex' && executable === 'codex') return 'native_codex'
-  if (actor === 'codex' && executable === 'wecode' && baseCmd[1] === 'codex') return 'native_codex'
-  if (actor === 'opencode' && executable === 'opencode') return 'native_opencode'
-  if (actor === 'kimi' && executable === 'kimi') return 'native_kimi'
+  // Detect native CLI by executable name first, regardless of actor name.
+  // This allows e.g. actor='kimi' with command='opencode -m provider/kimi-k2.6'
+  // to be correctly identified as native_opencode.
+  if (executable === 'claude' || (executable === 'wecode' && baseCmd[1] !== 'codex')) return 'native_claude'
+  if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
+  if (executable === 'opencode') return 'native_opencode'
+  if (executable === 'kimi') return 'native_kimi'
+  // Fallback: when no command is specified, infer from actor name
   if (executable === '' || executable === 'wecode') {
     if (actor === 'claude') return 'native_claude'
     if (actor === 'codex') return 'native_codex'
@@ -221,7 +318,19 @@ export async function runLauncher(input: {
     for (const line of chunk.split(/\r?\n/).filter(Boolean)) input.onStderr(line)
   })
 
-  child.stdin!.end(input.stdinText ?? '')
+  // Write prompt text to stdin, then close the writable side.
+  // The child may exit before we finish writing (e.g. wecode auto-upgrades
+  // and relaunches itself, closing the pipe). Guard against EPIPE so the
+  // main process does not crash with an uncaught exception.
+  child.stdin!.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+    // EPIPE is expected when the child exits early; swallow silently.
+  })
+  try {
+    child.stdin!.end(input.stdinText ?? '')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EPIPE') throw err
+  }
 
   const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
   const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]

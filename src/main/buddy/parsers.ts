@@ -89,7 +89,22 @@ export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
   } else if (json.type === 'error') {
     text = stringifyValue(json.error)
   } else if (json.type === 'step_start') {
-    text = '...'
+    // step_start is a lifecycle event, not actor content.
+    // Mark as noise so downstream logic doesn't treat the placeholder "..."
+    // as a valid buddy message (which would cause infinite loops when the
+    // actor's context is exhausted and only step_start events are emitted).
+    return {
+      text: '...',
+      sessionId: stableSessionIdFromEvent('opencode', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
+  } else if (json.type === 'step_finish') {
+    return {
+      sessionId: stableSessionIdFromEvent('opencode', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
   } else if (json.type === 'tool_use') {
     const toolName = part?.tool ?? 'tool'
     const state = objectValue(part?.state)
@@ -122,7 +137,20 @@ export function parseKimiJSONLine(line: string): ParsedActorLine {
   } else if (json.type === 'error') {
     text = stringifyValue(json.error)
   } else if (json.type === 'step_start') {
-    text = '...'
+    return {
+      text: '...',
+      sessionId: stableSessionIdFromEvent('kimi', json)
+        ?? (json.role === 'meta' && json.type === 'session.resume_hint' ? textValue(json.session_id) : undefined)
+        ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
+  } else if (json.type === 'step_finish') {
+    return {
+      sessionId: stableSessionIdFromEvent('kimi', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      noise: true
+    }
   } else if (json.type === 'tool_use') {
     const toolName = typeof part?.tool === 'string' ? part.tool : 'tool'
     const state = objectValue(part?.state)

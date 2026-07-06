@@ -59,6 +59,11 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     seed_claude_session_id: settings?.seed_claude_session_id ?? '',
     seed_codex_thread_id: settings?.seed_codex_thread_id ?? '',
     seed_opencode_session_id: settings?.seed_opencode_session_id ?? '',
-    seed_kimi_session_id: settings?.seed_kimi_session_id ?? ''
+    seed_kimi_session_id: settings?.seed_kimi_session_id ?? '',
+    max_compact_retries: settings?.max_compact_retries ?? 3,
+    auto_generate_commit_message: settings?.auto_generate_commit_message ?? true,
+    system_notifications_enabled: settings?.system_notifications_enabled ?? true,
+    max_upgrade_retries: settings?.max_upgrade_retries ?? 3,
+    custom_prompt: settings?.custom_prompt ?? undefined
   }
 }

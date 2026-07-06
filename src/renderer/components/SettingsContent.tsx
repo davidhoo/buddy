@@ -5,6 +5,8 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutU
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
 import { useUpdateGlobalSettings } from '../hooks/useBuddy'
+import { useTestLauncher } from '../hooks/useBuddy'
+import type { TestLauncherResult } from '../../shared/types'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
 import {
@@ -25,8 +27,9 @@ import {
 } from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
+import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 
-export type SettingsTab = 'general' | 'appearance' | 'keyboard'
+export type SettingsTab = 'general' | 'appearance' | 'keyboard' | 'prompts'
 
 interface SettingsContentProps {
   tab: SettingsTab
@@ -84,7 +87,9 @@ export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
     ? t('settings.tab.general')
     : tab === 'appearance'
       ? t('settings.tab.appearance')
-      : t('settings.tab.keyboard')
+      : tab === 'keyboard'
+        ? t('settings.tab.keyboard')
+        : t('settings.tab.prompts')
   return (
     <div className="flex-1 overflow-y-auto bg-bg-elevated">
       <div className="max-w-4xl mx-auto px-10 py-10">
@@ -93,8 +98,10 @@ export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
           <GeneralSettings globalSettings={globalSettings} />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
-        ) : (
+        ) : tab === 'keyboard' ? (
           <KeyboardSettings />
+        ) : (
+          <PromptsSettings globalSettings={globalSettings} />
         )}
       </div>
     </div>
@@ -333,7 +340,97 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               />
             }
           />
+          <SettingsRow
+            title={t('settings.collab.autoGenerateCommit.title')}
+            description={t('settings.collab.autoGenerateCommit.desc')}
+            right={
+              <Switch
+                checked={normalizedSettings.auto_generate_commit_message ?? true}
+                onChange={(v) => save({ auto_generate_commit_message: v })}
+              />
+            }
+          />
+          <SettingsRow
+            title={t('settings.collab.systemNotifications.title')}
+            description={t('settings.collab.systemNotifications.desc')}
+            right={
+              <Switch
+                checked={normalizedSettings.system_notifications_enabled ?? true}
+                onChange={(v) => save({ system_notifications_enabled: v })}
+              />
+            }
+          />
         </SettingsList>
+      </div>
+    </div>
+  )
+}
+
+function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | null }) {
+  const t = useT()
+  const updateMutation = useUpdateGlobalSettings()
+  const normalizedSettings = normalizeGlobalSettings(globalSettings)
+  const saved = normalizedSettings.custom_prompt ?? ''
+
+  const save = (patch: Partial<GlobalSettings>) => {
+    updateMutation.mutate({ ...normalizedSettings, ...patch })
+  }
+
+  const [draft, setDraft] = useState(saved)
+
+  useEffect(() => {
+    setDraft(normalizedSettings.custom_prompt ?? '')
+  }, [normalizedSettings.custom_prompt])
+
+  const dirty = draft !== saved
+
+  const handleSave = () => {
+    save({ custom_prompt: draft.trim() || undefined })
+  }
+
+  const handleReset = () => {
+    if (!window.confirm(t('settings.prompts.resetConfirm'))) return
+    setDraft('')
+    save({ custom_prompt: undefined })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-fg mb-1">{t('settings.prompts.title')}</h2>
+        <p className="text-sm text-fg-secondary">{t('settings.prompts.desc')}</p>
+      </div>
+
+      <SettingsList>
+        <div className="px-4 py-4">
+          <div className="text-sm font-medium text-fg mb-2">{t('settings.prompts.customLabel')}</div>
+          <textarea
+            value={draft}
+            rows={8}
+            placeholder={t('settings.prompts.placeholder')}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-y"
+          />
+        </div>
+      </SettingsList>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty}
+          className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle transition-colors"
+        >
+          <RotateCcw size={12} />
+          {t('settings.prompts.resetToDefault')}
+        </button>
       </div>
     </div>
   )
@@ -354,6 +451,27 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
   }, [saved])
 
   const dirty = draft !== saved
+
+  const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
+  const testLauncherMutation = useTestLauncher()
+
+  const handleTest = () => {
+    setTestResult(null)
+    testLauncherMutation.mutate(
+      { actor, command: saved },
+      {
+        onSuccess: (result) => setTestResult(result),
+        onError: (err) => {
+          setTestResult({
+            actor,
+            success: false,
+            phase: 'tool_check',
+            error: err instanceof Error ? err.message : String(err)
+          })
+        }
+      }
+    )
+  }
 
   return (
     <div className="px-4 py-4">
@@ -388,7 +506,45 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
         >
           {t('common.save')}
         </button>
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!saved || testLauncherMutation.isPending}
+          className="px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
+          title={t('settings.launcher.test')}
+        >
+          {testLauncherMutation.isPending ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Zap size={12} />
+          )}
+          {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
+        </button>
       </div>
+      {testResult && (
+        <div className={`mt-3 px-3 py-2 rounded-lg text-xs leading-relaxed ${
+          testResult.success
+            ? 'bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400'
+            : 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+        }`}>
+          <div className="flex items-center gap-1.5 mb-1 font-medium">
+            {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+            {testResult.success ? t('settings.launcher.testPassed') : t('settings.launcher.testFailed')}
+          </div>
+          {testResult.phase === 'tool_check' && !testResult.success && (
+            <div className="text-fg-secondary">{t('settings.launcher.toolCheckFailed')}</div>
+          )}
+          {testResult.error && (
+            <div className="mt-1 font-mono text-[11px] break-all opacity-80">{testResult.error}</div>
+          )}
+          {testResult.success && testResult.responsePreview && (
+            <div className="mt-1">
+              <span className="text-fg-secondary">{t('settings.launcher.testResponse')}：</span>
+              <span className="opacity-80">{testResult.responsePreview}</span>
+            </div>
+          )}
+        </div>
+      )}
       {Object.keys(launcher.env).length > 0 && (
         <div className="mt-2 text-xs text-fg-muted font-mono">
           {Object.entries(launcher.env).map(([k, v]) => (
@@ -1009,6 +1165,22 @@ function SettingsRow({ title, description, right }: {
   )
 }
 
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${checked ? 'bg-accent-primary' : 'bg-border'}`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
+  )
+}
+
 function EditableNumber({ value, min, max, onSave }: {
   value: number
   min: number
@@ -1043,7 +1215,7 @@ function EditableNumber({ value, min, max, onSave }: {
             ; (e.target as HTMLInputElement).blur()
         }
       }}
-      className="w-20 px-2 py-1 text-sm text-fg font-mono text-right bg-transparent border border-transparent hover:border-border focus:border-accent focus:bg-bg rounded outline-none transition-colors"
+      className="w-20 px-2 py-1 text-sm text-fg font-mono text-right bg-bg border border-border hover:border-accent focus:border-accent focus:ring-1 focus:ring-accent rounded outline-none transition-colors"
     />
   )
 }

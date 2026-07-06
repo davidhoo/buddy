@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronDown, ChevronUp, Wrench, Terminal, FilePen, FileText, Brain, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon } from 'lucide-react'
+import { ChevronDown, ChevronUp, Wrench, Terminal, FilePen, FileText, Brain, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon, RotateCw } from 'lucide-react'
 import { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry, TaskStats } from '../../shared/types'
 import { renderMarkdown } from '../lib/markdown'
 import { formatDuration, formatTimeWithRelativeDate, decodeErrorText, unescapeText, ACTOR_LABEL_KEY, actorText } from '../lib/format'
@@ -11,6 +11,8 @@ interface MessageBubbleProps {
   entry: TranscriptEntry
   taskId?: string
   workspaceKey?: string
+  onRetryHealthCheck?: () => void
+  isRetryingHealthCheck?: boolean
 }
 
 const roleClasses: Record<string, string> = {
@@ -198,7 +200,7 @@ function renderHealthCheckText(entry: TranscriptEntry, lang: ReturnType<typeof u
   return null
 }
 
-export function MessageBubble({ entry, taskId, workspaceKey }: MessageBubbleProps) {
+export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck, isRetryingHealthCheck }: MessageBubbleProps) {
   const t = useT()
   const lang = useLanguage()
   const isSystem = entry.role === 'system'
@@ -256,6 +258,19 @@ export function MessageBubble({ entry, taskId, workspaceKey }: MessageBubbleProp
           className="message-body"
           dangerouslySetInnerHTML={{ __html: html }}
         />
+        {isHealthCheckFailed && onRetryHealthCheck && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={onRetryHealthCheck}
+              disabled={isRetryingHealthCheck}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-danger/40 bg-bg-base text-danger hover:bg-danger/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCw size={12} strokeWidth={2.5} className={isRetryingHealthCheck ? 'animate-spin' : ''} />
+              {t('health_check.retry')}
+            </button>
+          </div>
+        )}
         {runId && !isHuman && !isSystem && taskId && workspaceKey && (
           <RoundEvents taskId={taskId} runId={runId} workspaceKey={workspaceKey} actor={entry.role} elapsedMs={meta.elapsed_ms as number | undefined} />
         )}

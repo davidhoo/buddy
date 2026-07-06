@@ -7,7 +7,8 @@ import type {
   RoundEventSummary,
   SendMessageInput,
   StartTaskInput,
-  TaskStats
+  TaskStats,
+  TestLauncherResult
 } from '../../shared/types'
 
 export interface BuddyHandlerService {
@@ -35,6 +36,8 @@ export interface BuddyHandlerService {
   gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown>
   gitDiffForCommitMessage(repoRoot: string): Promise<string>
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string>
+  testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
+  updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
@@ -105,5 +108,11 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string) =>
     service.generateCommitMessage(repoRoot, actorCommand, lang)
+  )
+  ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
+    service.testLauncher(actor, command, env)
+  )
+  ipcMain.handle('buddy:updateTaskText', (_event, taskId: string, workspaceKey: string, taskText: string) =>
+    service.updateTaskText(taskId, workspaceKey, taskText)
   )
 }

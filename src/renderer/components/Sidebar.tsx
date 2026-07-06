@@ -5,6 +5,7 @@ import {
   Folder,
   FolderOpen,
   Keyboard,
+  MessageSquare,
   PanelLeft,
   Pin,
   Settings as SettingsIcon,
@@ -22,6 +23,7 @@ import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
 import type { UpdateStatus } from '../hooks/useUpdater'
 import { projectNameForTask, readStringArraySetting, writeStringArraySetting, isTaskUnread, readTaskNames, writeTaskNames, displayNameForTask } from '../lib/taskList'
+import logo from '../assets/logo.png'
 
 import type { SettingsTab } from './SettingsContent'
 
@@ -192,6 +194,13 @@ function SettingsSidebar({
           active={settingsTab === 'keyboard'}
           onClick={() => onSelectSettingsTab('keyboard')}
         />
+
+        <SettingsMenuItem
+          label={t('settings.tab.prompts')}
+          icon={<MessageSquare size={15} strokeWidth={1.7} />}
+          active={settingsTab === 'prompts'}
+          onClick={() => onSelectSettingsTab('prompts')}
+        />
       </div>
     </>
   )
@@ -285,10 +294,20 @@ function ChatSidebar({
 
   const toggleProject = useCallback((projectKey: string) => {
     setCollapsedProjectKeys(prev => {
-      const next = prev.includes(projectKey)
+      const wasCollapsed = prev.includes(projectKey)
+      const next = wasCollapsed
         ? prev.filter(key => key !== projectKey)
         : [...prev, projectKey]
       writeStringArraySetting('buddy.collapsedProjectKeys', next)
+      // When expanding a project, reset task expand state so only first 10 tasks show
+      if (wasCollapsed) {
+        setExpandedTaskProjects(p => {
+          if (!p.has(projectKey)) return p
+          const s = new Set(p)
+          s.delete(projectKey)
+          return s
+        })
+      }
       return next
     })
   }, [])
@@ -348,7 +367,10 @@ function ChatSidebar({
     <>
       <div className="px-4 pt-2 pb-2">
         <div className="flex items-center gap-2">
-          <div className="text-xl font-bold flex-1">{t('app.brand')}</div>
+          <div className="text-xl font-bold flex-1 flex items-center gap-2">
+            <img src={logo} alt="Buddy" className="w-7 h-7 shrink-0" draggable={false} />
+            {t('app.brand')}
+          </div>
           {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded') && (
             <button
               onClick={onUpdateClick}

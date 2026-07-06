@@ -93,13 +93,15 @@ interface ChatAreaProps {
   onEditInstruction: (item: InstructionQueueItem) => void
   onClearInstructionQueue: () => void
   onCreateTask: () => void
+  onRetryHealthCheck: () => void
+  isRetryingHealthCheck: boolean
   draft: string
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
+export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -238,7 +240,14 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
               </div>
             )}
             {task.transcript.map((entry, index) => (
-              <MessageBubble key={index} entry={entry} taskId={task.task_id} workspaceKey={task.workspace_key} />
+              <MessageBubble
+                key={index}
+                entry={entry}
+                taskId={task.task_id}
+                workspaceKey={task.workspace_key}
+                onRetryHealthCheck={onRetryHealthCheck}
+                isRetryingHealthCheck={isRetryingHealthCheck}
+              />
             ))}
             {isRunning && task.state.active_run?.actor && (
               <RunningStatusMessage
@@ -261,7 +270,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
         )}
       </div>
 
-      {showScrollBtn && !detailExpanded && (
+      {showScrollBtn && (
         <div className="flex justify-center -mt-2 mb-1 relative z-10">
           <button
             type="button"

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
+import type { TestLauncherResult } from '../../shared/types'
 
 export function useHealthCheck() {
   return useQuery({
@@ -206,6 +207,13 @@ export function useUpdateGlobalSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bootstrap'] })
     }
+  })
+}
+
+export function useTestLauncher() {
+  return useMutation({
+    mutationFn: ({ actor, command, env }: { actor: string; command: string; env?: Record<string, string> }) =>
+      api.testLauncher(actor, command, env)
   })
 }
 
