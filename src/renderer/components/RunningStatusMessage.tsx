@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, PanelBottomClose } from 'lucide-react'
+import { ChevronDown, ChevronUp, PanelBottomOpen } from 'lucide-react'
 import { ACTOR_LABEL_KEY } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
 import type { ActorStreamLine } from '../hooks/useBuddy'
@@ -203,7 +203,7 @@ export function RunningDetailPanel({
             className="running-detail-collapse-btn"
             title={t('running.collapseDetail')}
           >
-            <PanelBottomClose size={14} />
+            <PanelBottomOpen size={14} />
             <span>{t('common.collapse')}</span>
           </button>
         </div>
