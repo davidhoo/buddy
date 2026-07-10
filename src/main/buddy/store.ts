@@ -309,7 +309,7 @@ export class BuddyStore {
     return join(this.taskDirectory(taskId, workspaceKey), 'transcript.jsonl')
   }
 
-  async getRoundEvents(taskId: string, runId: string, workspaceKey: string, actor?: string): Promise<RoundEventSummary | null> {
+  async getRoundEvents(taskId: string, runId: string, workspaceKey: string, actor?: string, command?: string): Promise<RoundEventSummary | null> {
     const dir = this.taskDirectory(taskId, workspaceKey)
     const eventsPath = join(dir, 'artifacts', `${runId}-events.jsonl`)
     const raw = await readOptionalText(eventsPath)
@@ -477,7 +477,17 @@ export class BuddyStore {
 
     // Fallback: detect model from actor config file when not available in streaming output
     if (!model && actor) {
-      model = await detectModelFromConfig(actor)
+      // If command wasn't provided by caller, try reading it from task settings
+      if (!command) {
+        try {
+          const settings = await this.readTaskSettings(taskId, workspaceKey)
+          const launcher = settings.launchers?.[actor]
+          if (launcher?.command) command = launcher.command
+        } catch {
+          // Settings may not exist — that's fine
+        }
+      }
+      model = await detectModelFromConfig(actor, command)
     }
 
     return { runId, events, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
