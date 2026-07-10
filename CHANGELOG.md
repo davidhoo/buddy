@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-07-10
+
+### Changed
+- 统一时长格式化：主进程通知与渲染进程的 `formatDuration` 改为一致的 `xdxhxmxs` 紧凑格式（如 `18m42s`、`1d1h1m1s`），新增天（d）级别支持，并修正亚秒级显示的潜在负值
+
 ## [1.2.2] - 2026-07-06
 
 ### Added
@@ -447,6 +452,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.3
 [1.2.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.2
 [1.2.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.1
 [1.2.0]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.0
