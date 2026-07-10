@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { decodeUnicodeEscapes, decodeErrorText, eventPayloadSummary } from '../../src/renderer/lib/format'
+import { decodeUnicodeEscapes, decodeErrorText, eventPayloadSummary, formatDuration } from '../../src/renderer/lib/format'
+
+describe('formatDuration', () => {
+  it('formats sub-second durations as ms', () => {
+    expect(formatDuration(0)).toBe('0ms')
+    expect(formatDuration(500)).toBe('500ms')
+  })
+
+  it('formats seconds-only durations', () => {
+    expect(formatDuration(1000)).toBe('1s')
+    expect(formatDuration(59000)).toBe('59s')
+  })
+
+  it('formats minutes with seconds', () => {
+    expect(formatDuration(60000)).toBe('1m0s')
+    expect(formatDuration(248000)).toBe('4m8s')
+    expect(formatDuration(1893000)).toBe('31m33s')
+  })
+
+  it('formats hours with minutes and seconds', () => {
+    expect(formatDuration(3600000)).toBe('1h0m0s')
+    expect(formatDuration(2141000)).toBe('35m41s')
+  })
+
+  it('formats days with hours, minutes and seconds', () => {
+    expect(formatDuration(86400000)).toBe('1d0h0m0s')
+    expect(formatDuration(90061000)).toBe('1d1h1m1s')
+  })
+})
 
 describe('decodeUnicodeEscapes', () => {
   it('decodes \\uXXXX sequences to Unicode characters', () => {

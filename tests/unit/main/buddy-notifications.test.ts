@@ -64,7 +64,7 @@ describe('TaskNotifier', () => {
       )
       expect(Notification).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: expect.stringContaining('18分42秒')
+          body: expect.stringContaining('18m42s')
         })
       )
     })

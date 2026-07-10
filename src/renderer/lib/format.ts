@@ -88,12 +88,18 @@ export function shortId(value: string | undefined | null): string {
 }
 
 export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const seconds = Math.floor(ms / 1000)
-  if (seconds <= 600) return `${seconds}s`
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}m${secs}s`
+  if (ms < 1000) return `${Math.max(0, Math.floor(ms))}ms`
+  const totalSeconds = Math.floor(ms / 1000)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const parts: string[] = []
+  if (days > 0) parts.push(`${days}d`)
+  if (days > 0 || hours > 0) parts.push(`${hours}h`)
+  if (days > 0 || hours > 0 || minutes > 0) parts.push(`${minutes}m`)
+  parts.push(`${seconds}s`)
+  return parts.join('')
 }
 
 export function elapsedText(startedAt: string | undefined | null): string {

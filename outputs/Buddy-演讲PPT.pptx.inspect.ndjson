@@ -1,0 +1,65 @@
+{"kind":"deck","id":"pr/w65kgi","name":"Deck"}
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"","type":"master","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"},{"name":"2","textPreview":"单击此处编辑母版文本样式 | 二级"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout2.xml","name":"10_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout3.xml","name":"13_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout4.xml","name":"16_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout5.xml","name":"17_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout6.xml","name":"12_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout7.xml","name":"18_标题和内容","placeholders":[{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout8.xml","name":"7_标题和内容","placeholders":[{"name":"2","textPreview":"单击此处编辑母版文本样式 | 二级"},{"name":"title","type":"title","textPreview":"单击此处编辑母版标题样式"}]}
+{"kind":"slide","id":"sl/2x4nap4r","slide":1,"title":".","textShapes":2}
+{"kind":"textbox","id":"sh/cvixczed","slide":1,"name":"标题 1","placeholder":"title","text":".","textPreview":".","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/5gbq1ory","slide":1,"name":"文本框 2","text":"\n\n\nBuddy：双 AI Agent 协作编码平台","textPreview":"|  |  | Buddy：双 AI Agent 协作编码平台","textChars":26,"textLines":4,"bbox":[35.21,121.38,1215,462.3]}
+{"kind":"image","id":"im/bq1oryts","slide":1,"name":"图片 4","alt":"Buddy logo","bbox":[501.97,171,276.05,276.05]}
+{"kind":"notes","id":"nt/2x4nap4r","slide":1,"text":""}
+{"kind":"slide","id":"sl/pg3ex0nu","slide":2,"title":"为什么需要 Buddy","textShapes":2}
+{"kind":"textbox","id":"sh/5o7qpg3e","slide":2,"name":"标题 1","placeholder":"title","text":"为什么需要 Buddy","textPreview":"为什么需要 Buddy","textChars":11,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/r65wjudg","slide":2,"name":"文本框 3","text":"单个 AI 编码助手通常停在“写完代码”，审查、验证和收尾仍然压回给人\n复杂任务很少一次完成，模型容易在长上下文里跑偏、重复犯错或草率宣布完成\nClaude、Codex、OpenCode、Kimi 各有优势，但单工具很难把它们放进同一条任务流\nBuddy 要解决的不是“再造一个模型”，而是把现有 AI 工具编排成可恢复、可审计、可收敛的工作流\n最终目标是让工程师从盯全流程，转向定义目标、校准方向和验收关键结果","textPreview":"单个 AI 编码助手通常停在“写完代码”，审查、验证和收尾仍然压回给人 | 复杂任务很少一次完成，模型容易在长上下文里跑偏、重复犯错或草率宣布完成 | Claude、Codex、OpenCode、Kimi 各有优势，但单工具很难把它们放进同一条任务流 | Buddy 要解决...","textChars":206,"textLines":5,"bbox":[35.21,149.85,1195.23,516.94]}
+{"kind":"notes","id":"nt/pg3ex0nu","slide":2,"text":""}
+{"kind":"slide","id":"sl/s72x4nap","slide":3,"title":"核心判断：研发不是生成代码，而是收敛任务","textShapes":2}
+{"kind":"textbox","id":"sh/o7qpg3ex","slide":3,"name":"标题 1","placeholder":"title","text":"核心判断：研发不是生成代码，而是收敛任务","textPreview":"核心判断：研发不是生成代码，而是收敛任务","textChars":20,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/6dcbulwv","slide":3,"name":"文本框 3","text":"代码生成只是第一步，真正耗时的是理解需求、处理边界、修复回归、补齐验证和完成交付\nBuddy 把“实现”和“审查”拆成两个 AI Actor，让它们围绕同一任务多轮交替推进\n人保留最终判断权，但不再需要守着每一轮细节，而是在关键窗口介入校准","textPreview":"代码生成只是第一步，真正耗时的是理解需求、处理边界、修复回归、补齐验证和完成交付 | Buddy 把“实现”和“审查”拆成两个 AI Actor，让它们围绕同一任务多轮交替推进 | 人保留最终判断权，但不再需要守着每一轮细节，而是在关键窗口介入校准","textChars":120,"textLines":3,"bbox":[35.21,149.85,1195.23,201.6]}
+{"kind":"notes","id":"nt/s72x4nap","slide":3,"text":""}
+{"kind":"slide","id":"sl/val87ed8","slide":4,"title":"Buddy 补的是单 Agent 工具的结构性盲区","textShapes":2}
+{"kind":"textbox","id":"sh/qtcj6tov","slide":4,"name":"标题 1","placeholder":"title","text":"Buddy 补的是单 Agent 工具的结构性盲区","textPreview":"Buddy 补的是单 Agent 工具的结构性盲区","textChars":25,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/87ed8bat","slide":4,"name":"文本框 3","text":"AI 写完即结束：缺少内建审查闭环，问题往往到人工 Review 才暴露\n长任务一断就废：终端会话不可恢复，状态、轮次和失败原因难以复盘\n模型能力被绑死：很难低成本组合“A 模型实现 + B 模型审查”的优势\n黑盒不可审计：不知道经历了几轮、为何修改、在哪里失败、是否真的达成共识\nBuddy 用状态机、事件流、双确认和 CLI 适配层，把这些能力产品化","textPreview":"AI 写完即结束：缺少内建审查闭环，问题往往到人工 Review 才暴露 | 长任务一断就废：终端会话不可恢复，状态、轮次和失败原因难以复盘 | 模型能力被绑死：很难低成本组合“A 模型实现 + B 模型审查”的优势 | 黑盒不可审计：不知道经历了几轮、为何修改、在哪里失败...","textChars":177,"textLines":5,"bbox":[35.21,149.85,1195.23,467.19]}
+{"kind":"notes","id":"nt/val87ed8","slide":4,"text":"微博上也发过这个阿里的论文，大模型会带来技术债"}
+{"kind":"slide","id":"sl/mlkjm1cf","slide":5,"title":"协作机制：实现、审查、校准、再推进","textShapes":2}
+{"kind":"textbox","id":"sh/ovahoza1","slide":5,"name":"标题 1","placeholder":"title","text":"协作机制：实现、审查、校准、再推进","textPreview":"协作机制：实现、审查、校准、再推进","textChars":17,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/6hcrmhk3","slide":5,"name":"文本框 3","text":"Implementer 负责实现代码、修复问题；Reviewer 负责检查产出、指出风险或确认通过\n每轮 Actor 输出都会沉淀到 transcript 和 events，下一轮可基于真实历史继续推进\nDual-break 是收尾闸门：必须双方都发出 type=break，任务才会进入 DONE\n任务失败不是终点，FAILED 可恢复到 PAUSED；应用重启后 RUNNING 状态会重置为可继续处理的暂停态\n指令队列允许人在运行中追加约束，轮次结束后自动带入下一步","textPreview":"Implementer 负责实现代码、修复问题；Reviewer 负责检查产出、指出风险或确认通过 | 每轮 Actor 输出都会沉淀到 transcript 和 events，下一轮可基于真实历史继续推进 | Dual-break 是收尾闸门：必须双方都发出 type=b...","textChars":236,"textLines":5,"bbox":[35.21,149.85,1195.23,393.6]}
+{"kind":"notes","id":"nt/mlkjm1cf","slide":5,"text":""}
+{"kind":"slide","id":"sl/58z25kb6","slide":6,"title":"工程落地：Electron 内置 TypeScript Buddy Core","textShapes":2}
+{"kind":"textbox","id":"sh/ylc7u54z","slide":6,"name":"标题 1","placeholder":"title","text":"工程落地：Electron 内置 TypeScript Buddy Core","textPreview":"工程落地：Electron 内置 TypeScript Buddy Core","textChars":38,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/g3ex0nux","slide":6,"name":"文本框 3","text":"三进程架构：React renderer 只负责展示，preload 暴露窄 IPC，main process 承担文件、进程和状态机\nBuddyCoreService 组合 Store、Runner、EventBus：持久化、子进程调度和事件推送各自清晰\n纯文件系统数据模型，无数据库；JSON 写入统一采用 .tmp → rename，读取时用 Zod 校验\nActor launcher 同时支持原生 CLI 和契约命令，能统一编排 Claude / Codex / OpenCode / Kimi\nAPI key 在事件落盘前自动脱敏，运行过程可观察、可复盘、可迁移","textPreview":"三进程架构：React renderer 只负责展示，preload 暴露窄 IPC，main process 承担文件、进程和状态机 | BuddyCoreService 组合 Store、Runner、EventBus：持久化、子进程调度和事件推送各自清晰 | 纯文件系...","textChars":287,"textLines":5,"bbox":[35.21,149.85,1195.23,393.6]}
+{"kind":"notes","id":"nt/58z25kb6","slide":6,"text":""}
+{"kind":"slide","id":"sl/0z61032l","slide":7,"title":"一套编排层覆盖四类核心能力","textShapes":2}
+{"kind":"textbox","id":"sh/x4nap4r6","slide":7,"name":"标题 1","placeholder":"title","text":"一套编排层覆盖四类核心能力","textPreview":"一套编排层覆盖四类核心能力","textChars":13,"textLines":1,"bbox":[35.21,27.36,1028.15,60.48]}
+{"kind":"textbox","id":"sh/xczed8v6","slide":7,"name":"文本框 5","text":"能力来自 README、AGENTS.md 与 TypeScript Buddy Core 设计","textPreview":"能力来自 README、AGENTS.md 与 TypeScript Buddy Core 设计","textChars":48,"textLines":1,"bbox":[35.21,671.29,1091.54,48]}
+{"kind":"table","id":"tb/hcrmhk3q","slide":7,"name":"表格 4","rows":11,"cols":2,"preview":"能力 | Buddy 的实现方式","bbox":[35.21,125.09,1087.66,511.29]}
+{"kind":"notes","id":"nt/0z61032l","slide":7,"text":""}
+{"kind":"slide","id":"sl/fu18jqh0","slide":8,"title":"真实运行数据说明 Buddy 能持续闭环","textShapes":2}
+{"kind":"textbox","id":"sh/u9knih4b","slide":8,"name":"标题 1","placeholder":"title","text":"真实运行数据说明 Buddy 能持续闭环","textPreview":"真实运行数据说明 Buddy 能持续闭环","textChars":20,"textLines":1,"bbox":[35.21,27.36,1028.15,60.48]}
+{"kind":"textbox","id":"sh/u18jqh0f","slide":8,"name":"文本框 5","text":"统计口径：node scripts/buddy-stats.mjs，任务记录截至 2026-07-06","textPreview":"统计口径：node scripts/buddy-stats.mjs，任务记录截至 2026-07-06","textChars":51,"textLines":1,"bbox":[35.21,671.29,1091.54,48]}
+{"kind":"table","id":"tb/itgfmlkj","slide":8,"name":"表格 4","rows":11,"cols":2,"preview":"指标 | 实际结果","bbox":[35.21,125.09,1087.66,511.29]}
+{"kind":"notes","id":"nt/fu18jqh0","slide":8,"text":""}
+{"kind":"slide","id":"sl/qh0fepkz","slide":9,"title":"质量不是靠信任模型，而是靠工程闸门","textShapes":2}
+{"kind":"textbox","id":"sh/ovahoza1","slide":9,"name":"标题 1","placeholder":"title","text":"质量不是靠信任模型，而是靠工程闸门","textPreview":"质量不是靠信任模型，而是靠工程闸门","textChars":17,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/6hcrmhk3","slide":9,"name":"文本框 3","text":"状态机只接受合法迁移，Runner 不信任 renderer 传来的任务状态\n每次状态变化都先从磁盘重读、加锁、验证、写回，再发布事件\n单方 break 只记录 pending_break，不会让任务提前 DONE\n失败会记录 latest_failure，并按失败策略进入 FAILED 或 PAUSED\n事件、对话和产物分开保存，方便回放问题、审计决策和提炼复用经验\nGit 动作保持本地可审，人在提交与推送前仍能检查 diff","textPreview":"状态机只接受合法迁移，Runner 不信任 renderer 传来的任务状态 | 每次状态变化都先从磁盘重读、加锁、验证、写回，再发布事件 | 单方 break 只记录 pending_break，不会让任务提前 DONE | 失败会记录 latest_failure，并按...","textChars":216,"textLines":6,"bbox":[35.21,149.85,1195.23,524.38]}
+{"kind":"notes","id":"nt/qh0fepkz","slide":9,"text":""}
+{"kind":"slide","id":"sl/29gr2p8n","slide":10,"title":"它和 Cursor、Claude Code 不是一个抽象层级","textShapes":2}
+{"kind":"textbox","id":"sh/9gr2p8nq","slide":10,"name":"标题 1","placeholder":"title","text":"它和 Cursor、Claude Code 不是一个抽象层级","textPreview":"它和 Cursor、Claude Code 不是一个抽象层级","textChars":30,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/r2p8nqxs","slide":10,"name":"文本框 3","text":"单 Agent 工具擅长一次会话里的编码互动，Buddy 负责跨会话、跨模型、跨轮次的任务编排\nCursor / Claude Code 是“更聪明的执行者”，Buddy 更像“协作导演”和“工作流引擎”\n它不替代底层模型，也不替代人工判断；它把模型能力放进有状态、有记录、有收尾规则的过程\n复杂、长周期、需要质量收敛的任务最适合 Buddy；简单一次性改动仍然可以直接用单 Agent\n因此 Buddy 的价值不在多写几行代码，而在减少返工、降低盯守成本、提升可复盘性","textPreview":"单 Agent 工具擅长一次会话里的编码互动，Buddy 负责跨会话、跨模型、跨轮次的任务编排 | Cursor / Claude Code 是“更聪明的执行者”，Buddy 更像“协作导演”和“工作流引擎” | 它不替代底层模型，也不替代人工判断；它把模型能力放进有状态、...","textChars":235,"textLines":5,"bbox":[35.21,149.85,1195.23,329.6]}
+{"kind":"notes","id":"nt/29gr2p8n","slide":10,"text":""}
+{"kind":"slide","id":"sl/re1w7mp0","slide":11,"title":"推广价值：低部署、开放协议、可自证","textShapes":2}
+{"kind":"textbox","id":"sh/6tovahoz","slide":11,"name":"标题 1","placeholder":"title","text":"推广价值：低部署、开放协议、可自证","textPreview":"推广价值：低部署、开放协议、可自证","textChars":17,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/onyd0z61","slide":11,"name":"文本框 3","text":"零后端依赖：DMG 安装即可使用，数据落在本机文件系统，不增加团队运维负担\n协议开放：契约模式通过 BUDDY_ACTOR、BUDDY_MODE 等环境变量接入新工具\n跨语言适配：中简 / 中繁 / 英文，CJK 自动检测，方便不同团队直接使用\n数据可自证：每个团队都能跑 scripts/buddy-stats.mjs 统计自己的真实任务记录\n推广方式应从复杂任务试点开始，用本地数据和可复盘案例证明收益","textPreview":"零后端依赖：DMG 安装即可使用，数据落在本机文件系统，不增加团队运维负担 | 协议开放：契约模式通过 BUDDY_ACTOR、BUDDY_MODE 等环境变量接入新工具 | 跨语言适配：中简 / 中繁 / 英文，CJK 自动检测，方便不同团队直接使用 | 数据可自证：每个...","textChars":203,"textLines":5,"bbox":[35.21,149.85,1195.23,329.6]}
+{"kind":"notes","id":"nt/re1w7mp0","slide":11,"text":""}
+{"kind":"slide","id":"sl/4fu18jqh","slide":12,"title":"总结","textShapes":2}
+{"kind":"textbox","id":"sh/s72x4nap","slide":12,"name":"标题 1","placeholder":"title","text":"总结","textPreview":"总结","textChars":2,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/adsji5sn","slide":12,"name":"文本框 3","text":"Buddy 的核心不是模型能力，而是把模型能力放进可恢复、可审计、可收敛的任务流程\n双 Actor 协作把 Review 前置到 AI 之间，让人从全程盯守转向关键校准\n94.1% 完成率和 4488 轮真实协作说明，这套机制已经能持续承接复杂开发任务\n它最适合长周期、多轮修复、需要质量收敛的工作；最终架构判断和业务验收仍然由人负责\n一句话：Buddy 不是更聪明的嘴，而是让现有 AI 工具按剧本把整场戏演完","textPreview":"Buddy 的核心不是模型能力，而是把模型能力放进可恢复、可审计、可收敛的任务流程 | 双 Actor 协作把 Review 前置到 AI 之间，让人从全程盯守转向关键校准 | 94.1% 完成率和 4488 轮真实协作说明，这套机制已经能持续承接复杂开发任务 | 它最适合...","textChars":206,"textLines":5,"bbox":[35.21,149.85,1195.23,329.6]}
+{"kind":"notes","id":"nt/4fu18jqh","slide":12,"text":""}
+{"kind":"slide","id":"sl/lwval87e","slide":13,"title":".","textShapes":2}
+{"kind":"textbox","id":"sh/l0rqd4vm","slide":13,"name":"标题 1","placeholder":"title","text":".","textPreview":".","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/wfyxobm5","slide":13,"name":"文本框 2","text":"END","textPreview":"END","textChars":3,"textLines":1,"bbox":[35.21,121.38,1215,513.06]}
+{"kind":"notes","id":"nt/lwval87e","slide":13,"text":""}

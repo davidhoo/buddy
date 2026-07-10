@@ -89,20 +89,20 @@ export function createTaskNotifier(store: BuddyStore): TaskNotifier {
   }
 }
 
-/** Format milliseconds into a human-readable duration string */
+/** Format milliseconds into a human-readable duration string (xdxhxmxs) */
 function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.max(0, Math.floor(ms))}ms`
   const totalSeconds = Math.floor(ms / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours}时${minutes}分${seconds}秒`
-  }
-  if (minutes > 0) {
-    return `${minutes}分${seconds}秒`
-  }
-  return `${seconds}秒`
+  const parts: string[] = []
+  if (days > 0) parts.push(`${days}d`)
+  if (days > 0 || hours > 0) parts.push(`${hours}h`)
+  if (days > 0 || hours > 0 || minutes > 0) parts.push(`${minutes}m`)
+  parts.push(`${seconds}s`)
+  return parts.join('')
 }
 
 /** Format a number with locale-appropriate thousands separators */
