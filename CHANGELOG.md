@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-07-10
+
+### Added
+- 支持 `wecode codex` 启动方式读取模型：当通过 wecode 启动 codex 时，从 `~/.wecode-cli/config.json` 的 `codex.model` 读取实际使用的模型，而非 `~/.codex/config.toml`（wecode 不会回写 config.toml），确保运行详情与轮次事件中显示正确的模型名
+
 ## [1.2.3] - 2026-07-10
 
 ### Changed
@@ -452,6 +457,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.4
 [1.2.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.3
 [1.2.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.2
 [1.2.1]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.1
