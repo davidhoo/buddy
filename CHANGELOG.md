@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-07-13
+
+### Added
+- 新增按项目 FIFO 任务队列执行模式：每个项目（workspace）拥有独立队列，任务排队后在前置任务完成时自动推进，也可手动「立即执行」插队。被插队超越的更早排队任务标记为 superseded（数据保留不丢失）
+
 ## [1.2.4] - 2026-07-10
 
 ### Added
@@ -457,6 +462,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.5]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.5
 [1.2.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.4
 [1.2.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.3
 [1.2.2]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.2
