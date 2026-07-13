@@ -62,7 +62,10 @@ export class BuddyStore {
             updated_at: state.updated_at ?? '',
             repo_root: state.repo_root ?? '',
             round: state.round,
-            active_run: state.active_run ?? null
+            active_run: state.active_run ?? null,
+            execution_mode: state.execution_mode ?? 'immediate',
+            queue: state.queue,
+            created_at: state.created_at
           })
         } catch {
           // Ignore unreadable task directories; schema errors surface on detail load.
@@ -108,7 +111,18 @@ export class BuddyStore {
 
     const globalSettings = await this.readGlobalSettings()
     const settings = defaultTaskSettings(globalSettings, input.settings)
+    const executionMode: 'immediate' | 'queued' = input.execution_mode ?? 'immediate'
     const state = defaultTaskState(taskId, repoRoot, settings, contextText, now)
+    if (executionMode === 'queued') {
+      state.status = 'QUEUED'
+      state.execution_mode = 'queued'
+      state.queue = {
+        state: 'waiting',
+        enqueued_at: now
+      }
+    } else {
+      state.execution_mode = 'immediate'
+    }
     state.event_seq = 1
 
     await mkdir(join(dir, 'rounds'), { recursive: true })
@@ -120,15 +134,32 @@ export class BuddyStore {
     await atomicWriteJson(join(dir, 'state.json'), state)
     await atomicWriteText(join(dir, 'status'), `${state.status}\n`)
     await atomicAppendText(join(dir, '.buddy.lock'), '')
-    await appendEventLine(join(dir, 'events.jsonl'), {
-      seq: 1,
+    const initialEvent: Omit<Event, 'seq' | 'ts'> & Partial<Pick<Event, 'seq' | 'ts'>> = {
       task_id: taskId,
       type: 'task.created',
-      ts: now,
       payload: {
-        task_id: taskId
+        task_id: taskId,
+        execution_mode: executionMode
       }
-    })
+    }
+    await appendEventLine(join(dir, 'events.jsonl'), {
+      ...initialEvent,
+      seq: 1,
+      ts: now
+    } as Event)
+    if (executionMode === 'queued') {
+      await appendEventLine(join(dir, 'events.jsonl'), {
+        seq: 2,
+        task_id: taskId,
+        type: 'task.queued',
+        ts: now,
+        payload: {
+          workspace_key: workspaceKey,
+          task_id: taskId,
+          enqueued_at: now
+        }
+      })
+    }
 
     return { task: taskId, path: dir, workspace_key: workspaceKey }
   }
@@ -865,7 +896,8 @@ function defaultTaskState(
     updated_at: now,
     pending_break: null,
     break_rejected_by: null,
-    health_check: null
+    health_check: null,
+    execution_mode: 'immediate'
   }
 }
 

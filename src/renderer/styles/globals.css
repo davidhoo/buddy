@@ -267,6 +267,7 @@ body {
 .status-dot-danger { background: var(--danger); color: var(--danger); }
 .status-dot-done { background: var(--success-fg); color: var(--success-fg); }
 .status-dot-neutral { background: var(--fg-muted); color: var(--fg-muted); }
+.status-dot-queued { background: var(--fg-muted); color: var(--fg-muted); border: 1.5px solid var(--fg-muted); }
 
 @keyframes status-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }

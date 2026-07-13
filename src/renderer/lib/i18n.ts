@@ -95,6 +95,9 @@ const en = {
   'status.FAILED': 'Failed',
   'status.DONE': 'Done',
   'status.PINGING': 'Health check…',
+  'status.QUEUED': 'Queued',
+  'status.QUEUED_POSITION': 'Queued · #{n}',
+  'status.QUEUED_SUPERSEDED': 'Awaiting manual run',
 
   // Health check
   'health_check.started': 'Checking actor connectivity…',
@@ -373,6 +376,11 @@ const en = {
   'event.actor.summarizeSucceeded': 'Context summarized',
   'event.actor.summarizeFailed': 'Summarization failed',
   'event.actor.summarizeSkipped': 'Summarization skipped',
+  'event.task.queued': 'Queued',
+  'event.queue.activated': 'Queue activated',
+  'event.queue.blocked': 'Queue blocked',
+  'event.queue.superseded': 'Superseded',
+  'event.queue.reconciled': 'Queue reconciled',
 
   // Create task modal
   'modal.create.title': 'New task',
@@ -392,6 +400,12 @@ const en = {
   'modal.create.sameActorError': 'Implementer and reviewer cannot be the same role.',
   'modal.create.submit': 'Create task',
   'modal.create.failed': 'Create failed: {message}',
+  'modal.create.executionMode': 'Execution',
+  'modal.create.executionMode.immediate': 'Run immediately',
+  'modal.create.executionMode.queued': 'Queue (FIFO per project)',
+  'modal.create.executionMode.immediateHint': 'Start right after creation, even if other tasks are running or queued.',
+  'modal.create.executionMode.queuedHint': 'Wait in this project queue; auto-start when prior queued and immediate tasks finish.',
+  'queue.runNow': 'Run now',
   'modal.create.taskBriefDefault': '# Goal\n\nDescribe the task to complete.\n\n# Context & constraints\n\nProject background, constraints, etc.\n\n# Acceptance criteria\n- ',
 
   // Shortcuts
@@ -483,6 +497,9 @@ const zhCN: typeof en = {
   'status.FAILED': '失败',
   'status.DONE': '已完成',
   'status.PINGING': '连通性检查…',
+  'status.QUEUED': '排队中',
+  'status.QUEUED_POSITION': '排队中 · 第 {n} 位',
+  'status.QUEUED_SUPERSEDED': '等待人工处理',
 
   'health_check.started': '正在检查 actor 连通性…',
   'health_check.actorPinging': '正在检测 {actor}…',
@@ -746,6 +763,11 @@ const zhCN: typeof en = {
   'event.actor.summarizeSucceeded': '上下文已精简',
   'event.actor.summarizeFailed': '精简失败',
   'event.actor.summarizeSkipped': '精简已跳过',
+  'event.task.queued': '已加入队列',
+  'event.queue.activated': '队列放行',
+  'event.queue.blocked': '队列阻塞',
+  'event.queue.superseded': '已退出推进链',
+  'event.queue.reconciled': '队列重算',
 
   'modal.create.title': '新建任务',
   'modal.create.taskName': '任务名称',
@@ -764,6 +786,12 @@ const zhCN: typeof en = {
   'modal.create.sameActorError': '执行者和审查者不能是同一个角色。',
   'modal.create.submit': '创建任务',
   'modal.create.failed': '创建失败：{message}',
+  'modal.create.executionMode': '执行方式',
+  'modal.create.executionMode.immediate': '立即执行',
+  'modal.create.executionMode.queued': '排队执行（按项目 FIFO）',
+  'modal.create.executionMode.immediateHint': '创建后立即开始，即使项目内有任务正在运行或排队。',
+  'modal.create.executionMode.queuedHint': '进入当前项目队列，待前置排队与立即执行任务完成后自动开始。',
+  'queue.runNow': '立即执行',
   'modal.create.taskBriefDefault': '# 目标\n\n描述要完成的任务。\n\n# 背景与约束\n\n项目背景、约束等。\n\n# 验收标准\n- ',
 
   'shortcuts.search': '搜索快捷键…',
@@ -854,6 +882,9 @@ const zhTW: typeof en = {
   'status.FAILED': '失敗',
   'status.DONE': '已完成',
   'status.PINGING': '連通性檢查…',
+  'status.QUEUED': '排隊中',
+  'status.QUEUED_POSITION': '排隊中 · 第 {n} 位',
+  'status.QUEUED_SUPERSEDED': '等待人工處理',
 
   'health_check.started': '正在檢查 actor 連通性…',
   'health_check.actorPinging': '正在偵測 {actor}…',
@@ -1116,6 +1147,11 @@ const zhTW: typeof en = {
   'event.actor.summarizeSucceeded': '上下文已精簡',
   'event.actor.summarizeFailed': '精簡失敗',
   'event.actor.summarizeSkipped': '精簡已跳過',
+  'event.task.queued': '已加入佇列',
+  'event.queue.activated': '佇列放行',
+  'event.queue.blocked': '佇列阻塞',
+  'event.queue.superseded': '已退出推進鏈',
+  'event.queue.reconciled': '佇列重算',
 
   'modal.create.title': '新增任務',
   'modal.create.taskName': '任務名稱',
@@ -1134,6 +1170,12 @@ const zhTW: typeof en = {
   'modal.create.sameActorError': '執行者與審查者不能是同一個角色。',
   'modal.create.submit': '建立任務',
   'modal.create.failed': '建立失敗：{message}',
+  'modal.create.executionMode': '執行方式',
+  'modal.create.executionMode.immediate': '立即執行',
+  'modal.create.executionMode.queued': '排隊執行（按專案 FIFO）',
+  'modal.create.executionMode.immediateHint': '建立後立即開始，即使專案內有任務正在執行或排隊。',
+  'modal.create.executionMode.queuedHint': '進入目前專案佇列，待前置排隊與立即執行任務完成後自動開始。',
+  'queue.runNow': '立即執行',
   'modal.create.taskBriefDefault': '# 目標\n\n描述要完成的任務。\n\n# 背景與限制\n\n專案背景、限制等。\n\n# 驗收標準\n- ',
 
   // Settings - Keyboard shortcuts tab

@@ -61,7 +61,12 @@ const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'actor.session_reset': 'event.actor.sessionReset',
   'actor.summarize_succeeded': 'event.actor.summarizeSucceeded',
   'actor.summarize_failed': 'event.actor.summarizeFailed',
-  'actor.summarize_skipped': 'event.actor.summarizeSkipped'
+  'actor.summarize_skipped': 'event.actor.summarizeSkipped',
+  'task.queued': 'event.task.queued',
+  'queue.activated': 'event.queue.activated',
+  'queue.blocked': 'event.queue.blocked',
+  'queue.superseded': 'event.queue.superseded',
+  'queue.reconciled': 'event.queue.reconciled'
 }
 
 export function eventTypeLabel(type: string, lang: Language): string {

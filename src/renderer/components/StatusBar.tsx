@@ -49,6 +49,7 @@ function compactStatusInfo(status: TaskStatus | null | undefined): CompactStatus
   if (status === 'DONE') return { cls: 'done', labelKey: 'status.DONE', pulse: false }
   if (status === 'FAILED') return { cls: 'danger', labelKey: 'status.FAILED', pulse: false }
   if (status === 'READY') return { cls: 'ready', labelKey: 'status.READY', pulse: false }
+  if (status === 'QUEUED') return { cls: 'ready', labelKey: 'status.QUEUED', pulse: false }
   return null
 }
 

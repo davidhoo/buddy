@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 const taskStatusSchema = z.enum([
+  'QUEUED',
   'READY',
   'RUNNING_CLAUDE',
   'RUNNING_CODEX',
@@ -12,6 +13,15 @@ const taskStatusSchema = z.enum([
   'FAILED',
   'DONE'
 ])
+
+const executionModeSchema = z.enum(['immediate', 'queued'])
+
+const taskQueueInfoSchema = z.object({
+  state: z.enum(['waiting', 'active', 'superseded']),
+  enqueued_at: z.string(),
+  activated_at: z.string().optional(),
+  activation_source: z.enum(['automatic', 'manual']).optional()
+})
 
 const activeRunSchema = z.object({
   run_id: z.string().optional(),
@@ -87,7 +97,9 @@ export const taskStateSchema = z.object({
   break_rejected_by: z.object({ actor: z.string().optional(), round: z.number().optional() }).nullable().optional(),
   latest_failure: failureSchema.nullable().optional(),
   health_check: healthCheckResultSchema.nullable().optional(),
-  compact_retries: z.number().optional()
+  compact_retries: z.number().optional(),
+  execution_mode: executionModeSchema.optional(),
+  queue: taskQueueInfoSchema.optional()
 })
 
 export const launcherSchema = z.object({
