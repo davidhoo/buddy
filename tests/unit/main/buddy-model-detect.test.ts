@@ -48,10 +48,71 @@ describe('model-detect', () => {
     ].join('\n'))
 
     const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
-    const model = await detectModelFromConfig('codex')
+    const model = await detectModelFromConfig('codex', 'codex -p --output-format stream-json')
     expect(model).toBe('gpt-5.5')
   })
 
+  it('reads model from wecode config when command is `wecode codex`', async () => {
+    // Set up ~/.codex/config.toml with stale model
+    const codexDir = join(tempHome, '.codex')
+    await mkdir(codexDir, { recursive: true })
+    await writeFile(join(codexDir, 'config.toml'), 'model = "gpt-5.5"\n')
+
+    // Set up ~/.wecode-cli/config.json with real model
+    const wecodeDir = join(tempHome, '.wecode-cli')
+    await mkdir(wecodeDir, { recursive: true })
+    await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({
+      codex: { model: 'thudm-glm-5.2', forceModel: false },
+      claude: { forceModel: true }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('codex', 'wecode codex --output-format stream-json')
+    expect(model).toBe('thudm-glm-5.2')
+  })
+
+  it('falls back to codex config.toml when wecode config has no codex.model', async () => {
+    const codexDir = join(tempHome, '.codex')
+    await mkdir(codexDir, { recursive: true })
+    await writeFile(join(codexDir, 'config.toml'), 'model = "gpt-5.5"\n')
+
+    const wecodeDir = join(tempHome, '.wecode-cli')
+    await mkdir(wecodeDir, { recursive: true })
+    await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({
+      codex: { forceModel: false }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('codex', 'wecode codex')
+    // wecode config exists but has no codex.model → undefined (not fallback to config.toml)
+    expect(model).toBeUndefined()
+  })
+
+  it('returns undefined for wecode codex when wecode config does not exist', async () => {
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('codex', 'wecode codex')
+    expect(model).toBeUndefined()
+  })
+
+  it('uses codex config.toml when command is plain codex (no wecode)', async () => {
+    const codexDir = join(tempHome, '.codex')
+    await mkdir(codexDir, { recursive: true })
+    await writeFile(join(codexDir, 'config.toml'), 'model = "gpt-5.5"\n')
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('codex', 'codex --output-format stream-json')
+    expect(model).toBe('gpt-5.5')
+  })
+
+  it('uses codex config.toml when command is undefined', async () => {
+    const codexDir = join(tempHome, '.codex')
+    await mkdir(codexDir, { recursive: true })
+    await writeFile(join(codexDir, 'config.toml'), 'model = "gpt-5.5"\n')
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('codex')
+    expect(model).toBe('gpt-5.5')
+  })
   it('reads default_model from kimi TOML config', async () => {
     const configDir = join(tempHome, '.kimi')
     await mkdir(configDir, { recursive: true })

@@ -15,7 +15,8 @@ import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useUpdater } from './hooks/useUpdater'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
-import { isTaskReadyToStart } from './lib/taskState'
+import { isTaskReadyToStart, isTaskQueued, queuedPosition } from './lib/taskState'
+import type { Task } from '../shared/types'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
@@ -204,7 +205,8 @@ export default function App() {
     taskText: string,
     repoRoot: string,
     settings: Record<string, unknown>,
-    attachments?: Attachment[]
+    attachments?: Attachment[],
+    executionMode: 'immediate' | 'queued' = 'immediate'
   ) => {
     try {
       const finalRepoRoot = (repoRoot && repoRoot !== '/' && repoRoot !== '[object Object]' ? repoRoot : null)
@@ -213,7 +215,8 @@ export default function App() {
         task_id: taskId,
         repo_root: finalRepoRoot || undefined,
         task_text: taskText,
-        settings
+        settings,
+        execution_mode: executionMode
       })
 
       // Save attachments to the newly created task directory and update task.md
@@ -260,9 +263,10 @@ export default function App() {
       saveLastSelectedTask(result.task, result.workspace_key)
       setShowCreateModal(false)
       setPendingRepoRoot(null)
-      // Auto-start immediately if task has real text
+      // Auto-start immediately if task has real text AND was created with immediate execution.
+      // Queued tasks are created as QUEUED and started by the main-process coordinator.
       const hasRealText = taskText.trim().length > 0
-      if (hasRealText) {
+      if (hasRealText && executionMode === 'immediate') {
         startTask.mutate({
           taskId: result.task,
           data: { workspace_key: result.workspace_key }
@@ -704,6 +708,26 @@ export default function App() {
         />
       )}
 
+      {/* Queued task — "Run now" override button */}
+      {isTaskQueued(taskDetail?.state ?? null) && taskDetail && (
+        <QueuedRunNowButton
+          position={queuedPosition(
+            {
+              task_id: taskDetail.task_id,
+              workspace_key: taskDetail.workspace_key,
+              execution_mode: taskDetail.state.execution_mode,
+              queue: taskDetail.state.queue,
+              status: taskDetail.state.status,
+              updated_at: taskDetail.state.updated_at ?? '',
+              repo_root: taskDetail.state.repo_root ?? ''
+            } as Task,
+            tasks
+          )}
+          superseded={taskDetail.state.queue?.state === 'superseded'}
+          onRunNow={() => handleStartTask()}
+        />
+      )}
+
       {/* 更新通知 */}
       <UpdateNotification
         status={updater.status}
@@ -725,7 +749,7 @@ function CreateTaskModal({
   t
 }: {
   onClose: () => void
-  onCreate: (taskId: string, taskText: string, repoRoot: string, settings: Record<string, unknown>, attachments?: Attachment[]) => void
+  onCreate: (taskId: string, taskText: string, repoRoot: string, settings: Record<string, unknown>, attachments?: Attachment[], executionMode?: 'immediate' | 'queued') => void
   defaultRepoRoot: string
   globalSettings: GlobalSettings | null
   t: TFunction
@@ -742,6 +766,7 @@ function CreateTaskModal({
   })
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
+  const [executionMode, setExecutionMode] = useState<'immediate' | 'queued'>('immediate')
 
   // --- Attachment helpers (same logic as Composer.tsx) ---
   const removeAttachment = useCallback((id: string) => {
@@ -891,7 +916,7 @@ function CreateTaskModal({
       ...seedFor(implementer, implementerSession),
       ...seedFor(reviewer, reviewerSession)
     }
-    onCreate(taskId.trim(), taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined)
+    onCreate(taskId.trim(), taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined, executionMode)
   }
 
   const handleSelectDirectory = async () => {
@@ -1117,6 +1142,39 @@ function CreateTaskModal({
           {sameActorError && (
             <div className="text-xs text-danger">{t('modal.create.sameActorError')}</div>
           )}
+
+          {/* 执行方式 */}
+          <div>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">
+              {t('modal.create.executionMode')}
+            </label>
+            <div className="flex gap-2">
+              {(['immediate', 'queued'] as const).map((mode) => {
+                const active = executionMode === mode
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setExecutionMode(mode)}
+                    className={`flex-1 px-3 py-1.5 text-xs border rounded-lg transition-colors ${
+                      active
+                        ? 'border-accent bg-accent-soft text-fg'
+                        : 'border-border text-fg-secondary hover:bg-bg-subtle'
+                    }`}
+                  >
+                    {mode === 'immediate'
+                      ? t('modal.create.executionMode.immediate')
+                      : t('modal.create.executionMode.queued')}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="text-xs text-fg-muted mt-1">
+              {executionMode === 'immediate'
+                ? t('modal.create.executionMode.immediateHint')
+                : t('modal.create.executionMode.queuedHint')}
+            </div>
+          </div>
         </div>
 
         {/* 底部 */}
@@ -1136,6 +1194,36 @@ function CreateTaskModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function QueuedRunNowButton({
+  position,
+  superseded,
+  onRunNow
+}: {
+  position: number
+  superseded: boolean
+  onRunNow: () => void
+}) {
+  const t = useT()
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg">
+      <span className="text-xs text-fg-secondary">
+        {superseded
+          ? t('status.QUEUED_SUPERSEDED')
+          : position > 0
+            ? t('status.QUEUED_POSITION', { n: position })
+            : t('status.QUEUED')}
+      </span>
+      <button
+        type="button"
+        onClick={onRunNow}
+        className="px-3 py-1.5 text-xs font-medium bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors"
+      >
+        {t('queue.runNow')}
+      </button>
     </div>
   )
 }

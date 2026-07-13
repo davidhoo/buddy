@@ -91,6 +91,8 @@ export class BuddyRunner {
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
   private readonly notifier?: TaskNotifier
+  /** Optional callback invoked after a task reaches a terminal-ish state (DONE/PAUSED/FAILED). */
+  onTaskTerminal?: (workspaceKey: string) => void
 
   constructor(
     private readonly store: BuddyStore,
@@ -1069,6 +1071,7 @@ export class BuddyRunner {
             second: actor
           })
         }
+        this.onTaskTerminal?.(workspaceKey)
         return
       }
     }
@@ -1132,6 +1135,7 @@ export class BuddyRunner {
           next_actor: nextActor
         }
       })
+      this.onTaskTerminal?.(workspaceKey)
       return
     }
     if (this.executeLaunchers) {
@@ -1146,6 +1150,10 @@ export class BuddyRunner {
         // Auto-start of next actor failed; task is already in READY state
       }
     }
+    // After a round completes (or the auto-advance left the task in a terminal-ish state),
+    // let the queue coordinator re-evaluate the workspace. completeActor may have transitioned
+    // to DONE/PAUSED; either way the coordinator will no-op if nothing changed.
+    this.onTaskTerminal?.(workspaceKey)
   }
 
   private async markFailed(taskId: string, workspaceKey: string, actor: string, message: string, runId?: string): Promise<void> {
@@ -1203,6 +1211,7 @@ export class BuddyRunner {
           second: actor
         })
       }
+      this.onTaskTerminal?.(workspaceKey)
       return
     }
 
@@ -1249,6 +1258,7 @@ export class BuddyRunner {
         await this.notifier.notifyTaskFailed(taskId, workspaceKey, actor, message)
       }
     }
+    this.onTaskTerminal?.(workspaceKey)
   }
 
   /**

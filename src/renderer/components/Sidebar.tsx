@@ -29,6 +29,7 @@ import type { SettingsTab } from './SettingsContent'
 
 function statusClass(status: TaskStatus): string {
   if (status === 'READY') return 'ready'
+  if (status === 'QUEUED') return 'queued'
   if (status.startsWith('RUNNING_')) return 'running'
   if (status === 'FAILED') return 'danger'
   if (status === 'PAUSED') return 'paused'

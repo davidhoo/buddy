@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.5] - 2026-07-13
+
+### Added
+- 新增按项目 FIFO 任务队列执行模式：创建任务时可选择「立即执行」或「排队执行」，排队任务在前置任务完成后自动推进，也可手动「立即执行」插队（更早的未完成排队任务标记为 superseded，数据保留）
+- 新增 `QueueCoordinator`：基于磁盘状态重算每个 workspace 队列快照，per-workspace 串行 reconcile 锁保证同一等待任务只启动一次
+- 数据模型扩展：新增 `QUEUED` 状态、`execution_mode`(immediate|queued) 与 `TaskQueueInfo`（waiting/active/superseded）；`Task` 增加 `created_at` 用于稳定排序
+- 渲染层：创建任务弹窗新增执行方式切换；新增排队「立即执行」浮层显示排队位置/superseded 状态；Sidebar/StatusBar/TitleBar 处理 QUEUED 状态样式；i18n 补充 queue.* 事件与状态文案（zh-CN/zh-TW/en）
+- `recoverInterruptedRuns` 扩展 `PINGING` 重置并在恢复后 rebuildAndReconcileAll；`deleteTask` 触发队列重新调度
+- 新增 `buddy-queue-coordinator.test.ts` 单元测试
+
+### Changed
+- `detectModelFromConfig` 新增 `command` 参数：当通过 `wecode codex` 启动 codex 时，从 `~/.wecode-cli/config.json` 的 `codex.model` 读取实际模型，而非 `~/.codex/config.toml`（wecode 不会回写 config.toml）
+- `BuddyStore.getRoundEvents` 与 `BuddyCoreService.getRoundEvents` 透传 `command`；当调用方未传入时，从任务 settings 的 `launchers[actor].command` 补全
+
+---
+
+## [1.2.4] - 2026-07-10
+
+### Changed
+- `detectModelFromConfig` 新增 `command` 参数，通过 `isWecodeCodexCommand` 判断命令是否为 `wecode codex`
+- 当通过 wecode 启动 codex 时，从 `~/.wecode-cli/config.json` 的 `codex.model` 读取实际模型，而非 `~/.codex/config.toml`（wecode 不会回写 config.toml）
+- `BuddyStore.getRoundEvents` 与 `BuddyCoreService.getRoundEvents` 透传 `command`；当调用方未传入时，从任务 settings 的 `launchers[actor].command` 补全
+- 补充 wecode 配置缺失/无 codex.model、普通 codex、command 为空等分支的单元测试
+
+---
+
 ## [1.2.3] - 2026-07-10
 
 ### Changed

@@ -6,9 +6,13 @@ export interface Task {
   repo_root: string
   round?: number
   active_run?: ActiveRun | null
+  execution_mode?: ExecutionMode
+  queue?: TaskQueueInfo
+  created_at?: string
 }
 
 export type TaskStatus =
+  | 'QUEUED'
   | 'READY'
   | 'RUNNING_CLAUDE'
   | 'RUNNING_CODEX'
@@ -19,6 +23,16 @@ export type TaskStatus =
   | 'PAUSED'
   | 'FAILED'
   | 'DONE'
+
+/** Per-project FIFO queue metadata attached to queued-execution tasks. */
+export interface TaskQueueInfo {
+  state: 'waiting' | 'active' | 'superseded'
+  enqueued_at: string
+  activated_at?: string
+  activation_source?: 'automatic' | 'manual'
+}
+
+export type ExecutionMode = 'immediate' | 'queued'
 
 export interface TaskDetail {
   task_id: string
@@ -73,6 +87,8 @@ export interface TaskState {
   latest_failure?: Failure | null
   health_check?: HealthCheckResult | null
   compact_retries?: number
+  execution_mode?: ExecutionMode
+  queue?: TaskQueueInfo
 }
 
 export interface Countdown {
@@ -205,6 +221,7 @@ export interface CreateTaskInput {
   task_text?: string
   context_text?: string
   settings?: Record<string, unknown>
+  execution_mode?: ExecutionMode
 }
 
 export interface CreateTaskResult {

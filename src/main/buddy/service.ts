@@ -29,6 +29,7 @@ import {
 import type { GitStatusResult } from '../../shared/types'
 import { BuddyRunner } from './runner'
 import { BuddyStore } from './store'
+import { QueueCoordinator } from './queue-coordinator'
 import { createTaskNotifier } from './notifications'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -47,6 +48,7 @@ export class BuddyCoreService {
   private readonly store: BuddyStore
   private readonly runner: BuddyRunner
   private readonly events?: BuddyEventBus
+  private coordinator?: QueueCoordinator
 
   constructor(options: BuddyCoreServiceOptions | string = {}) {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
@@ -54,6 +56,14 @@ export class BuddyCoreService {
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
     const notifier = createTaskNotifier(this.store)
     this.runner = new BuddyRunner(this.store, { events: normalized.events, notifier })
+    this.coordinator = new QueueCoordinator({ store: this.store, runner: this.runner, events: normalized.events })
+    this.runner.onTaskTerminal = (workspaceKey) => {
+      void this.coordinator?.onTaskTerminal(workspaceKey)
+    }
+  }
+
+  getCoordinator(): QueueCoordinator | undefined {
+    return this.coordinator
   }
 
   getStore(): BuddyStore {
@@ -95,13 +105,28 @@ export class BuddyCoreService {
     return this.store.createTask(input)
   }
 
-  deleteTask(taskId: string, workspaceKey?: string): Promise<void> {
+  async deleteTask(taskId: string, workspaceKey?: string): Promise<void> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
-    return this.store.deleteTask(taskId, workspaceKey)
+    await this.store.deleteTask(taskId, workspaceKey)
+    // Removing a blocking task may unblock the queue.
+    void this.coordinator?.onTaskTerminal(workspaceKey)
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<void> {
+    if (!input.workspace_key) throw new Error('workspace_key is required')
+    const state = await this.store.readTaskState(taskId, input.workspace_key).catch(() => null)
+    // A queued task must not be started directly by the renderer via runner.startTask, because
+    // runner.canStartFrom('QUEUED') is false. Any manual user start on a queued task — whether
+    // waiting, superseded, or a blocked active task (PAUSED/FAILED) — goes through the
+    // coordinator's manual activation path, which preserves queue identity and supersede logic.
+    if (state && state.execution_mode === 'queued') {
+      await this.coordinator?.startQueuedNow(taskId, input.workspace_key)
+      return
+    }
     await this.runner.startTask(taskId, input)
+    // After an immediate start, re-evaluate the queue in case this task is itself an
+    // immediate-execution task that should block queued advancement.
+    void this.coordinator?.reconcile(input.workspace_key)
   }
 
   sendMessage(taskId: string, input: SendMessageInput): Promise<void> {
@@ -142,9 +167,9 @@ export class BuddyCoreService {
     return this.store.getEvents(taskId, since, workspaceKey)
   }
 
-  getRoundEvents(taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null> {
+  getRoundEvents(taskId: string, runId: string, workspaceKey?: string, actor?: string, command?: string): Promise<RoundEventSummary | null> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
-    return this.store.getRoundEvents(taskId, runId, workspaceKey, actor)
+    return this.store.getRoundEvents(taskId, runId, workspaceKey, actor, command)
   }
 
   getTaskStats(taskId: string, workspaceKey?: string): Promise<TaskStats | null> {
@@ -179,7 +204,8 @@ export class BuddyCoreService {
   async recoverInterruptedRuns(): Promise<void> {
     const tasks = await this.store.getTasks()
     for (const task of tasks) {
-      if (task.status.startsWith('RUNNING_')) {
+      const wasRunning = task.status.startsWith('RUNNING_') || task.status === 'PINGING'
+      if (wasRunning) {
         const event = await this.store.appendTaskEvent(task.task_id, task.workspace_key, {
           type: 'actor.interrupted',
           payload: { reason: 'app_restarted' }
@@ -197,6 +223,10 @@ export class BuddyCoreService {
         })
       }
     }
+    // After recovery, rebuild per-workspace queues and run a safe scheduling pass.
+    // A previously-running queued task is now PAUSED and blocks its queue — no auto-start.
+    // Unblocked workspaces with waiting tasks will start their queue head.
+    await this.coordinator?.rebuildAndReconcileAll()
   }
 
   async testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> {

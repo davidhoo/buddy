@@ -10,16 +10,30 @@ import { join } from 'node:path'
  * Config file locations:
  * - opencode: ~/.config/opencode/opencode.json  → JSON "model" field
  * - codex:    ~/.codex/config.toml              → TOML "model" field
+ *   (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
  * - kimi:     ~/.kimi/config.toml               → TOML "default_model" field
  * - claude:   not needed (model reliably emitted in stream-json output)
+ *
+ * @param actor  Actor name (codex, opencode, kimi, claude)
+ * @param command  Optional launcher command string. Used to distinguish
+ *                 `wecode codex` from plain `codex`.
  */
-export async function detectModelFromConfig(actor: string): Promise<string | undefined> {
+export async function detectModelFromConfig(
+  actor: string,
+  command?: string
+): Promise<string | undefined> {
   try {
     const home = homedir()
     if (actor === 'opencode') {
       return await readJsonModel(join(home, '.config', 'opencode', 'opencode.json'), 'model')
     }
     if (actor === 'codex') {
+      // When codex is launched via `wecode codex`, the effective model is
+      // in ~/.wecode-cli/config.json (codex.model), NOT ~/.codex/config.toml
+      // — wecode does not write back to config.toml.
+      if (isWecodeCodexCommand(command)) {
+        return await readWecodeCodexModel(home)
+      }
       return await readTomlModel(join(home, '.codex', 'config.toml'), 'model')
     }
     if (actor === 'kimi') {
@@ -27,6 +41,33 @@ export async function detectModelFromConfig(actor: string): Promise<string | und
     }
   } catch {
     // Config file may not exist or be unreadable — that's fine
+  }
+  return undefined
+}
+
+/**
+ * Check whether a command string represents `wecode codex`.
+ * Mirrors the detection in launchers.ts commandKindFor.
+ */
+function isWecodeCodexCommand(command?: string): boolean {
+  if (!command) return false
+  const parts = command.match(/(?:[^\s"]+|"[^"]*")+/g)
+  if (!parts) return false
+  const clean = parts.map((p) => p.replace(/^"|"$/g, ''))
+  return clean[0] === 'wecode' && clean[1] === 'codex'
+}
+
+/**
+ * Read the codex model from ~/.wecode-cli/config.json.
+ * Structure: { codex: { model: "thudm-glm-5.2", forceModel: false } }
+ */
+async function readWecodeCodexModel(home: string): Promise<string | undefined> {
+  const raw = await readFile(join(home, '.wecode-cli', 'config.json'), 'utf8')
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  const codex = obj.codex
+  if (codex && typeof codex === 'object') {
+    const model = (codex as Record<string, unknown>).model
+    if (typeof model === 'string' && model) return model
   }
   return undefined
 }
