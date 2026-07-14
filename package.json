@@ -20,7 +20,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "electron-updater": "^6.8.3",
