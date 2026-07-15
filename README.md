@@ -162,10 +162,6 @@ buddy/
 - API key 在事件写入前自动脱敏（`redact.ts`）
 - UI 文本通过 `useI18n` hook 国际化
 
-## 致谢
-
-感谢 [linux.do](https://linux.do/) 社区的反馈与支持。
-
 ## License
 
 MIT
