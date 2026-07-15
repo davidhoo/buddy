@@ -1150,10 +1150,11 @@ export class BuddyRunner {
         // Auto-start of next actor failed; task is already in READY state
       }
     }
-    // After a round completes (or the auto-advance left the task in a terminal-ish state),
-    // let the queue coordinator re-evaluate the workspace. completeActor may have transitioned
-    // to DONE/PAUSED; either way the coordinator will no-op if nothing changed.
-    this.onTaskTerminal?.(workspaceKey)
+    // NOTE: no onTaskTerminal here. A normal round that auto-advances to the next actor has not
+    // reached a queue-relevant terminal state — the task is still mid-flight in the same queue
+    // slot. Only true terminal transitions (DONE, blocking PAUSED/FAILED, round-window pause)
+    // notify the coordinator, and those return early above. Notifying on every round unwind is
+    // what caused the 40× reconcile burst on a 39-round task.
   }
 
   private async markFailed(taskId: string, workspaceKey: string, actor: string, message: string, runId?: string): Promise<void> {

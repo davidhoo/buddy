@@ -12,7 +12,8 @@ import {
   formatTimeWithRelativeDate,
   decodeErrorText,
   eventPayloadSummary,
-  eventTypeLabel
+  eventTypeLabel,
+  isHiddenEvent
 } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
@@ -344,11 +345,14 @@ function ActorCard({
 
 function EventLog({ events, t, lang }: { events: Event[]; t: TFunction; lang: Language }) {
   const [expanded, setExpanded] = useState(false)
-  if (!events.length) {
+  // Drop internal-only queue bookkeeping events (e.g. historical queue.reconciled spam) so the
+  // log shows only user-meaningful lifecycle events.
+  const visibleEvents = events.filter((event) => !isHiddenEvent(event.type))
+  if (!visibleEvents.length) {
     return <div className="px-4 pb-4 text-xs text-fg-muted">{t('statusBar.eventsEmpty')}</div>
   }
-  const canExpand = events.length > 10
-  const displayed = expanded ? [...events].reverse() : events.slice(-10).reverse()
+  const canExpand = visibleEvents.length > 10
+  const displayed = expanded ? [...visibleEvents].reverse() : visibleEvents.slice(-10).reverse()
   return (
     <div className="px-4 pb-3 space-y-2">
       {displayed.map((event) => {

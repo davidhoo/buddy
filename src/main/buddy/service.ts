@@ -101,8 +101,12 @@ export class BuddyCoreService {
     return this.store.getTaskDetail(taskId, workspaceKey)
   }
 
-  createTask(input: CreateTaskInput): Promise<CreateTaskResult> {
-    return this.store.createTask(input)
+  async createTask(input: CreateTaskInput): Promise<CreateTaskResult> {
+    const result = await this.store.createTask(input)
+    // A newly created queued task may be the next to run; an immediate task may now block the
+    // queue. Either way the workspace scheduling conditions changed, so re-evaluate once.
+    void this.coordinator?.reconcile(result.workspace_key)
+    return result
   }
 
   async deleteTask(taskId: string, workspaceKey?: string): Promise<void> {
@@ -141,9 +145,12 @@ export class BuddyCoreService {
     return this.runner.pauseCountdown(taskId, input)
   }
 
-  interrupt(taskId: string, workspaceKey?: string): Promise<void> {
+  async interrupt(taskId: string, workspaceKey?: string): Promise<void> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
-    return this.runner.interrupt(taskId, workspaceKey)
+    await this.runner.interrupt(taskId, workspaceKey)
+    // A user interrupt moves the task to PAUSED, which may block (queued) or free (immediate)
+    // the workspace queue. Re-evaluate once.
+    void this.coordinator?.onTaskTerminal(workspaceKey)
   }
 
   enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {

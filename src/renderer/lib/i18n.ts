@@ -380,7 +380,6 @@ const en = {
   'event.queue.activated': 'Queue activated',
   'event.queue.blocked': 'Queue blocked',
   'event.queue.superseded': 'Superseded',
-  'event.queue.reconciled': 'Queue reconciled',
 
   // Create task modal
   'modal.create.title': 'New task',
@@ -767,7 +766,6 @@ const zhCN: typeof en = {
   'event.queue.activated': '队列放行',
   'event.queue.blocked': '队列阻塞',
   'event.queue.superseded': '已退出推进链',
-  'event.queue.reconciled': '队列重算',
 
   'modal.create.title': '新建任务',
   'modal.create.taskName': '任务名称',
@@ -1151,7 +1149,6 @@ const zhTW: typeof en = {
   'event.queue.activated': '佇列放行',
   'event.queue.blocked': '佇列阻塞',
   'event.queue.superseded': '已退出推進鏈',
-  'event.queue.reconciled': '佇列重算',
 
   'modal.create.title': '新增任務',
   'modal.create.taskName': '任務名稱',

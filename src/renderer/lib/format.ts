@@ -65,8 +65,19 @@ const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'task.queued': 'event.task.queued',
   'queue.activated': 'event.queue.activated',
   'queue.blocked': 'event.queue.blocked',
-  'queue.superseded': 'event.queue.superseded',
-  'queue.reconciled': 'event.queue.reconciled'
+  'queue.superseded': 'event.queue.superseded'
+}
+
+/**
+ * Internal queue bookkeeping events that are not meaningful to users and must not be shown in
+ * the event log. queue.reconciled is no longer written for new tasks, but historical logs may
+ * still contain it — filter it out so legacy tasks don't show the old "queue reconciled" spam.
+ */
+const HIDDEN_EVENT_TYPES = new Set<string>(['queue.reconciled'])
+
+/** Whether an event type should be hidden from the renderer event log. */
+export function isHiddenEvent(type: string | undefined): boolean {
+  return !!type && HIDDEN_EVENT_TYPES.has(type)
 }
 
 export function eventTypeLabel(type: string, lang: Language): string {
