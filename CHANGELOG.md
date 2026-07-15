@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-07-15
+
+### Fixed
+- 抑制队列协调器的 reconcile 风暴并对队列阻塞事件去重：39 轮任务会触发约 40 次冗余 reconcile，根因是每轮 auto-advance 退栈时都通知协调器。现将 per-workspace 串行锁改为合并式 reconcile（运行中的额外请求只置 dirty 标记，至多追加一次重扫），并新增 BlockSignature 对 `queue.blocked` 事件去重，阻塞签名不变时不再重复写事件；同时区分显式「立即执行」任务与遗留任务，避免遗留的 READY/PAUSED/FAILED 任务永久卡住队列。普通轮次退栈不再通知协调器，仅在真正终态通知，事件日志中也隐藏 `queue.reconciled` 内部记账事件
+
 ## [1.2.5] - 2026-07-13
 
 ### Added
@@ -462,6 +467,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.6]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.6
 [1.2.5]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.5
 [1.2.4]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.4
 [1.2.3]: https://gitlab.weibo.cn/ailab/buddy-macos/-/tags/v1.2.3
