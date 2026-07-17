@@ -32,7 +32,8 @@ describe('BuddyStore read model', () => {
       claude: false,
       codex: false,
       opencode: false,
-      kimi: false
+      kimi: false,
+      'cursor-agent': false
     })
     expect(detail.state.countdown).toBeNull()
     expect(detail.state.last_error).toBeNull()

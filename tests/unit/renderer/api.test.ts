@@ -17,7 +17,7 @@ describe('renderer api', () => {
         pauseCountdown: vi.fn(),
         interrupt: vi.fn(),
         getEvents: vi.fn(),
-        updateGlobalSettings: vi.fn()
+        updateGlobalSettings: vi.fn(async (settings: unknown) => settings)
       }
     })
   })
@@ -34,5 +34,30 @@ describe('renderer api', () => {
 
     await expect(api.bootstrap()).resolves.toEqual({ version: 'native', tasks: [] })
     expect(window.buddy.bootstrap).toHaveBeenCalled()
+  })
+
+  it('serializes settings patches without clobbering another tab', async () => {
+    const { api } = await import('../../../src/renderer/lib/api')
+    const base = { countdown_seconds: 30, launchers: {} }
+
+    const launcherSave = api.updateGlobalSettingsPatch(base, {
+      launchers: {
+        'cursor-agent': {
+          command: 'agent',
+          env: {},
+          timeout_seconds: 7200,
+          backend: 'cursor'
+        }
+      }
+    })
+    const promptSave = api.updateGlobalSettingsPatch(base, {
+      prompt_presets: [{ id: 'review', name: 'Review', prompt: 'Review carefully.' }]
+    })
+    await Promise.all([launcherSave, promptSave])
+
+    expect(window.buddy.updateGlobalSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      launchers: expect.objectContaining({ 'cursor-agent': expect.any(Object) }),
+      prompt_presets: [{ id: 'review', name: 'Review', prompt: 'Review carefully.' }]
+    }))
   })
 })

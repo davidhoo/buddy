@@ -29,7 +29,9 @@ test.beforeEach(async ({ page }) => {
       selectDirectory: async () => null,
       openInFinder: async () => undefined,
       onFullScreenChange: () => () => undefined,
-      isFullScreen: async () => false
+      isFullScreen: async () => false,
+      updateMenuLanguage: () => undefined,
+      onMenuAction: () => () => undefined
     }
     Object.defineProperty(window, 'buddy', { value: buddy })
     Object.defineProperty(window, 'api', { value: api })

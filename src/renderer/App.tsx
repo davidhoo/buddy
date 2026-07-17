@@ -14,13 +14,13 @@ import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useUpdater } from './hooks/useUpdater'
-import { ACTOR_LABEL_KEY, Actor } from './lib/format'
+import { ACTOR_LABEL_KEY, actorDisplayName, Actor } from './lib/format'
 import { isTaskReadyToStart, isTaskQueued, queuedPosition } from './lib/taskState'
 import type { Task } from '../shared/types'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
-import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
+import { normalizeGlobalSettings } from '../shared/defaults'
 
 export default function App() {
   const t = useT()
@@ -881,11 +881,12 @@ function CreateTaskModal({
   const sameActorError = implementer === reviewer
   const canSubmit = taskId.trim() && !taskIdError && !sameActorError
 
-  const seedFor = (actor: Actor, session: string): Record<string, string> => {
+  const legacySeedFor = (actor: Actor, session: string): Record<string, string> => {
     const value = session.trim()
     if (!value) return {}
     if (actor === 'codex') return { seed_codex_thread_id: value }
-    return { [`seed_${actor}_session_id`]: value }
+    if (['claude', 'opencode', 'kimi'].includes(actor)) return { [`seed_${actor}_session_id`]: value }
+    return {}
   }
 
   const handleSubmit = () => {
@@ -895,11 +896,20 @@ function CreateTaskModal({
       localStorage.setItem('buddy.lastReviewer', reviewer)
     } catch {}
     const launchers = normalizedGlobalSettings.launchers ?? {}
-    const launcherFor = (actor: Actor) => ({
-      command: launchers[actor]?.command ?? defaultLauncherFor(actor).command,
-      env: { ...(launchers[actor]?.env ?? {}) },
-      timeout_seconds: launchers[actor]?.timeout_seconds ?? defaultLauncherFor(actor).timeout_seconds
-    })
+    const taskLaunchers = Object.fromEntries(Object.entries(launchers).map(([id, launcher]) => [
+      id,
+      {
+        ...launcher,
+        env: { ...launcher.env },
+        ...(launcher.cursor
+          ? { cursor: { ...launcher.cursor, extra_args: [...(launcher.cursor.extra_args ?? [])] } }
+          : {})
+      }
+    ]))
+    const seedAgentSessions = Object.fromEntries([
+      [implementer, implementerSession.trim()],
+      [reviewer, reviewerSession.trim()]
+    ].filter((entry): entry is [string, string] => Boolean(entry[1])))
     const settings: Record<string, unknown> = {
       protocol_version: normalizedGlobalSettings.protocol_version ?? '1',
       flow_policy: 'claude_then_codex',
@@ -907,14 +917,10 @@ function CreateTaskModal({
       implementer_actor: implementer,
       reviewer_actor: reviewer,
       max_consecutive_failures: normalizedGlobalSettings.max_consecutive_failures ?? 10,
-      launchers: {
-        claude: launcherFor('claude'),
-        codex: launcherFor('codex'),
-        opencode: launcherFor('opencode'),
-        kimi: launcherFor('kimi')
-      },
-      ...seedFor(implementer, implementerSession),
-      ...seedFor(reviewer, reviewerSession)
+      launchers: taskLaunchers,
+      seed_agent_sessions: seedAgentSessions,
+      ...legacySeedFor(implementer, implementerSession),
+      ...legacySeedFor(reviewer, reviewerSession)
     }
     onCreate(taskId.trim(), taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined, executionMode)
   }
@@ -928,7 +934,30 @@ function CreateTaskModal({
     }
   }
 
-  const actorOptions: Actor[] = ['claude', 'codex', 'opencode', 'kimi']
+  const actorOptions: Actor[] = Object.entries(normalizedGlobalSettings.launchers ?? {})
+    .filter(([actor, launcher]) => {
+      if (!launcher.command.trim()) return false
+      if (['claude', 'codex', 'opencode', 'kimi'].includes(actor)) return true
+      return Boolean(launcher.backend && launcher.backend !== 'auto' && launcher.backend !== 'contract')
+    })
+    .map(([actor]) => actor)
+
+  useEffect(() => {
+    if (!actorOptions.length) return
+    const nextImplementer = actorOptions.includes(implementer) ? implementer : actorOptions[0]
+    const nextReviewer = actorOptions.includes(reviewer) && reviewer !== nextImplementer
+      ? reviewer
+      : (actorOptions.find((actor) => actor !== nextImplementer) ?? actorOptions[0])
+    if (nextImplementer !== implementer) setImplementer(nextImplementer)
+    if (nextReviewer !== reviewer) setReviewer(nextReviewer)
+  }, [actorOptions.join('\0'), implementer, reviewer])
+
+  const optionLabel = (actor: string) => {
+    const configured = normalizedGlobalSettings.launchers?.[actor]?.display_name?.trim()
+    if (configured) return configured
+    const key = ACTOR_LABEL_KEY[actor]
+    return key ? t(key) : actorDisplayName(actor, normalizedGlobalSettings)
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-buddy-modal onKeyDown={(e) => {
@@ -1093,11 +1122,14 @@ function CreateTaskModal({
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.implementer')}</label>
               <select
                 value={implementer}
-                onChange={(e) => setImplementer(e.target.value as Actor)}
+                onChange={(e) => {
+                  setImplementer(e.target.value as Actor)
+                  setImplementerSession('')
+                }}
                 className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
               >
                 {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  <option key={a} value={a}>{optionLabel(a)}</option>
                 ))}
               </select>
             </div>
@@ -1105,11 +1137,14 @@ function CreateTaskModal({
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.reviewer')}</label>
               <select
                 value={reviewer}
-                onChange={(e) => setReviewer(e.target.value as Actor)}
+                onChange={(e) => {
+                  setReviewer(e.target.value as Actor)
+                  setReviewerSession('')
+                }}
                 className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
               >
                 {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  <option key={a} value={a}>{optionLabel(a)}</option>
                 ))}
               </select>
             </div>

@@ -100,7 +100,7 @@ describe('BuddyStore writes', () => {
 
     const taskDir = join(root, 'workspaces', result.workspace_key, 'tasks', 'demo')
     const settings = JSON.parse(await readFile(join(taskDir, 'settings.json'), 'utf8'))
-    expect(settings.launchers.codex).toEqual({
+    expect(settings.launchers.codex).toMatchObject({
       command: 'codex --profile native',
       env: { BUDDY_MODE: 'native' },
       timeout_seconds: 123

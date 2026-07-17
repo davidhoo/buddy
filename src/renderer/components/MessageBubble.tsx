@@ -21,6 +21,8 @@ const roleClasses: Record<string, string> = {
   codex: 'msg-codex',
   opencode: 'msg-opencode',
   kimi: 'msg-kimi',
+  cursor: 'msg-cursor',
+  'cursor-agent': 'msg-cursor',
   system: 'msg-system'
 }
 
@@ -231,11 +233,14 @@ export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck,
   }
 
   const html = renderMarkdown(bodyText)
-  const cls = roleClasses[entry.role] || 'msg-default'
+  const cls = roleClasses[entry.role]
+    || (entry.meta?.backend === 'cursor' || entry.role.startsWith('cursor-agent-') ? 'msg-cursor' : 'msg-default')
   const metaText = formatMessageMeta(entry, lang)
 
   const roleLabel = isRoundNotice || isHealthCheck
     ? t('actor.systemNotice')
+    : typeof entry.meta?.display_name === 'string' && entry.meta.display_name
+      ? entry.meta.display_name
     : ACTOR_LABEL_KEY[entry.role]
       ? t(ACTOR_LABEL_KEY[entry.role])
       : entry.role

@@ -6,6 +6,7 @@ import type {
   Failure,
   GlobalSettings,
   InstructionQueueItem,
+  Launcher,
   SendMessageInput,
   StartTaskInput,
   TaskSettings,
@@ -20,13 +21,6 @@ import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForS
 import { BuddyStore } from './store'
 import { BuddyEventBus } from './events'
 import type { TaskNotifier } from './notifications'
-
-const ACTOR_STATUS: Record<string, TaskState['status']> = {
-  claude: 'RUNNING_CLAUDE',
-  codex: 'RUNNING_CODEX',
-  opencode: 'RUNNING_OPENCODE',
-  kimi: 'RUNNING_KIMI'
-}
 
 const PING_TIMEOUT_SECONDS = 120
 
@@ -131,7 +125,8 @@ export class BuddyRunner {
       ?? (detail.state.status === 'FAILED' ? (detail.state.latest_failure?.actor ?? detail.state.last_error?.actor) : undefined)
       ?? detail.state.next_actor
       ?? 'claude'
-    const status = ACTOR_STATUS[actor]
+    const launcher = detail.settings.launchers[actor]
+    const status = statusForActor(actor, launcher)
     if (!status) throw new Error(`Unsupported actor: ${actor}`)
     if (!canStartFrom(detail.state.status)) {
       throw new Error(`Cannot start task from ${detail.state.status}`)
@@ -343,6 +338,10 @@ export class BuddyRunner {
   ): Promise<{ exitCode: number | null; signal: string | null }> {
     const needsPty = kindNeedsPty(command.kind)
     const parserActor = parserActorForKind(actor, command.kind)
+    const parseOptions = {
+      cursorPartialOutput: command.kind === 'native_cursor'
+        && command.args.includes('--stream-partial-output')
+    }
 
     if (needsPty) {
       return runLauncherWithPty({
@@ -356,7 +355,7 @@ export class BuddyRunner {
             outputLines.push(line)
             if (this.events) {
               try {
-                const parsed = parseActorLine(parserActor, line)
+                const parsed = parseActorLine(parserActor, line, parseOptions)
                 if (parsed.text) {
                   this.events.publish({
                     workspace_key: workspaceKey,
@@ -389,7 +388,7 @@ export class BuddyRunner {
         outputLines.push(line)
         if (this.events) {
           try {
-            const parsed = parseActorLine(parserActor, line)
+            const parsed = parseActorLine(parserActor, line, parseOptions)
             if (parsed.text) {
               this.events.publish({
                 workspace_key: workspaceKey,
@@ -474,7 +473,7 @@ export class BuddyRunner {
     await writeFile(promptFile, prompt)
 
     const cwd = await existingCwd(detail.state.repo_root)
-    const commandKind = commandKindFor(actor, launcher.command)
+    const commandKind = commandKindFor(actor, launcher.command, launcher.backend)
     const command = buildLauncherCommand({
       actor,
       command: launcher.command,
@@ -485,7 +484,10 @@ export class BuddyRunner {
       outputFile,
       repoRoot: cwd,
       taskDir: taskDirectory,
-      runId
+      runId,
+      backend: launcher.backend,
+      model: launcher.model,
+      cursor: launcher.cursor
     })
 
     const outputLines: string[] = []
@@ -500,8 +502,13 @@ export class BuddyRunner {
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
-      const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      const cursorPartialOutput = command.kind === 'native_cursor' && launcher.cursor?.stream_partial_output === true
+      const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText, cursorPartialOutput)
+      const parsedLines = parseActorEvents(
+        parserActorForKind(actor, command.kind),
+        rawEvents,
+        { cursorPartialOutput }
+      )
       const stderrText = stderrLines.join('\n').trim()
 
       if (result.exitCode !== 0) {
@@ -580,6 +587,7 @@ export class BuddyRunner {
     let failedReason: string | undefined
     const finalResults = { ...runningResults }
     const sessionUpdates: Partial<TaskState> = {}
+    const agentSessionUpdates: Record<string, string> = {}
 
     for (let i = 0; i < actors.length; i++) {
       const actor = actors[i]
@@ -593,6 +601,7 @@ export class BuddyRunner {
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
         const displayId = actor === 'codex' ? (tid ?? sid) : sid
+        if (displayId) agentSessionUpdates[actor] = displayId
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'health_check.actor_passed',
           actor,
@@ -621,6 +630,7 @@ export class BuddyRunner {
         status: 'READY',
         health_check: null,
         ...sessionUpdates,
+        agent_sessions: { ...(state.agent_sessions ?? {}), ...agentSessionUpdates },
         updated_at: new Date().toISOString()
       }))
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -633,12 +643,12 @@ export class BuddyRunner {
         'system',
         'health_check.passed',
         { kind: 'health_check', actors, session_ids: actors.map(a => {
-          const sid = a === 'codex'
+          const legacySid = a === 'codex'
             ? (sessionUpdates.codex_thread_id)
             : (a === 'claude' ? sessionUpdates.claude_session_id
               : a === 'opencode' ? sessionUpdates.opencode_session_id
                 : sessionUpdates.kimi_session_id)
-          return { actor: a, session_id: (sid as string | undefined) ?? null }
+          return { actor: a, session_id: agentSessionUpdates[a] ?? (legacySid as string | undefined) ?? null }
         }) }
       )
 
@@ -663,6 +673,7 @@ export class BuddyRunner {
         last_error: failureRecord,
         health_check: { actors: finalResults, failed_actor: failedActor, failed_reason: failedReason },
         ...sessionUpdates,
+        agent_sessions: { ...(state.agent_sessions ?? {}), ...agentSessionUpdates },
         updated_at: failedAt
       }))
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -750,7 +761,7 @@ export class BuddyRunner {
     await writeFile(promptFile, prompt)
     const cwd = await existingCwd(detail.state.repo_root)
     const existingSessionId = sessionIdForActor(actor, detail.state, detail.settings)
-    const commandKind = commandKindFor(actor, launcher.command)
+    const commandKind = commandKindFor(actor, launcher.command, launcher.backend)
     const sessionId = actor === 'kimi' && commandKind === 'native_kimi'
       ? existingSessionId
       : (existingSessionId ?? undefined)
@@ -765,7 +776,10 @@ export class BuddyRunner {
       repoRoot: cwd,
       taskDir: taskDirectory,
       runId,
-      sessionId
+      sessionId,
+      backend: launcher.backend,
+      model: launcher.model,
+      cursor: launcher.cursor
     })
     const outputLines: string[] = []
     const stderrLines: string[] = []
@@ -787,8 +801,13 @@ export class BuddyRunner {
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
-      let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
-      const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      const cursorPartialOutput = command.kind === 'native_cursor' && launcher.cursor?.stream_partial_output === true
+      let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText, cursorPartialOutput)
+      const parsedLines = parseActorEvents(
+        parserActorForKind(actor, command.kind),
+        rawEvents,
+        { cursorPartialOutput }
+      )
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
       }
@@ -870,7 +889,7 @@ export class BuddyRunner {
             taskId,
             workspaceKey,
             'system',
-            `${actorDisplayName(actor)} 达到上下文窗口限制，正在重置会话并注入精简上下文 (${compactRetries + 1}/${maxCompactRetries})...`,
+            `${actorDisplayName(actor, detail.settings)} 达到上下文窗口限制，正在重置会话并注入精简上下文 (${compactRetries + 1}/${maxCompactRetries})...`,
             { kind: 'session_reset', reset_attempt: compactRetries + 1 }
           )
           await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
@@ -900,7 +919,7 @@ export class BuddyRunner {
           taskId,
           workspaceKey,
           'system',
-          `${actorDisplayName(actor)} 检测到自动升级，等待升级完成后重试 (${upgradeRetries + 1}/${maxUpgradeRetries})...`,
+          `${actorDisplayName(actor, detail.settings)} 检测到自动升级，等待升级完成后重试 (${upgradeRetries + 1}/${maxUpgradeRetries})...`,
           { kind: 'upgrade_retry', retry_attempt: upgradeRetries + 1 }
         )
         await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
@@ -969,7 +988,9 @@ export class BuddyRunner {
       round,
       run_id: runId,
       elapsed_ms: elapsedMs,
-      buddy_type: buddyType
+      buddy_type: buddyType,
+      backend: backendForLauncher(actor, detail.settings.launchers[actor]),
+      display_name: detail.settings.launchers[actor]?.display_name
     })
     await this.store.appendTaskEvent(taskId, workspaceKey, {
       type: 'actor.completed',
@@ -999,6 +1020,10 @@ export class BuddyRunner {
       if (actor === 'codex' && threadId) next.codex_thread_id = threadId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
+      const stableSessionId = actor === 'codex' ? (threadId ?? sessionId) : sessionId
+      if (stableSessionId) {
+        next.agent_sessions = { ...(state.agent_sessions ?? {}), [actor]: stableSessionId }
+      }
 
       if (breakConfirmed) {
         return {
@@ -1042,7 +1067,7 @@ export class BuddyRunner {
           taskId,
           workspaceKey,
           'system',
-          `${actorDisplayName(pendingBreak?.actor)} 和 ${actorDisplayName(actor)} 均确认当前阶段完成，但指令队列中仍有待执行指令，继续执行。`,
+          `${actorDisplayName(pendingBreak?.actor, detail.settings)} 和 ${actorDisplayName(actor, detail.settings)} 均确认当前阶段完成，但指令队列中仍有待执行指令，继续执行。`,
           { kind: 'round_notice', round }
         )
         // Fall through to auto-start logic (skip duplicate actor.finished)
@@ -1052,7 +1077,7 @@ export class BuddyRunner {
           taskId,
           workspaceKey,
           'system',
-          `${actorDisplayName(pendingBreak?.actor)} 和 ${actorDisplayName(actor)} 均确认任务完成，任务结束。`,
+          `${actorDisplayName(pendingBreak?.actor, detail.settings)} 和 ${actorDisplayName(actor, detail.settings)} 均确认任务完成，任务结束。`,
           { kind: 'round_notice', round, done_reason: 'dual_break_confirmed', ...(taskStats ? { stats: taskStats } : {}) }
         )
         await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1081,7 +1106,7 @@ export class BuddyRunner {
         taskId,
         workspaceKey,
         'system',
-        `${actorDisplayName(actor)} 请求结束任务，等待 ${actorDisplayName(nextActor)} 确认。`,
+        `${actorDisplayName(actor, detail.settings)} 请求结束任务，等待 ${actorDisplayName(nextActor, detail.settings)} 确认。`,
         { kind: 'round_notice', round }
       )
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1106,7 +1131,7 @@ export class BuddyRunner {
         taskId,
         workspaceKey,
         'system',
-        `${actorDisplayName(actor)} 认为任务尚未完成，${actorDisplayName(pendingBreak?.actor)} 的结束请求已撤回。`,
+        `${actorDisplayName(actor, detail.settings)} 认为任务尚未完成，${actorDisplayName(pendingBreak?.actor, detail.settings)} 的结束请求已撤回。`,
         { kind: 'round_notice', round }
       )
     }
@@ -1124,7 +1149,7 @@ export class BuddyRunner {
         taskId,
         workspaceKey,
         'system',
-        `${actorDisplayName(actor)} 已达到轮次上限，暂停等待确认。`,
+        `${actorDisplayName(actor, detail.settings)} 已达到轮次上限，暂停等待确认。`,
         { kind: 'round_notice', round }
       )
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1279,8 +1304,6 @@ export class BuddyRunner {
       : actor === 'kimi' ? 'kimi_session_id'
       : null
 
-    if (!sessionKey) return
-
     // Try to generate a summary via LLM first; fall back to simple truncation
     const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
     const cwd = await existingCwd(detail.state.repo_root)
@@ -1307,7 +1330,8 @@ export class BuddyRunner {
       contextSent[actor] = false
       return {
         ...state,
-        [sessionKey]: null,
+        ...(sessionKey ? { [sessionKey]: null } : {}),
+        agent_sessions: { ...(state.agent_sessions ?? {}), [actor]: null },
         context_sent: contextSent
       }
     })
@@ -1331,7 +1355,7 @@ export class BuddyRunner {
       run_id: `reset_${Date.now()}`,
       payload: {
         reason: 'context_window_limit',
-        session_key: sessionKey,
+        session_key: sessionKey ?? `agent_sessions.${actor}`,
         summary_method: summaryContext ? 'llm' : 'truncation'
       }
     })
@@ -1348,7 +1372,7 @@ export class BuddyRunner {
     actor: string,
     detail: { state: TaskState; task_text: string; context_text: string; transcript: TranscriptEntry[] },
     cwd: string,
-    launcher: { command: string; env: Record<string, string>; timeout_seconds: number }
+    launcher: Launcher
   ): Promise<string | null> {
     // Build the summarization prompt
     const summarizePrompt = buildSummarizePrompt(
@@ -1389,7 +1413,10 @@ export class BuddyRunner {
       promptFile: summarizePromptFile,
       repoRoot: cwd,
       taskDir: taskDirectory,
-      runId: `summarize_${Date.now()}`
+      runId: `summarize_${Date.now()}`,
+      backend: launcher.backend,
+      model: launcher.model,
+      cursor: launcher.cursor
     })
 
     const outputLines: string[] = []
@@ -1626,10 +1653,11 @@ function buildCompactContextFallback(
 
 export function needsHealthCheck(state: TaskState, settings: TaskSettings): boolean {
   if (state.round > 0) return false
-  // A prior health check that succeeded means no ping is needed. A failed health check
-  // leaves health_check populated with a failed actor, which we DO want to retry — so only
-  // bail out when the stored result has no failed actor (i.e. it was a clean pass).
-  if (state.health_check && !state.health_check.failed_actor) return false
+  // A partial health-check failure may already have persisted the passing
+  // actor's session. The recorded failure must take precedence over sessions
+  // so Retry performs connectivity checks again.
+  if (state.health_check?.failed_actor) return true
+  if (state.health_check) return false
   const implementer = settings.implementer_actor
     ?? (settings.role_mode === 'codex_implements' ? 'codex' : 'claude')
   const reviewer = settings.reviewer_actor
@@ -1639,7 +1667,31 @@ export function needsHealthCheck(state: TaskState, settings: TaskSettings): bool
   return !implSession && !revSession
 }
 
+function statusForActor(actor: string, launcher?: Launcher): TaskState['status'] | undefined {
+  const kind = commandKindFor(actor, launcher?.command ?? '', launcher?.backend)
+  if (kind === 'native_claude') return 'RUNNING_CLAUDE'
+  if (kind === 'native_codex') return 'RUNNING_CODEX'
+  if (kind === 'native_opencode') return 'RUNNING_OPENCODE'
+  if (kind === 'native_kimi') return 'RUNNING_KIMI'
+  if (kind === 'native_cursor') return 'RUNNING_CURSOR'
+  if (actor === 'claude') return 'RUNNING_CLAUDE'
+  if (actor === 'codex') return 'RUNNING_CODEX'
+  if (actor === 'opencode') return 'RUNNING_OPENCODE'
+  if (actor === 'kimi') return 'RUNNING_KIMI'
+  return undefined
+}
+
+function backendForLauncher(actor: string, launcher?: Launcher): string {
+  const kind = commandKindFor(actor, launcher?.command ?? '', launcher?.backend)
+  return kind.startsWith('native_') ? kind.slice('native_'.length) : 'contract'
+}
+
 function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<TaskSettings>): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(state.agent_sessions ?? {}, actor)) {
+    return state.agent_sessions?.[actor] ?? undefined
+  }
+  const seededProfileSession = settings?.seed_agent_sessions?.[actor]
+  if (seededProfileSession) return seededProfileSession
   if (actor === 'claude') return state.claude_session_id ?? stringSetting(settings, 'seed_claude_session_id')
   if (actor === 'codex') return state.codex_thread_id ?? stringSetting(settings, 'seed_codex_thread_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
@@ -1653,8 +1705,7 @@ function stringSetting(settings: Partial<TaskSettings> | undefined, key: keyof T
 }
 
 function normalizeActorRole(actor: string): TranscriptEntry['role'] {
-  if (actor === 'claude' || actor === 'codex' || actor === 'opencode' || actor === 'kimi') return actor
-  return 'system'
+  return actor
 }
 
 export function lastValue(values: Array<string | undefined>): string | undefined {
@@ -1725,11 +1776,12 @@ export async function collectOutputText(
   actor: string,
   kind: LauncherCommandKind,
   outputFile: string,
-  stdoutText: string
+  stdoutText: string,
+  cursorPartialOutput = false
 ): Promise<string> {
-  if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi') {
+  if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi' || kind === 'native_cursor') {
     const parserActor = parserActorForKind(actor, kind)
-    let output = extractActorOutput(parserActor, stdoutText)
+    let output = extractActorOutput(parserActor, stdoutText, { cursorPartialOutput })
     let message = parseBuddyMessage(output)
 
     // Fallback: some models (e.g. DeepSeek via OpenCode/Kimi) output buddy JSON
@@ -1774,7 +1826,11 @@ export async function collectOutputText(
   }
 
   if (await fileExists(outputFile)) return readFile(outputFile, 'utf8')
-  const extracted = extractActorOutput(parserActorForKind(actor, kind), stdoutText)
+  const extracted = extractActorOutput(
+    parserActorForKind(actor, kind),
+    stdoutText,
+    { cursorPartialOutput }
+  )
   return extracted || stdoutText
 }
 

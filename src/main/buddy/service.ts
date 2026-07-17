@@ -7,9 +7,12 @@ import type {
   CountdownInput,
   CreateTaskInput,
   CreateTaskResult,
+  CursorModelCatalog,
+  CursorModelDiscoveryInput,
   Event,
   GlobalSettings,
   InstructionQueueItem,
+  Launcher,
   RoundEventSummary,
   SendMessageInput,
   TestLauncherResult,
@@ -38,6 +41,7 @@ import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind,
 import { buildPingPrompt } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
+import { discoverCursorModels } from './cursor-models'
 
 export interface BuddyCoreServiceOptions {
   dataRoot?: string
@@ -181,6 +185,10 @@ export class BuddyCoreService {
     return this.store.updateGlobalSettings(settings)
   }
 
+  listCursorModels(input?: CursorModelDiscoveryInput): Promise<CursorModelCatalog> {
+    return discoverCursorModels(input)
+  }
+
   gitStatus(repoRoot: string): Promise<GitStatusResult> {
     return getGitStatus(repoRoot)
   }
@@ -229,8 +237,19 @@ export class BuddyCoreService {
     await this.coordinator?.rebuildAndReconcileAll()
   }
 
-  async testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> {
+  async testLauncher(
+    actor: string,
+    command: string,
+    env?: Record<string, string>,
+    options: Partial<Launcher> = {}
+  ): Promise<TestLauncherResult> {
     const PING_TIMEOUT_SECONDS = 120
+    const launcher: Launcher = {
+      command,
+      env: { ...env },
+      timeout_seconds: options.timeout_seconds ?? PING_TIMEOUT_SECONDS,
+      ...options
+    }
 
     // Phase 1: Tool check - verify the command exists and can be spawned
     try {
@@ -283,7 +302,7 @@ export class BuddyCoreService {
       const eventFile = join(testDir, `${runId}-events.jsonl`)
       await writeFile(promptFile, prompt)
 
-      const commandKind = commandKindFor(actor, command)
+      const commandKind = commandKindFor(actor, command, launcher.backend)
       const launcherCommand = buildLauncherCommand({
         actor,
         command,
@@ -294,7 +313,10 @@ export class BuddyCoreService {
         outputFile,
         repoRoot: testDir,
         taskDir: testDir,
-        runId
+        runId,
+        backend: launcher.backend,
+        model: launcher.model,
+        cursor: launcher.cursor
       })
 
       const outputLines: string[] = []
@@ -332,8 +354,20 @@ export class BuddyCoreService {
 
         const stdoutText = outputLines.join('\n')
         const rawEvents = await collectRawEvents(eventFile, stdoutText, launcherCommand.kind)
-        const outputText = await collectOutputText(actor, launcherCommand.kind, outputFile, stdoutText)
-        const parsedLines = parseActorEvents(parserActorForKind(actor, launcherCommand.kind), rawEvents)
+        const cursorPartialOutput = launcherCommand.kind === 'native_cursor'
+          && launcher.cursor?.stream_partial_output === true
+        const outputText = await collectOutputText(
+          actor,
+          launcherCommand.kind,
+          outputFile,
+          stdoutText,
+          cursorPartialOutput
+        )
+        const parsedLines = parseActorEvents(
+          parserActorForKind(actor, launcherCommand.kind),
+          rawEvents,
+          { cursorPartialOutput }
+        )
 
         if (result.exitCode !== 0) {
           const stderrText = stderrLines.join('\n').trim()

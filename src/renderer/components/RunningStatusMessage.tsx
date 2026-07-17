@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, PanelBottomOpen } from 'lucide-react'
-import { ACTOR_LABEL_KEY } from '../lib/format'
+import type { TaskSettings } from '../../shared/types'
+import { ACTOR_LABEL_KEY, actorColorVar, actorDisplayName } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
 import type { ActorStreamLine } from '../hooks/useBuddy'
 
@@ -63,19 +64,16 @@ function formatElapsed(startedAt: string): string {
   return `${hour}h ${remainMin}m`
 }
 
-function actorColorVar(actor: string): string {
-  if (['claude', 'codex', 'opencode', 'kimi'].includes(actor)) return `var(--actor-${actor})`
-  return 'var(--border)'
-}
-
 export function RunningStatusMessage({
   actor,
   startedAt,
+  settings,
   expanded,
   onToggleExpand
 }: {
   actor: string
   startedAt: string
+  settings?: TaskSettings | null
   round?: number
   expanded?: boolean
   onToggleExpand?: () => void
@@ -104,13 +102,15 @@ export function RunningStatusMessage({
   }, [startedAt, lang])
 
   const metaText = t('running.metaSuffix', { elapsed })
-  const actorLabel = ACTOR_LABEL_KEY[actor] ? t(ACTOR_LABEL_KEY[actor]) : actor
+  const actorLabel = settings?.launchers?.[actor]?.display_name
+    || (ACTOR_LABEL_KEY[actor] ? t(ACTOR_LABEL_KEY[actor]) : actorDisplayName(actor, settings))
+  const color = actorColorVar(actor, settings)
 
   return (
     <div className="flex justify-start">
-      <div className={`message w-full running-status ${expanded ? 'running-status-expanded' : 'mb-3'}`} style={{ '--actor-color': actorColorVar(actor), borderColor: actorColorVar(actor) } as React.CSSProperties}>
+      <div className={`message w-full running-status ${expanded ? 'running-status-expanded' : 'mb-3'}`} style={{ '--actor-color': color, borderColor: color } as React.CSSProperties}>
         <div className="message-head">
-          <span className="role" style={{ color: actorColorVar(actor) }}>{actorLabel}</span>
+          <span className="role" style={{ color }}>{actorLabel}</span>
           <div className="flex items-center gap-2">
             <span>{metaText}</span>
             {onToggleExpand && (
@@ -139,11 +139,13 @@ export function RunningStatusMessage({
 
 export function RunningDetailPanel({
   actor,
+  settings,
   streamLines,
   lastMessage,
   onCollapse
 }: {
   actor: string
+  settings?: TaskSettings | null
   streamLines: ActorStreamLine[]
   lastMessage?: string
   onCollapse?: () => void
@@ -181,7 +183,7 @@ export function RunningDetailPanel({
   }, [streamLines])
 
   return (
-    <div className="running-detail-panel" style={{ '--actor-color': actorColorVar(actor) } as React.CSSProperties}>
+    <div className="running-detail-panel" style={{ '--actor-color': actorColorVar(actor, settings) } as React.CSSProperties}>
       <div ref={scrollRef} className="running-detail-content">
         {streamLines.length === 0 ? (
           lastMessage ? (

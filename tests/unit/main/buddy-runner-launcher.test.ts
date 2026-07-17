@@ -44,6 +44,62 @@ describe('BuddyRunner with fake launcher', () => {
     expect(transcriptRow.meta.elapsed_ms).toEqual(expect.any(Number))
   })
 
+  it('runs a named Cursor Agent profile with its own model and resumable session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-cursor-'))
+    const fake = join(root, 'agent')
+    await writeFile(fake, [
+      '#!/usr/bin/env node',
+      "const args = process.argv.slice(2)",
+      "if (!args.includes('--model') || !args.includes('composer-2.5')) process.exit(11)",
+      "if (!args.includes('--resume') || !args.includes('cursor-seed')) process.exit(12)",
+      "const session_id = 'cursor-next'",
+      "console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id, model: 'Composer 2.5' }))",
+      "console.log(JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '{\"type\":\"chat\",\"content\":\"cursor output\"}' }] }, session_id }))",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: '{\"type\":\"chat\",\"content\":\"cursor output\"}', session_id }))"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'cursor-demo',
+      repo_root: root,
+      settings: {
+        implementer_actor: 'cursor-agent',
+        reviewer_actor: 'codex',
+        seed_agent_sessions: { 'cursor-agent': 'cursor-seed' },
+        launchers: {
+          'cursor-agent': {
+            command: fake,
+            env: {},
+            timeout_seconds: 5,
+            backend: 'cursor',
+            display_name: 'Cursor Implementer',
+            model: 'composer-2.5',
+            cursor: { force: true, trust: true }
+          }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('cursor-demo', {
+      workspace_key: created.workspace_key,
+      actor: 'cursor-agent'
+    })
+
+    const detail = await store.getTaskDetail('cursor-demo', created.workspace_key)
+    expect(detail.state.status).toBe('PAUSED')
+    expect(detail.state.agent_sessions?.['cursor-agent']).toBe('cursor-next')
+    expect(detail.transcript).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'cursor-agent',
+        content: 'cursor output',
+        meta: expect.objectContaining({ backend: 'cursor', display_name: 'Cursor Implementer' })
+      })
+    ]))
+  })
+
   it('runs custom launchers with buddy contract flags and environment', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-contract-'))
     const fake = join(root, 'contract-actor.js')

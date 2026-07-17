@@ -10,6 +10,8 @@ export const ACTOR_LABEL_KEY: Record<string, TranslationKey> = {
   codex: 'actor.codex',
   opencode: 'actor.opencode',
   kimi: 'actor.kimi',
+  cursor: 'actor.cursor',
+  'cursor-agent': 'actor.cursor',
   human: 'actor.human',
   system: 'actor.system'
 }
@@ -29,7 +31,9 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
-  kimi: 'Kimi Code'
+  kimi: 'Kimi Code',
+  cursor: 'Cursor Agent',
+  'cursor-agent': 'Cursor Agent'
 }
 
 const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
@@ -74,7 +78,7 @@ export function eventTypeLabel(type: string, lang: Language): string {
   return key ? translate(lang, key) : type
 }
 
-export type Actor = 'claude' | 'codex' | 'opencode' | 'kimi'
+export type Actor = string
 
 export function taskActors(settings: TaskSettings | null | undefined): {
   impl: Actor
@@ -82,9 +86,29 @@ export function taskActors(settings: TaskSettings | null | undefined): {
   participants: Actor[]
 } {
   const s = settings || ({} as TaskSettings)
-  const impl = (s.implementer_actor as Actor) || (s.role_mode === 'codex_implements' ? 'codex' : 'claude')
-  const rev = (s.reviewer_actor as Actor) || (s.role_mode === 'codex_implements' ? 'claude' : 'codex')
+  const impl = s.implementer_actor || (s.role_mode === 'codex_implements' ? 'codex' : 'claude')
+  const rev = s.reviewer_actor || (s.role_mode === 'codex_implements' ? 'claude' : 'codex')
   return { impl, rev, participants: [impl, rev] }
+}
+
+export function actorDisplayName(actor: string, settings?: { launchers?: TaskSettings['launchers'] } | null): string {
+  return settings?.launchers?.[actor]?.display_name?.trim()
+    || ACTOR_DISPLAY_NAME[actor]
+    || actor
+}
+
+export function actorBackend(actor: string, settings?: { launchers?: TaskSettings['launchers'] } | null): string {
+  const configured = settings?.launchers?.[actor]?.backend
+  if (configured && configured !== 'auto') return configured
+  if (actor === 'cursor' || actor === 'cursor-agent' || actor.startsWith('cursor-agent-')) return 'cursor'
+  return actor
+}
+
+export function actorColorVar(actor: string, settings?: { launchers?: TaskSettings['launchers'] } | null): string {
+  const backend = actorBackend(actor, settings)
+  return ['claude', 'codex', 'opencode', 'kimi', 'cursor'].includes(backend)
+    ? `var(--actor-${backend})`
+    : 'var(--fg-muted)'
 }
 
 export function shortId(value: string | undefined | null): string {

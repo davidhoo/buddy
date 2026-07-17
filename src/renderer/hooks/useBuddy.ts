@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
+import type { CursorModelDiscoveryInput, GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, Launcher, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
 import type { TestLauncherResult } from '../../shared/types'
 
 export function useHealthCheck() {
@@ -210,10 +210,27 @@ export function useUpdateGlobalSettings() {
   })
 }
 
+export function useUpdateGlobalSettingsPatch() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ base, patch }: { base: GlobalSettings; patch: Partial<GlobalSettings> }) =>
+      api.updateGlobalSettingsPatch(base, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bootstrap'] })
+    }
+  })
+}
+
 export function useTestLauncher() {
   return useMutation({
-    mutationFn: ({ actor, command, env }: { actor: string; command: string; env?: Record<string, string> }) =>
-      api.testLauncher(actor, command, env)
+    mutationFn: ({ actor, command, env, options }: { actor: string; command: string; env?: Record<string, string>; options?: Partial<Launcher> }) =>
+      api.testLauncher(actor, command, env, options)
+  })
+}
+
+export function useListCursorModels() {
+  return useMutation({
+    mutationFn: (input?: CursorModelDiscoveryInput) => api.listCursorModels(input)
   })
 }
 

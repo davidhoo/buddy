@@ -24,6 +24,7 @@ describe('registerBuddyHandlers', () => {
       getRoundEvents: vi.fn(),
       getTaskStats: vi.fn(),
       updateGlobalSettings: vi.fn(),
+      listCursorModels: vi.fn(),
       gitStatus: vi.fn(),
       gitStageAll: vi.fn(),
       gitCommitAndPush: vi.fn(),
@@ -38,6 +39,7 @@ describe('registerBuddyHandlers', () => {
 
     expect(handle).toHaveBeenCalledWith('buddy:bootstrap', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:startTask', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(26)
+    expect(handle).toHaveBeenCalledWith('buddy:listCursorModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledTimes(27)
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseEventLine, parseTaskState } from '../../../src/main/buddy/schemas'
+import { parseEventLine, parseGlobalSettings, parseTaskSettings, parseTaskState } from '../../../src/main/buddy/schemas'
 
 describe('buddy schemas', () => {
   it('parses task state with optional fields', () => {
@@ -109,6 +109,37 @@ describe('buddy schemas', () => {
 
     expect(state.countdown?.remaining).toBe(0)
     expect(state.countdown?.default_next_actor).toBe('claude')
+  })
+
+  it('parses configurable Cursor profiles, sessions, and prompt presets', () => {
+    const state = parseTaskState({
+      status: 'RUNNING_CURSOR',
+      round: 1,
+      next_actor: 'cursor-agent-2',
+      agent_sessions: { 'cursor-agent': 'session-1', 'cursor-agent-2': null }
+    })
+    const settings = parseTaskSettings({
+      launchers: {
+        'cursor-agent-2': {
+          command: 'agent',
+          backend: 'cursor',
+          model: 'composer-2.5',
+          env: {},
+          timeout_seconds: 7200,
+          cursor: { force: true, trust: true, mode: 'agent' }
+        }
+      },
+      seed_agent_sessions: { 'cursor-agent-2': 'seed-2' }
+    })
+    const global = parseGlobalSettings({
+      launchers: {},
+      prompt_presets: [{ id: 'review', name: 'Review', prompt: 'Review carefully.' }]
+    })
+
+    expect(state.agent_sessions?.['cursor-agent']).toBe('session-1')
+    expect(settings.launchers['cursor-agent-2'].model).toBe('composer-2.5')
+    expect(settings.seed_agent_sessions['cursor-agent-2']).toBe('seed-2')
+    expect(global.prompt_presets[0].id).toBe('review')
   })
 
   it('parses event json lines', () => {

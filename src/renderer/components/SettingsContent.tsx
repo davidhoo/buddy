@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { HexColorPicker } from 'react-colorful'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutUpLeft, Command, CornerDownLeft, Delete, Monitor, Moon, Option, RotateCcw, Search, Space, Sun } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutUpLeft, Command, CornerDownLeft, Delete, Monitor, Moon, Option, Plus, RefreshCw, RotateCcw, Search, Space, Sun, Trash2 } from 'lucide-react'
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
-import { useUpdateGlobalSettings } from '../hooks/useBuddy'
+import { useListCursorModels, useUpdateGlobalSettingsPatch } from '../hooks/useBuddy'
 import { useTestLauncher } from '../hooks/useBuddy'
 import type { TestLauncherResult } from '../../shared/types'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
@@ -25,7 +25,7 @@ import {
   eventToBinding,
   bindingsEqual,
 } from '../lib/keyboard'
-import type { GlobalSettings, Launcher } from '../../shared/types'
+import type { GlobalSettings, Launcher, PromptPreset } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 
@@ -39,6 +39,14 @@ interface SettingsContentProps {
 type LauncherInfo = { title: string; label: string; placeholder: string; hint: React.ReactNode }
 
 function launcherInfoFor(actor: string, t: TFunction): LauncherInfo {
+  if (actor === 'cursor-agent' || actor.startsWith('cursor-agent-')) {
+    return {
+      title: t('settings.launcher.cursor.title'),
+      label: t('settings.launcher.cursor.label'),
+      placeholder: 'agent',
+      hint: <HintWithCode template={t('settings.launcher.cursor.hint')} />
+    }
+  }
   switch (actor) {
     case 'claude':
       return {
@@ -249,25 +257,63 @@ function GeneralSection() {
 
 function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | null }) {
   const t = useT()
-  const updateMutation = useUpdateGlobalSettings()
+  const updateMutation = useUpdateGlobalSettingsPatch()
   const normalizedSettings = normalizeGlobalSettings(globalSettings)
-  const launchers = normalizedSettings.launchers ?? {}
-
-  const buildBase = (): GlobalSettings => normalizedSettings
+  const externalSignature = JSON.stringify(normalizedSettings)
+  const settingsRef = useRef<GlobalSettings>(normalizedSettings)
+  const externalSignatureRef = useRef(externalSignature)
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const [pendingSaveCount, setPendingSaveCount] = useState(0)
+  if (pendingSaveCount === 0 && externalSignatureRef.current !== externalSignature) {
+    settingsRef.current = normalizedSettings
+    externalSignatureRef.current = externalSignature
+  }
+  const effectiveSettings = settingsRef.current
+  const launchers = effectiveSettings.launchers ?? {}
 
   const save = (patch: Partial<GlobalSettings>) => {
-    updateMutation.mutate({ ...buildBase(), ...patch })
+    const base = settingsRef.current
+    const next = { ...base, ...patch }
+    settingsRef.current = next
+    setPendingSaveCount((count) => count + 1)
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(() => updateMutation.mutateAsync({ base, patch }))
+      .finally(() => setPendingSaveCount((count) => Math.max(0, count - 1)))
   }
 
   const saveLauncher = (actor: string, patch: Partial<Launcher>) => {
-    const cur = launchers[actor] ?? defaultLauncherFor(actor)
-    const next = { ...cur, ...patch, env: cur.env }
-    save({ launchers: { ...launchers, [actor]: next } })
+    const currentLaunchers = settingsRef.current.launchers ?? {}
+    const cur = currentLaunchers[actor] ?? defaultLauncherFor(actor)
+    const next = {
+      ...cur,
+      ...patch,
+      env: patch.env ? { ...patch.env } : cur.env,
+      cursor: patch.cursor ? { ...(cur.cursor ?? {}), ...patch.cursor } : cur.cursor
+    }
+    save({ launchers: { ...currentLaunchers, [actor]: next } })
+  }
+
+  const deleteLauncher = (actor: string) => {
+    const next = { ...(settingsRef.current.launchers ?? {}) }
+    delete next[actor]
+    save({ launchers: next })
+  }
+
+  const addCursorProfile = () => {
+    const currentLaunchers = settingsRef.current.launchers ?? {}
+    let suffix = 2
+    let actor = `cursor-agent-${suffix}`
+    while (currentLaunchers[actor]) {
+      suffix += 1
+      actor = `cursor-agent-${suffix}`
+    }
+    save({ launchers: { ...currentLaunchers, [actor]: defaultLauncherFor(actor) } })
   }
 
   const saveAllTimeouts = (timeout: number) => {
     const nextLaunchers: Record<string, Launcher> = {}
-    for (const [actor, l] of Object.entries(launchers)) {
+    for (const [actor, l] of Object.entries(settingsRef.current.launchers ?? {})) {
       nextLaunchers[actor] = { ...l, timeout_seconds: timeout, env: l.env }
     }
     save({ launchers: nextLaunchers })
@@ -275,6 +321,10 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
 
   const currentTimeout =
     DEFAULT_LAUNCHER_ORDER.map((a) => launchers[a]?.timeout_seconds).find((v) => typeof v === 'number') ?? 7200
+  const launcherOrder = [
+    ...DEFAULT_LAUNCHER_ORDER,
+    ...Object.keys(launchers).filter((actor) => !DEFAULT_LAUNCHER_ORDER.includes(actor as typeof DEFAULT_LAUNCHER_ORDER[number]))
+  ]
 
   return (
     <div className="space-y-8">
@@ -286,8 +336,23 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
       </div>
 
       <SettingsList>
-        {DEFAULT_LAUNCHER_ORDER.map((actor) => {
+        {launcherOrder.map((actor) => {
           const launcher = launchers[actor] ?? defaultLauncherFor(actor)
+          const isCursor = launcher.backend === 'cursor'
+            || actor === 'cursor-agent'
+            || actor.startsWith('cursor-agent-')
+          if (isCursor) {
+            return (
+              <CursorLauncherSection
+                key={actor}
+                actor={actor}
+                launcher={launcher}
+                promptPresets={effectiveSettings.prompt_presets ?? []}
+                onSave={(next) => saveLauncher(actor, next)}
+                onDelete={actor === 'cursor-agent' ? undefined : () => deleteLauncher(actor)}
+              />
+            )
+          }
           return (
             <LauncherSection
               key={actor}
@@ -299,6 +364,14 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
           )
         })}
       </SettingsList>
+      <button
+        type="button"
+        onClick={addCursorProfile}
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle transition-colors"
+      >
+        <Plus size={13} />
+        {t('settings.launcher.cursor.add')}
+      </button>
 
       <div className="pt-4">
         <h2 className="text-base font-semibold text-fg mb-1">{t('settings.collab.title')}</h2>
@@ -309,7 +382,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
             description={t('settings.collab.maxRounds.desc')}
             right={
               <EditableNumber
-                value={globalSettings?.max_rounds ?? 9999}
+                value={effectiveSettings.max_rounds ?? 9999}
                 min={-1}
                 max={999999}
                 onSave={(v) => save({ max_rounds: v })}
@@ -333,7 +406,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
             description={t('settings.collab.maxFailures.desc')}
             right={
               <EditableNumber
-                value={globalSettings?.max_consecutive_failures ?? 10}
+                value={effectiveSettings.max_consecutive_failures ?? 10}
                 min={1}
                 max={999}
                 onSave={(v) => save({ max_consecutive_failures: v })}
@@ -345,7 +418,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
             description={t('settings.collab.autoGenerateCommit.desc')}
             right={
               <Switch
-                checked={normalizedSettings.auto_generate_commit_message ?? true}
+                checked={effectiveSettings.auto_generate_commit_message ?? true}
                 onChange={(v) => save({ auto_generate_commit_message: v })}
               />
             }
@@ -355,7 +428,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
             description={t('settings.collab.systemNotifications.desc')}
             right={
               <Switch
-                checked={normalizedSettings.system_notifications_enabled ?? true}
+                checked={effectiveSettings.system_notifications_enabled ?? true}
                 onChange={(v) => save({ system_notifications_enabled: v })}
               />
             }
@@ -368,30 +441,47 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
 
 function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | null }) {
   const t = useT()
-  const updateMutation = useUpdateGlobalSettings()
+  const updateMutation = useUpdateGlobalSettingsPatch()
   const normalizedSettings = normalizeGlobalSettings(globalSettings)
   const saved = normalizedSettings.custom_prompt ?? ''
+  const savedPresets = normalizedSettings.prompt_presets ?? []
 
   const save = (patch: Partial<GlobalSettings>) => {
-    updateMutation.mutate({ ...normalizedSettings, ...patch })
+    updateMutation.mutate({ base: normalizedSettings, patch })
   }
 
   const [draft, setDraft] = useState(saved)
+  const [presetDrafts, setPresetDrafts] = useState<PromptPreset[]>(savedPresets)
 
   useEffect(() => {
     setDraft(normalizedSettings.custom_prompt ?? '')
-  }, [normalizedSettings.custom_prompt])
+    setPresetDrafts(normalizedSettings.prompt_presets ?? [])
+  }, [normalizedSettings.custom_prompt, JSON.stringify(normalizedSettings.prompt_presets ?? [])])
 
-  const dirty = draft !== saved
+  const dirty = draft !== saved || JSON.stringify(presetDrafts) !== JSON.stringify(savedPresets)
 
   const handleSave = () => {
-    save({ custom_prompt: draft.trim() || undefined })
+    const promptPresets = presetDrafts.flatMap((preset) => {
+      const id = preset.id.trim()
+      const name = preset.name.trim()
+      const prompt = preset.prompt.trim()
+      return id && name && prompt ? [{ id, name, prompt }] : []
+    })
+    save({ custom_prompt: draft.trim() || undefined, prompt_presets: promptPresets })
   }
 
   const handleReset = () => {
     if (!window.confirm(t('settings.prompts.resetConfirm'))) return
     setDraft('')
     save({ custom_prompt: undefined })
+  }
+
+  const addPreset = () => {
+    const id = `preset-${Date.now()}`
+    setPresetDrafts((current) => [
+      ...current,
+      { id, name: t('settings.prompts.preset.newName'), prompt: '' }
+    ])
   }
 
   return (
@@ -413,6 +503,59 @@ function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | 
           />
         </div>
       </SettingsList>
+
+      <div className="pt-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <h2 className="text-base font-semibold text-fg">{t('settings.prompts.presets.title')}</h2>
+            <p className="text-sm text-fg-secondary">{t('settings.prompts.presets.desc')}</p>
+          </div>
+          <button
+            type="button"
+            onClick={addPreset}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle"
+          >
+            <Plus size={13} />
+            {t('settings.prompts.presets.add')}
+          </button>
+        </div>
+        <SettingsList>
+          {presetDrafts.length === 0 ? (
+            <div className="px-4 py-4 text-sm text-fg-muted">{t('settings.prompts.presets.empty')}</div>
+          ) : presetDrafts.map((preset, index) => (
+            <div key={preset.id} className="px-4 py-4">
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  value={preset.name}
+                  onChange={(event) => setPresetDrafts((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, name: event.target.value } : item
+                  ))}
+                  placeholder={t('settings.prompts.presets.name')}
+                  className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg focus:outline-none focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPresetDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  title={t('common.delete')}
+                  className="p-2 rounded-md text-fg-muted hover:text-danger hover:bg-bg-subtle"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <textarea
+                value={preset.prompt}
+                onChange={(event) => setPresetDrafts((current) => current.map((item, itemIndex) =>
+                  itemIndex === index ? { ...item, prompt: event.target.value } : item
+                ))}
+                rows={5}
+                placeholder={t('settings.prompts.presets.prompt')}
+                className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent resize-y"
+              />
+              <div className="mt-1 text-[11px] text-fg-muted font-mono">{preset.id}</div>
+            </div>
+          ))}
+        </SettingsList>
+      </div>
 
       <div className="flex items-center gap-2">
         <button
@@ -458,7 +601,7 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
   const handleTest = () => {
     setTestResult(null)
     testLauncherMutation.mutate(
-      { actor, command: saved },
+      { actor, command: saved, env: launcher.env, options: launcher },
       {
         onSuccess: (result) => setTestResult(result),
         onError: (err) => {
@@ -554,6 +697,339 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
       )}
     </div>
   )
+}
+
+function CursorLauncherSection({
+  actor,
+  launcher,
+  promptPresets,
+  onSave,
+  onDelete
+}: {
+  actor: string
+  launcher: Launcher
+  promptPresets: PromptPreset[]
+  onSave: (launcher: Launcher) => void
+  onDelete?: () => void
+}) {
+  const t = useT()
+  const [draft, setDraft] = useState<Launcher>(() => cloneLauncher(launcher))
+  const [envText, setEnvText] = useState(() => formatEnv(launcher.env))
+  const [extraArgsText, setExtraArgsText] = useState(() => (launcher.cursor?.extra_args ?? []).join('\n'))
+  const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
+  const testMutation = useTestLauncher()
+  const modelsMutation = useListCursorModels()
+  const launcherSignature = JSON.stringify(launcher)
+
+  useEffect(() => {
+    setDraft(cloneLauncher(launcher))
+    setEnvText(formatEnv(launcher.env))
+    setExtraArgsText((launcher.cursor?.extra_args ?? []).join('\n'))
+  }, [launcherSignature])
+
+  const materialize = (): Launcher => ({
+    ...draft,
+    backend: 'cursor',
+    command: draft.command.trim() || 'agent',
+    display_name: draft.display_name?.trim() || actor,
+    model: draft.model?.trim() || undefined,
+    prompt_preset_id: draft.prompt_preset_id?.trim() || undefined,
+    custom_prompt: draft.custom_prompt?.trim() || undefined,
+    env: parseEnv(envText),
+    cursor: {
+      mode: draft.cursor?.mode ?? 'agent',
+      force: draft.cursor?.force ?? true,
+      trust: draft.cursor?.trust ?? true,
+      approve_mcps: draft.cursor?.approve_mcps ?? false,
+      sandbox: draft.cursor?.sandbox ?? 'default',
+      stream_partial_output: draft.cursor?.stream_partial_output ?? false,
+      extra_args: extraArgsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
+    }
+  })
+
+  const current = materialize()
+  const dirty = JSON.stringify(current) !== JSON.stringify(cloneLauncher(launcher))
+  const models = modelsMutation.data?.models ?? []
+  const listId = `cursor-models-${actor.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
+  const updateCursor = (patch: Partial<NonNullable<Launcher['cursor']>>) => {
+    setDraft((value) => ({ ...value, cursor: { ...(value.cursor ?? {}), ...patch } }))
+  }
+
+  const handleTest = () => {
+    const next = materialize()
+    setTestResult(null)
+    testMutation.mutate(
+      { actor, command: next.command, env: next.env, options: next },
+      {
+        onSuccess: setTestResult,
+        onError: (error) => setTestResult({
+          actor,
+          success: false,
+          phase: 'tool_check',
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+    )
+  }
+
+  const handleLoadModels = () => {
+    const next = materialize()
+    modelsMutation.mutate({ command: next.command, env: next.env })
+  }
+
+  return (
+    <div className="px-4 py-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <ActorBadge actor="cursor" />
+            <h2 className="text-base font-semibold text-fg">
+              {draft.display_name || t('settings.launcher.cursor.title')}
+            </h2>
+          </div>
+          <p className="text-sm text-fg-secondary">{t('settings.launcher.cursor.hint')}</p>
+        </div>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            title={t('common.delete')}
+            className="p-2 rounded-md text-fg-muted hover:text-danger hover:bg-bg-subtle"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <LabeledField label={t('settings.launcher.cursor.name')}>
+          <input
+            value={draft.display_name ?? ''}
+            onChange={(event) => setDraft((value) => ({ ...value, display_name: event.target.value }))}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg focus:outline-none focus:border-accent"
+          />
+        </LabeledField>
+        <LabeledField label={t('settings.launcher.cursor.command')}>
+          <input
+            value={draft.command}
+            onChange={(event) => setDraft((value) => ({ ...value, command: event.target.value }))}
+            placeholder="agent"
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent"
+          />
+        </LabeledField>
+        <LabeledField label={t('settings.launcher.cursor.timeout')}>
+          <input
+            type="number"
+            min={60}
+            max={86400}
+            value={draft.timeout_seconds}
+            onChange={(event) => setDraft((value) => ({
+              ...value,
+              timeout_seconds: Math.max(60, Number(event.target.value) || 60)
+            }))}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent"
+          />
+        </LabeledField>
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+        <LabeledField label={t('settings.launcher.cursor.model')}>
+          <input
+            list={listId}
+            value={draft.model ?? ''}
+            onChange={(event) => setDraft((value) => ({ ...value, model: event.target.value }))}
+            placeholder={t('settings.launcher.cursor.modelDefault')}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent"
+          />
+          <datalist id={listId}>
+            {models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}
+          </datalist>
+        </LabeledField>
+        <button
+          type="button"
+          onClick={handleLoadModels}
+          disabled={modelsMutation.isPending}
+          className="h-[38px] inline-flex items-center gap-1.5 px-3 text-xs rounded-md border border-border hover:bg-bg-subtle disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={modelsMutation.isPending ? 'animate-spin' : ''} />
+          {t('settings.launcher.cursor.modelsRefresh')}
+        </button>
+      </div>
+      {modelsMutation.data && (
+        <div className="text-xs text-fg-muted">
+          {t('settings.launcher.cursor.modelsLoaded', {
+            n: models.length,
+            source: modelsMutation.data.source
+          })}
+          {modelsMutation.data.warning ? ` · ${modelsMutation.data.warning}` : ''}
+        </div>
+      )}
+      {modelsMutation.error && (
+        <div className="text-xs text-danger break-all">
+          {modelsMutation.error instanceof Error ? modelsMutation.error.message : String(modelsMutation.error)}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3">
+        <LabeledField label={t('settings.launcher.cursor.mode')}>
+          <select
+            value={draft.cursor?.mode ?? 'agent'}
+            onChange={(event) => updateCursor({ mode: event.target.value as NonNullable<Launcher['cursor']>['mode'] })}
+            className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-lg"
+          >
+            <option value="agent">agent</option>
+            <option value="plan">plan</option>
+            <option value="ask">ask</option>
+          </select>
+        </LabeledField>
+        <LabeledField label={t('settings.launcher.cursor.sandbox')}>
+          <select
+            value={draft.cursor?.sandbox ?? 'default'}
+            onChange={(event) => updateCursor({ sandbox: event.target.value as NonNullable<Launcher['cursor']>['sandbox'] })}
+            className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-lg"
+          >
+            <option value="default">{t('settings.launcher.cursor.sandboxDefault')}</option>
+            <option value="enabled">enabled</option>
+            <option value="disabled">disabled</option>
+          </select>
+        </LabeledField>
+        <LabeledField label={t('settings.launcher.cursor.preset')}>
+          <select
+            value={draft.prompt_preset_id ?? ''}
+            onChange={(event) => setDraft((value) => ({ ...value, prompt_preset_id: event.target.value || undefined }))}
+            className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-lg"
+          >
+            <option value="">{t('settings.launcher.cursor.presetNone')}</option>
+            {promptPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+          </select>
+        </LabeledField>
+      </div>
+
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-fg-secondary">
+        <CursorToggle label={t('settings.launcher.cursor.force')} checked={draft.cursor?.force ?? true} onChange={(force) => updateCursor({ force })} />
+        <CursorToggle label={t('settings.launcher.cursor.trust')} checked={draft.cursor?.trust ?? true} onChange={(trust) => updateCursor({ trust })} />
+        <CursorToggle label={t('settings.launcher.cursor.approveMcps')} checked={draft.cursor?.approve_mcps ?? false} onChange={(approve_mcps) => updateCursor({ approve_mcps })} />
+        <CursorToggle label={t('settings.launcher.cursor.partialStream')} checked={draft.cursor?.stream_partial_output ?? false} onChange={(stream_partial_output) => updateCursor({ stream_partial_output })} />
+      </div>
+
+      <LabeledField label={t('settings.launcher.cursor.customPrompt')}>
+        <textarea
+          rows={4}
+          value={draft.custom_prompt ?? ''}
+          onChange={(event) => setDraft((value) => ({ ...value, custom_prompt: event.target.value }))}
+          placeholder={t('settings.launcher.cursor.customPromptPlaceholder')}
+          className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent resize-y"
+        />
+      </LabeledField>
+
+      <div className="grid grid-cols-2 gap-3">
+        <LabeledField label={t('settings.launcher.cursor.env')}>
+          <textarea
+            rows={4}
+            value={envText}
+            onChange={(event) => setEnvText(event.target.value)}
+            placeholder="CURSOR_API_KEY=..."
+            className="w-full px-3 py-2 text-xs bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent resize-y"
+          />
+        </LabeledField>
+        <LabeledField label={t('settings.launcher.cursor.extraArgs')}>
+          <textarea
+            rows={4}
+            value={extraArgsText}
+            onChange={(event) => setExtraArgsText(event.target.value)}
+            placeholder={t('settings.launcher.cursor.extraArgsPlaceholder')}
+            className="w-full px-3 py-2 text-xs bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent resize-y"
+          />
+        </LabeledField>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onSave(materialize())}
+          disabled={!dirty}
+          className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40"
+        >
+          {t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testMutation.isPending}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40"
+        >
+          {testMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+          {testMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
+        </button>
+        <span className="text-[11px] text-fg-muted font-mono">{actor}</span>
+      </div>
+
+      {testResult && (
+        <div className={`px-3 py-2 rounded-lg text-xs ${
+          testResult.success
+            ? 'bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400'
+            : 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+        }`}>
+          <div className="flex items-center gap-1.5 font-medium">
+            {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+            {testResult.success ? t('settings.launcher.testPassed') : t('settings.launcher.testFailed')}
+          </div>
+          {testResult.error && <div className="mt-1 font-mono break-all">{testResult.error}</div>}
+          {testResult.responsePreview && <div className="mt-1">{testResult.responsePreview}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block text-xs font-medium text-fg-secondary mb-1.5">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function CursorToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className="inline-flex items-center gap-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="accent-accent"
+      />
+      <span>{label}</span>
+    </label>
+  )
+}
+
+function cloneLauncher(launcher: Launcher): Launcher {
+  return {
+    ...launcher,
+    env: { ...launcher.env },
+    cursor: launcher.cursor
+      ? { ...launcher.cursor, extra_args: [...(launcher.cursor.extra_args ?? [])] }
+      : undefined
+  }
+}
+
+function formatEnv(env: Record<string, string>): string {
+  return Object.entries(env).map(([key, value]) => `${key}=${value}`).join('\n')
+}
+
+function parseEnv(value: string): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const line of value.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const separator = trimmed.indexOf('=')
+    if (separator <= 0) continue
+    env[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1)
+  }
+  return env
 }
 
 function ColorPickerPopup({
@@ -1226,6 +1702,8 @@ function ActorBadge({ actor }: { actor: string }) {
     codex: 'var(--actor-codex)',
     opencode: 'var(--actor-opencode)',
     kimi: 'var(--actor-kimi)',
+    cursor: 'var(--actor-cursor)',
+    'cursor-agent': 'var(--actor-cursor)',
   }
   return (
     <div

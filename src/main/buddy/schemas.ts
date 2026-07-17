@@ -7,6 +7,7 @@ const taskStatusSchema = z.enum([
   'RUNNING_CODEX',
   'RUNNING_OPENCODE',
   'RUNNING_KIMI',
+  'RUNNING_CURSOR',
   'PINGING',
   'COUNTDOWN',
   'PAUSED',
@@ -85,6 +86,7 @@ export const taskStateSchema = z.object({
   codex_thread_id: z.string().nullable().optional(),
   opencode_session_id: z.string().nullable().optional(),
   kimi_session_id: z.string().nullable().optional(),
+  agent_sessions: z.record(z.string(), z.string().nullable()).default({}),
   context_hash: z.string().optional(),
   context_sent: z.record(z.string(), z.boolean()).default({}),
   event_seq: z.number().optional(),
@@ -102,19 +104,41 @@ export const taskStateSchema = z.object({
   queue: taskQueueInfoSchema.optional()
 })
 
-export const launcherSchema = z.object({
-  command: z.string(),
-  env: z.record(z.string(), z.string()).default({}),
-  timeout_seconds: z.number().default(600)
-})
-
-// Empty/whitespace custom_prompt is normalized to undefined so an emptied
-// field means "no custom prompt" rather than an empty trailing section.
+// Empty/whitespace optional strings are normalized to undefined so clearing a
+// field removes its behavior rather than persisting an empty override.
 const optionalNonEmptyString = z
   .string()
   .trim()
   .optional()
   .transform((v) => (v ? v : undefined))
+
+const cursorLauncherOptionsSchema = z.object({
+  mode: z.enum(['agent', 'plan', 'ask']).optional(),
+  force: z.boolean().optional(),
+  trust: z.boolean().optional(),
+  approve_mcps: z.boolean().optional(),
+  sandbox: z.enum(['default', 'enabled', 'disabled']).optional(),
+  stream_partial_output: z.boolean().optional(),
+  extra_args: z.array(z.string()).optional()
+})
+
+export const launcherSchema = z.object({
+  command: z.string(),
+  env: z.record(z.string(), z.string()).default({}),
+  timeout_seconds: z.number().default(600),
+  backend: z.enum(['auto', 'claude', 'codex', 'opencode', 'kimi', 'cursor', 'contract']).optional(),
+  display_name: optionalNonEmptyString,
+  model: optionalNonEmptyString,
+  prompt_preset_id: optionalNonEmptyString,
+  custom_prompt: optionalNonEmptyString,
+  cursor: cursorLauncherOptionsSchema.optional()
+})
+
+const promptPresetSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  prompt: z.string().trim().min(1)
+})
 
 export const taskSettingsSchema = z.object({
   protocol_version: z.string().default('1'),
@@ -128,6 +152,8 @@ export const taskSettingsSchema = z.object({
   seed_codex_thread_id: z.string().optional(),
   seed_opencode_session_id: z.string().optional(),
   seed_kimi_session_id: z.string().optional(),
+  seed_agent_sessions: z.record(z.string(), z.string()).default({}),
+  prompt_presets: z.array(promptPresetSchema).optional(),
   max_compact_retries: z.number().optional()
 })
 
@@ -145,7 +171,8 @@ export const globalSettingsSchema = z.object({
   auto_generate_commit_message: z.boolean().default(true),
   system_notifications_enabled: z.boolean().default(true),
   max_upgrade_retries: z.number().optional(),
-  custom_prompt: optionalNonEmptyString
+  custom_prompt: optionalNonEmptyString,
+  prompt_presets: z.array(promptPresetSchema).default([])
 })
 
 export const eventSchema = z.object({

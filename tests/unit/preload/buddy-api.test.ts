@@ -10,6 +10,9 @@ describe('createBuddyPreloadApi', () => {
 
     await expect(api.bootstrap()).resolves.toEqual({ version: 'native' })
     expect(invoke).toHaveBeenCalledWith('buddy:bootstrap')
+
+    await api.listCursorModels({ command: 'agent' })
+    expect(invoke).toHaveBeenCalledWith('buddy:listCursorModels', { command: 'agent' })
   })
 
   it('returns unsubscribe for live task events', () => {

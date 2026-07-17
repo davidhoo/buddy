@@ -4,9 +4,12 @@ import type {
   CountdownInput,
   CreateTaskInput,
   CreateTaskResult,
+  CursorModelCatalog,
+  CursorModelDiscoveryInput,
   Event,
   GlobalSettings,
   InstructionQueueItem,
+  Launcher,
   RoundEventSummary,
   SendMessageInput,
   StartTaskInput,
@@ -65,6 +68,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:getTaskStats', taskId, workspaceKey) as Promise<TaskStats | null>,
     updateGlobalSettings: (settings: GlobalSettings): Promise<GlobalSettings> =>
       ipc.invoke('buddy:updateGlobalSettings', settings) as Promise<GlobalSettings>,
+    listCursorModels: (input?: CursorModelDiscoveryInput): Promise<CursorModelCatalog> =>
+      ipc.invoke('buddy:listCursorModels', input) as Promise<CursorModelCatalog>,
     gitStatus: (repoRoot: string): Promise<unknown> =>
       ipc.invoke('buddy:gitStatus', repoRoot),
     gitStageAll: (repoRoot: string): Promise<void> =>
@@ -75,8 +80,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitDiffForCommitMessage', repoRoot) as Promise<string>,
     generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string): Promise<string> =>
       ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang) as Promise<string>,
-    testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>
-      ipc.invoke('buddy:testLauncher', actor, command, env) as Promise<TestLauncherResult>,
+    testLauncher: (actor: string, command: string, env?: Record<string, string>, options?: Partial<Launcher>): Promise<TestLauncherResult> =>
+      ipc.invoke('buddy:testLauncher', actor, command, env, options) as Promise<TestLauncherResult>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
       ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {

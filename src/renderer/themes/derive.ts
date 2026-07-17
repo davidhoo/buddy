@@ -44,6 +44,7 @@ export interface DerivedTokens {
   '--actor-codex': string
   '--actor-opencode': string
   '--actor-kimi': string
+  '--actor-cursor': string
 }
 
 export function deriveTokens(theme: BuddyTheme): DerivedTokens {
@@ -121,6 +122,7 @@ export function deriveTokens(theme: BuddyTheme): DerivedTokens {
     '--actor-codex': '#4a9bb5',
     '--actor-opencode': '#d97706',
     '--actor-kimi': '#2e7d32',
+    '--actor-cursor': '#7c5cff',
   }
 
   if (overrides) {

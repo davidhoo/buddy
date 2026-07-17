@@ -18,6 +18,7 @@ export type TaskStatus =
   | 'RUNNING_CODEX'
   | 'RUNNING_OPENCODE'
   | 'RUNNING_KIMI'
+  | 'RUNNING_CURSOR'
   | 'PINGING'
   | 'COUNTDOWN'
   | 'PAUSED'
@@ -74,6 +75,8 @@ export interface TaskState {
   codex_thread_id?: string | null
   opencode_session_id?: string | null
   kimi_session_id?: string | null
+  /** Session IDs keyed by configurable agent profile ID. */
+  agent_sessions?: Record<string, string | null>
   context_hash?: string
   context_sent?: Record<string, boolean>
   event_seq?: number
@@ -121,16 +124,43 @@ export interface TaskSettings {
   seed_codex_thread_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  /** Seed sessions keyed by configurable agent profile ID. */
+  seed_agent_sessions?: Record<string, string>
+  /** Snapshot of prompt presets available when the task was created. */
+  prompt_presets?: PromptPreset[]
+}
+
+export type LauncherBackend = 'auto' | 'claude' | 'codex' | 'opencode' | 'kimi' | 'cursor' | 'contract'
+
+export interface CursorLauncherOptions {
+  mode?: 'agent' | 'plan' | 'ask'
+  force?: boolean
+  trust?: boolean
+  approve_mcps?: boolean
+  sandbox?: 'default' | 'enabled' | 'disabled'
+  stream_partial_output?: boolean
+  extra_args?: string[]
 }
 
 export interface Launcher {
   command: string
   env: Record<string, string>
   timeout_seconds: number
+  /** Explicit backend selection. `auto` preserves executable-name detection. */
+  backend?: LauncherBackend
+  /** Human-readable profile name. The record key remains the stable actor ID. */
+  display_name?: string
+  /** Backend-specific model ID; passed to Cursor Agent as `--model`. */
+  model?: string
+  prompt_preset_id?: string
+  /** Instructions appended only for this agent profile. */
+  custom_prompt?: string
+  cursor?: CursorLauncherOptions
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'opencode' | 'kimi' | 'system'
+  /** Built-in role or a configurable agent profile ID. */
+  role: string
   content: string
   ts: string
   round?: number
@@ -190,6 +220,53 @@ export interface GlobalSettings {
   system_notifications_enabled?: boolean
   max_upgrade_retries?: number
   custom_prompt?: string
+  prompt_presets?: PromptPreset[]
+}
+
+export interface PromptPreset {
+  id: string
+  name: string
+  prompt: string
+}
+
+export interface CursorModelParameterValue {
+  value: string
+  displayName?: string
+}
+
+export interface CursorModelParameterDefinition {
+  id: string
+  displayName?: string
+  values: CursorModelParameterValue[]
+}
+
+export interface CursorModelVariant {
+  params: Array<{ id: string; value: string }>
+  displayName: string
+  description?: string
+  isDefault?: boolean
+}
+
+export interface CursorModel {
+  id: string
+  displayName: string
+  description?: string
+  aliases?: string[]
+  parameters?: CursorModelParameterDefinition[]
+  variants?: CursorModelVariant[]
+}
+
+export interface CursorModelCatalog {
+  models: CursorModel[]
+  source: 'cursor-api' | 'cli'
+  fetchedAt: string
+  warning?: string
+}
+
+export interface CursorModelDiscoveryInput {
+  command?: string
+  env?: Record<string, string>
+  apiKey?: string
 }
 
 export interface BuddyError {

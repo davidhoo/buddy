@@ -5,6 +5,7 @@ import {
   parseBuddyMessage,
   parseClaudeStreamLine,
   parseCodexJsonLine,
+  parseCursorStreamLine,
   parseJsonlBuffer
 } from '../../../src/main/buddy/parsers'
 
@@ -36,6 +37,48 @@ describe('buddy actor parsers', () => {
       text: 'done',
       threadId: 'codex-thread'
     })
+  })
+
+  it('parses Cursor Agent stream-json text and session IDs', () => {
+    const event = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '{"type":"chat","content":"cursor done"}' }]
+      },
+      session_id: 'cursor-session'
+    }))
+
+    expect(event).toMatchObject({
+      text: '{"type":"chat","content":"cursor done"}',
+      sessionId: 'cursor-session',
+      rawType: 'assistant'
+    })
+  })
+
+  it('skips duplicate Cursor partial-stream flushes and prefers terminal result output', () => {
+    const duplicate = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      timestamp_ms: 100,
+      model_call_id: 'call-1',
+      message: { content: [{ type: 'text', text: 'duplicate' }] },
+      session_id: 'cursor-session'
+    }), true)
+    const finalFlush = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'final duplicate' }] },
+      session_id: 'cursor-session'
+    }), true)
+    const output = extractActorOutput('cursor', [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'cursor-session', model: 'Composer 2.5' }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'intermediate' }] }, session_id: 'cursor-session' }),
+      JSON.stringify({ type: 'result', result: '{"type":"break","content":"finished"}', session_id: 'cursor-session' })
+    ].join('\n'))
+
+    expect(duplicate).toMatchObject({ noise: true, sessionId: 'cursor-session' })
+    expect(duplicate.text).toBeUndefined()
+    expect(finalFlush).toMatchObject({ noise: true, sessionId: 'cursor-session' })
+    expect(output).toBe('{"type":"break","content":"finished"}')
   })
 
   it('extracts text from current Codex item.completed agent messages', () => {

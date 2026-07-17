@@ -92,7 +92,7 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   }
 
   if (pendingBreak) {
-    const requesterLabel = actorDisplayName(pendingBreak.actor)
+    const requesterLabel = actorDisplayName(pendingBreak.actor, settings)
     parts.push(
       '',
       '## Break confirmation required',
@@ -106,7 +106,7 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   }
 
   if (breakRejectedBy && breakRejectedBy.actor !== input.actor) {
-    const rejectedLabel = actorDisplayName(breakRejectedBy.actor)
+    const rejectedLabel = actorDisplayName(breakRejectedBy.actor, settings)
     parts.push(
       '',
       '## Break request rejected — review required',
@@ -136,10 +136,10 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   parts.push('', '## Instruction')
   const humanLang = detectHumanLanguage(input.transcript, input.userMessage ?? '', taskText, contextText)
   if (pendingBreak) {
-    const requesterName = actorDisplayName(pendingBreak.actor)
+    const requesterName = actorDisplayName(pendingBreak.actor, settings)
     parts.push(`${requesterName} has requested to end the task. Confirm with \`type=break\` or continue with \`type=chat\`.`)
   } else if (breakRejectedBy && breakRejectedBy.actor !== input.actor) {
-    const rejectedName = actorDisplayName(breakRejectedBy.actor)
+    const rejectedName = actorDisplayName(breakRejectedBy.actor, settings)
     parts.push(`Your previous break request was rejected by ${rejectedName}, who made changes. Review their changes carefully. Only confirm with \`type=break\` if you agree the changes are correct and the task is complete.`)
   } else {
     const implementer = implementerActor(settings)
@@ -159,6 +159,21 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   const customPrompt = input.globalSettings?.custom_prompt?.trim()
   if (customPrompt) {
     parts.push('', '## Custom instructions', customPrompt)
+  }
+
+  const launcher = settings.launchers?.[input.actor]
+  const presetId = launcher?.prompt_preset_id
+  const promptPresets = settings.prompt_presets ?? input.globalSettings?.prompt_presets
+  const preset = presetId
+    ? promptPresets?.find((item) => item.id === presetId)
+    : undefined
+  if (preset?.prompt.trim()) {
+    parts.push('', `## Agent prompt preset: ${preset.name}`, preset.prompt.trim())
+  }
+
+  const agentPrompt = launcher?.custom_prompt?.trim()
+  if (agentPrompt) {
+    parts.push('', '## Agent-specific instructions', agentPrompt)
   }
 
   return `${parts.join('\n').trimEnd()}\n`
@@ -200,7 +215,8 @@ export function selectRecentTranscript(transcript: TranscriptEntry[], window = 6
   const recentKeys = new Set(recent.map(rowKey))
   const earlier = transcript.slice(0, -window)
 
-  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_OPENCODE, ACTOR_KIMI]) {
+  const roles = ['human', ...new Set(transcript.map((item) => item.role).filter((role) => role !== 'human' && role !== 'system'))]
+  for (const role of roles) {
     if (recent.some((item) => item.role === role)) continue
     const last = [...earlier].reverse().find((item) => item.role === role)
     if (last && !recentKeys.has(rowKey(last))) {
@@ -246,11 +262,18 @@ export function implementerActor(settings: Partial<TaskSettings>): string {
     ?? (settings.role_mode === ROLE_MODE_CODEX_IMPL ? ACTOR_CODEX : ACTOR_CLAUDE)
 }
 
-export function actorDisplayName(actor: unknown): string {
+export function actorDisplayName(actor: unknown, settings?: Partial<TaskSettings>): string {
+  if (typeof actor === 'string') {
+    const configured = settings?.launchers?.[actor]?.display_name?.trim()
+    if (configured) return configured
+  }
   if (actor === ACTOR_CLAUDE) return 'Claude Code'
   if (actor === ACTOR_OPENCODE) return 'OpenCode'
   if (actor === ACTOR_KIMI) return 'Kimi Code'
   if (actor === ACTOR_CODEX) return 'Codex'
+  if (actor === 'cursor' || actor === 'cursor-agent' || (typeof actor === 'string' && actor.startsWith('cursor-agent-'))) {
+    return 'Cursor Agent'
+  }
   return typeof actor === 'string' && actor ? actor : 'Codex'
 }
 

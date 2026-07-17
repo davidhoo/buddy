@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLauncherCommand } from '../../../src/main/buddy/launchers'
+import { buildLauncherCommand, commandKindFor, runLauncher } from '../../../src/main/buddy/launchers'
 
 describe('launcher command builder', () => {
   it('builds Claude non-interactive stream-json command', () => {
@@ -153,6 +153,93 @@ describe('launcher command builder', () => {
       ],
       kind: 'native_kimi'
     })
+  })
+
+  it('builds a configurable Cursor Agent stream-json command', () => {
+    expect(buildLauncherCommand({
+      actor: 'cursor-agent-2',
+      command: 'agent --model stale --force',
+      backend: 'cursor',
+      model: 'composer-2.5',
+      cursor: {
+        mode: 'agent',
+        force: true,
+        trust: true,
+        approve_mcps: true,
+        sandbox: 'enabled',
+        stream_partial_output: true,
+        extra_args: ['--plugin-dir', '/tmp/plugin']
+      },
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from cursor',
+      repoRoot: '/tmp/repo',
+      sessionId: 'cursor-session'
+    })).toEqual({
+      command: 'agent',
+      args: [
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--stream-partial-output',
+        '--workspace',
+        '/tmp/repo',
+        '--model',
+        'composer-2.5',
+        '--force',
+        '--trust',
+        '--approve-mcps',
+        '--sandbox',
+        'enabled',
+        '--resume',
+        'cursor-session',
+        '--plugin-dir',
+        '/tmp/plugin',
+        'hello from cursor'
+      ],
+      kind: 'native_cursor'
+    })
+  })
+
+  it('detects both Cursor Agent executable names', () => {
+    expect(commandKindFor('cursor-agent-2', 'agent')).toBe('native_cursor')
+    expect(commandKindFor('profile-b', '/usr/local/bin/cursor-agent')).toBe('native_cursor')
+    expect(commandKindFor('claude', 'agent')).toBe('contract')
+  })
+
+  it('buffers JSONL records split across stdout chunks', async () => {
+    const lines: string[] = []
+    const script = [
+      "const value = JSON.stringify({ type: 'result', result: 'x'.repeat(120000) })",
+      'process.stdout.write(value.slice(0, 60000))',
+      "setTimeout(() => process.stdout.write(value.slice(60000) + '\\n'), 5)"
+    ].join(';')
+
+    const result = await runLauncher({
+      command: process.execPath,
+      args: ['-e', script],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      onStdout: (line) => lines.push(line),
+      onStderr: () => {}
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(lines).toHaveLength(1)
+    expect(JSON.parse(lines[0]).result).toHaveLength(120000)
+  })
+
+  it('pipes oversized Cursor prompts while keeping an explicit instruction', () => {
+    const promptText = 'x'.repeat(30_000)
+    const command = buildLauncherCommand({
+      actor: 'cursor-agent',
+      command: 'agent',
+      backend: 'cursor',
+      promptFile: '/tmp/prompt.md',
+      promptText
+    })
+
+    expect(command.args.at(-1)).toBe('Follow the complete Buddy turn instructions provided on stdin.')
+    expect(command.stdinText).toBe(promptText)
   })
 
   it('builds custom launcher contract flags and environment', () => {

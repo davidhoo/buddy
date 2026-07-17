@@ -44,8 +44,8 @@
     "electron": "^33.4.11",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
-    "jsdom": "^29.1.1",
     "jiti": "^2.7.0",
+    "jsdom": "^29.1.1",
     "lucide-react": "^1.16.0",
     "marked": "^18.0.4",
     "postcss": "^8.5.15",
@@ -53,6 +53,7 @@
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
+    "vite": "^7.3.6",
     "vitest": "^4.1.7"
   }
 }

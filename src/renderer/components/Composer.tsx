@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ArrowUp, ChevronDown, Square, X, Image as ImageIcon } from 'lucide-react'
 import { Attachment, TaskSettings, TaskState } from '../../shared/types'
-import { taskActors, ACTOR_LABEL_KEY, Actor } from '../lib/format'
+import { taskActors, ACTOR_LABEL_KEY, actorDisplayName, Actor } from '../lib/format'
 import { useT, useSendShortcut } from '../hooks/useI18n'
 import { IMAGE_EXTS, EXT_ICON_MAP, generateAttachmentId, isImageAttachment, fileExt, fileIconForName, mimeTypeForExt } from '../lib/attachments'
 
@@ -292,7 +292,10 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
                 className="appearance-none bg-transparent text-sm font-medium pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent"
               >
                 {participants.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  <option key={a} value={a}>
+                    {settings?.launchers?.[a]?.display_name
+                      || (ACTOR_LABEL_KEY[a] ? t(ACTOR_LABEL_KEY[a]) : actorDisplayName(a, settings))}
+                  </option>
                 ))}
               </select>
               <ChevronDown

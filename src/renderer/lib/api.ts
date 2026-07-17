@@ -2,8 +2,10 @@ import type {
   AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
+  CursorModelDiscoveryInput,
   GlobalSettings,
   InstructionQueueItem,
+  Launcher,
   RoundEventSummary,
   SendMessageInput,
   TestLauncherResult,
@@ -17,6 +19,34 @@ function buddy() {
     throw new Error('Native Buddy API is unavailable')
   }
   return window.buddy
+}
+
+let latestGlobalSettings: GlobalSettings | undefined
+let globalSettingsSaveQueue: Promise<void> = Promise.resolve()
+
+function updateGlobalSettingsPatch(
+  base: GlobalSettings,
+  patch: Partial<GlobalSettings>
+): Promise<GlobalSettings> {
+  let resolveResult!: (value: GlobalSettings) => void
+  let rejectResult!: (reason: unknown) => void
+  const result = new Promise<GlobalSettings>((resolve, reject) => {
+    resolveResult = resolve
+    rejectResult = reject
+  })
+  globalSettingsSaveQueue = globalSettingsSaveQueue
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        const next = { ...(latestGlobalSettings ?? base), ...patch }
+        const saved = await buddy().updateGlobalSettings(next)
+        latestGlobalSettings = saved
+        resolveResult(saved)
+      } catch (error) {
+        rejectResult(error)
+      }
+    })
+  return result
 }
 
 export const api = {
@@ -55,6 +85,9 @@ export const api = {
     buddy().getTaskStats(taskId, workspaceKey) as Promise<TaskStats | null>,
   updateGlobalSettings: (settings: GlobalSettings) =>
     buddy().updateGlobalSettings(settings),
+  updateGlobalSettingsPatch,
+  listCursorModels: (input?: CursorModelDiscoveryInput) =>
+    buddy().listCursorModels(input),
   gitStatus: (repoRoot: string) =>
     buddy().gitStatus(repoRoot),
   gitStageAll: (repoRoot: string) =>
@@ -65,8 +98,8 @@ export const api = {
     buddy().gitDiffForCommitMessage(repoRoot),
   generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
     buddy().generateCommitMessage(repoRoot, actorCommand, lang),
-  testLauncher: (actor: string, command: string, env?: Record<string, string>) =>
-    buddy().testLauncher(actor, command, env) as Promise<TestLauncherResult>,
+  testLauncher: (actor: string, command: string, env?: Record<string, string>, options?: Partial<Launcher>) =>
+    buddy().testLauncher(actor, command, env, options) as Promise<TestLauncherResult>,
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
     buddy().onTaskEvent(callback)
 }

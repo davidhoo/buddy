@@ -253,6 +253,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
               <RunningStatusMessage
                 actor={task.state.active_run.actor}
                 startedAt={task.state.active_run.started_at}
+                settings={task.settings}
                 round={task.state.round}
                 expanded={detailExpanded}
                 onToggleExpand={handleToggleExpand}
@@ -261,6 +262,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
             {detailExpanded && activeActor && (
               <RunningDetailPanel
                 actor={activeActor}
+                settings={task.settings}
                 streamLines={streamLines}
                 lastMessage={lastActorMessage}
                 onCollapse={handleToggleExpand}

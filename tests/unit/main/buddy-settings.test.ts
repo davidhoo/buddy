@@ -16,11 +16,60 @@ describe('BuddyStore settings and delete', () => {
       max_consecutive_failures: 10,
       launchers: {
         claude: { command: 'claude', env: {}, timeout_seconds: 7200 },
-        codex: { command: 'codex', env: {}, timeout_seconds: 7200 }
+        codex: { command: 'codex', env: {}, timeout_seconds: 7200 },
+        'cursor-agent': {
+          command: 'agent',
+          backend: 'cursor',
+          display_name: 'Cursor Agent',
+          timeout_seconds: 7200
+        }
       },
       seed_claude_session_id: '',
       seed_codex_thread_id: ''
     })
+  })
+
+  it('persists multiple independent Cursor Agent profiles and prompt presets', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-settings-cursor-'))
+    const store = new BuddyStore(root)
+
+    await store.updateGlobalSettings({
+      launchers: {
+        'cursor-agent': {
+          command: 'agent',
+          env: {},
+          timeout_seconds: 1200,
+          backend: 'cursor',
+          model: 'composer-2.5',
+          prompt_preset_id: 'implement'
+        },
+        'cursor-agent-2': {
+          command: 'cursor-agent',
+          env: {},
+          timeout_seconds: 1800,
+          backend: 'cursor',
+          model: 'gpt-5.6-sol-high'
+        }
+      },
+      prompt_presets: [{ id: 'implement', name: 'Implement', prompt: 'Implement and test.' }]
+    })
+
+    const settings = await store.readGlobalSettings()
+    expect(settings.launchers?.['cursor-agent'].model).toBe('composer-2.5')
+    expect(settings.launchers?.['cursor-agent-2'].model).toBe('gpt-5.6-sol-high')
+    expect(settings.prompt_presets).toEqual([
+      { id: 'implement', name: 'Implement', prompt: 'Implement and test.' }
+    ])
+
+    const created = await store.createTask({ task_id: 'cursor-task', repo_root: root })
+    await store.updateGlobalSettings({
+      ...settings,
+      prompt_presets: [{ id: 'implement', name: 'Implement', prompt: 'Changed later.' }]
+    })
+    const detail = await store.getTaskDetail('cursor-task', created.workspace_key)
+    expect(detail.settings.prompt_presets).toEqual([
+      { id: 'implement', name: 'Implement', prompt: 'Implement and test.' }
+    ])
   })
 
   it('updates global settings', async () => {

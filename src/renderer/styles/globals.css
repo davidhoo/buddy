@@ -55,6 +55,10 @@ body {
   border-left-color: var(--actor-kimi);
   background: color-mix(in srgb, var(--actor-kimi) 5%, var(--bg-elevated));
 }
+.msg-cursor {
+  border-left-color: var(--actor-cursor);
+  background: color-mix(in srgb, var(--actor-cursor) 5%, var(--bg-elevated));
+}
 .msg-human {
   border-left-color: var(--fg-secondary);
   background: var(--bg-elevated);
@@ -116,6 +120,7 @@ body {
 .msg-codex .role { color: var(--actor-codex); }
 .msg-opencode .role { color: var(--actor-opencode); }
 .msg-kimi .role { color: var(--actor-kimi); }
+.msg-cursor .role { color: var(--actor-cursor); }
 .msg-human .role { color: var(--fg); }
 .msg-system .role { color: var(--fg-muted); }
 

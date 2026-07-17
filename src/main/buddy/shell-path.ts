@@ -6,7 +6,9 @@ const INSTALL_HINTS: Record<string, string> = {
   kimi: 'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash',
   claude: 'npm install -g @anthropic-ai/claude-code',
   codex: 'npm install -g @openai/codex',
-  opencode: 'go install github.com/sst/opencode@latest'
+  opencode: 'go install github.com/sst/opencode@latest',
+  agent: 'curl https://cursor.com/install -fsS | bash',
+  'cursor-agent': 'curl https://cursor.com/install -fsS | bash'
 }
 
 export function installHintFor(command: string): string | undefined {

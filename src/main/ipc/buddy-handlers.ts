@@ -3,7 +3,10 @@ import type {
   AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
+  CursorModelCatalog,
+  CursorModelDiscoveryInput,
   GlobalSettings,
+  Launcher,
   RoundEventSummary,
   SendMessageInput,
   StartTaskInput,
@@ -31,12 +34,13 @@ export interface BuddyHandlerService {
   getRoundEvents(taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null>
   getTaskStats(taskId: string, workspaceKey?: string): Promise<TaskStats | null>
   updateGlobalSettings(settings: GlobalSettings): Promise<unknown>
+  listCursorModels(input?: CursorModelDiscoveryInput): Promise<CursorModelCatalog>
   gitStatus(repoRoot: string): Promise<unknown>
   gitStageAll(repoRoot: string): Promise<void>
   gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown>
   gitDiffForCommitMessage(repoRoot: string): Promise<string>
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string>
-  testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
+  testLauncher(actor: string, command: string, env?: Record<string, string>, options?: Partial<Launcher>): Promise<TestLauncherResult>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
 
@@ -94,6 +98,9 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:updateGlobalSettings', (_event, settings: GlobalSettings) =>
     service.updateGlobalSettings(settings)
   )
+  ipcMain.handle('buddy:listCursorModels', (_event, input?: CursorModelDiscoveryInput) =>
+    service.listCursorModels(input)
+  )
   ipcMain.handle('buddy:gitStatus', (_event, repoRoot: string) =>
     service.gitStatus(repoRoot)
   )
@@ -109,8 +116,8 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string) =>
     service.generateCommitMessage(repoRoot, actorCommand, lang)
   )
-  ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
-    service.testLauncher(actor, command, env)
+  ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>, options?: Partial<Launcher>) =>
+    service.testLauncher(actor, command, env, options)
   )
   ipcMain.handle('buddy:updateTaskText', (_event, taskId: string, workspaceKey: string, taskText: string) =>
     service.updateTaskText(taskId, workspaceKey, taskText)

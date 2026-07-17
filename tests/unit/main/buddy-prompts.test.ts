@@ -152,4 +152,43 @@ describe('buildActorPrompt', () => {
     expect(lastLine).toContain('中文')
     expect(lastLine).toContain('自然语言')
   })
+
+  it('appends the selected prompt preset and profile-specific instructions', () => {
+    const prompt = buildActorPrompt({
+      actor: 'cursor-agent-2',
+      round: 1,
+      repoRoot: '/tmp/repo',
+      taskText: 'Review feature',
+      contextText: '',
+      transcript: [],
+      settings: {
+        protocol_version: '1',
+        flow_policy: 'pair',
+        role_mode: 'custom',
+        implementer_actor: 'cursor-agent',
+        reviewer_actor: 'cursor-agent-2',
+        launchers: {
+          'cursor-agent-2': {
+            command: 'agent',
+            env: {},
+            timeout_seconds: 7200,
+            backend: 'cursor',
+            prompt_preset_id: 'strict-review',
+            custom_prompt: 'Focus on concurrency bugs.'
+          }
+        }
+      },
+      globalSettings: {
+        custom_prompt: 'Use concise answers.',
+        prompt_presets: [
+          { id: 'strict-review', name: 'Strict review', prompt: 'Block on correctness issues.' }
+        ]
+      },
+      state: { round: 0, rounds_in_window: 0 }
+    })
+
+    expect(prompt).toContain('## Custom instructions\nUse concise answers.')
+    expect(prompt).toContain('## Agent prompt preset: Strict review\nBlock on correctness issues.')
+    expect(prompt).toContain('## Agent-specific instructions\nFocus on concurrency bugs.')
+  })
 })
