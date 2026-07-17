@@ -1,0 +1,94 @@
+name: Release macOS
+
+# Build a macOS-usable artifact (unsigned DMG + zip) and publish a GitHub
+# Release on every push to main. Mirrors the maintainer's local flow
+# (`pnpm dist` / `scripts/release.sh`).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish macOS app
+    # macos-latest is Apple Silicon (arm64); electron-builder cross-builds x64 too.
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Rosetta (x64 cross-build)
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Setup pnpm
+        # Version comes from the "packageManager" field in package.json.
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      # `pnpm dist` = build + electron-builder --mac (dmg + zip, arm64 + x64),
+      # unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false) and no notarization
+      # (-c.mac.notarize=false). Produces artifacts under release/.
+      - name: Build unsigned macOS artifacts
+        run: pnpm dist
+
+      - name: Resolve app version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: List build output
+        run: ls -lh release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          TAG="v${VERSION}-build.${RUN_NUMBER}"
+
+          # Notes via heredoc (expands $VERSION/$COMMIT_SHA, no backticks to avoid
+          # accidental shell command substitution).
+          cat > "${RUNNER_TEMP}/release-notes.md" <<EOF
+          Automated unsigned macOS build from main ($COMMIT_SHA).
+
+          macOS Gatekeeper blocks this app on first launch because it is not
+          signed/notarized. Right-click the app and choose Open, or run:
+              xattr -dr com.apple.quarantine /Applications/Buddy.app
+
+          Artifacts:
+          - Buddy-$VERSION-arm64.dmg (Apple Silicon) / Buddy-$VERSION.dmg (Intel)
+          - *-mac.zip (used by the in-app auto-updater)
+          EOF
+
+          # Collect artifacts; latest-mac.yml is optional.
+          ASSETS=(release/*.dmg release/*.zip)
+          [ -f release/latest-mac.yml ] && ASSETS+=(release/latest-mac.yml)
+
+          gh release create "$TAG" \
+            --target "$COMMIT_SHA" \
+            --title "Buddy v${VERSION} (build ${RUN_NUMBER})" \
+            --notes-file "${RUNNER_TEMP}/release-notes.md" \
+            "${ASSETS[@]}"
