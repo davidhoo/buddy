@@ -35,6 +35,8 @@ export default function App() {
   const justCreatedTaskId = useRef<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
+  const [findActivation, setFindActivation] = useState(0)
+  const [findScope, setFindScope] = useState<HTMLElement | null>(null)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -50,6 +52,18 @@ export default function App() {
 
   useTheme()
   const updater = useUpdater()
+  const openFind = useCallback(() => {
+    setView('chat')
+    setFindOpen(true)
+    setFindActivation((value) => value + 1)
+  }, [])
+  const closeFind = useCallback(() => setFindOpen(false), [])
+
+  useEffect(() => {
+    if (findOpen && (view !== 'chat' || showCreateModal)) {
+      setFindOpen(false)
+    }
+  }, [findOpen, showCreateModal, view])
 
   useEffect(() => {
     window.api.isFullScreen().then(setIsFullScreen).catch(() => {})
@@ -542,12 +556,11 @@ export default function App() {
         setView('settings')
         setSettingsTab('keyboard')
       } else if (action === 'find') {
-        setView('chat')
-        setFindOpen(true)
+        openFind()
       }
     })
     return cleanup
-  }, [handleOpenCreateModal, selectVisibleTaskByOffset, updater])
+  }, [handleOpenCreateModal, openFind, selectVisibleTaskByOffset, updater])
 
   const selectVisibleTaskBySlot = useCallback((slot: number) => {
     const visibleTasks = visibleTasksForShortcuts(
@@ -566,13 +579,15 @@ export default function App() {
     onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
     onToggleStatusBar: () => setIsStatusBarOpen(prev => !prev),
     onCommitAndPush: () => window.dispatchEvent(new CustomEvent('buddy:commit')),
-    onFind: () => { setView('chat'); setFindOpen(true) },
+    onFind: openFind,
     onSelectTaskByIndex: (index: number) => selectVisibleTaskBySlot(index + 1),
     onNextTask: () => selectVisibleTaskByOffset(1),
     onPrevTask: () => selectVisibleTaskByOffset(-1),
     onInterrupt: handleInterrupt,
     onEscape: () => {
-      if (showCreateModal) {
+      if (findOpen) {
+        closeFind()
+      } else if (showCreateModal) {
         setShowCreateModal(false)
         setPendingRepoRoot(null)
       } else if (view === 'settings') {
@@ -580,7 +595,7 @@ export default function App() {
       }
     },
     onShowShortcuts: () => { setView('settings'); setSettingsTab('keyboard') },
-  }), [handleOpenCreateModal, handleInterrupt, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
+  }), [closeFind, findOpen, handleOpenCreateModal, handleInterrupt, openFind, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
 
   useKeyboardShortcuts(shortcutActions)
 
@@ -681,8 +696,14 @@ export default function App() {
                   onDraftChange={handleDraftChange}
                   attachments={currentAttachments}
                   onAttachmentsChange={handleAttachmentsChange}
+                  onFindScopeChange={setFindScope}
                 />
-                <FindBar open={findOpen} onClose={() => setFindOpen(false)} />
+                <FindBar
+                  open={findOpen}
+                  activation={findActivation}
+                  scope={findScope}
+                  onClose={closeFind}
+                />
               </div>
 
               {/* 右侧状态栏 */}

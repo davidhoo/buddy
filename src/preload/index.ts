@@ -20,15 +20,6 @@ const api = {
   },
   isFullScreen: (): Promise<boolean> =>
     ipcRenderer.invoke('window:isFullScreen'),
-  findInPage: (text: string, options?: { forward?: boolean; findNext?: boolean }): Promise<number | null> =>
-    ipcRenderer.invoke('find:start', text, options),
-  stopFindInPage: (action: 'clearSelection' | 'keepSelection' = 'clearSelection'): Promise<void> =>
-    ipcRenderer.invoke('find:stop', action),
-  onFindResult: (callback: (result: { requestId: number; activeMatchOrdinal: number; matches: number; finalUpdate: boolean }) => void): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, result: { requestId: number; activeMatchOrdinal: number; matches: number; finalUpdate: boolean }) => callback(result)
-    ipcRenderer.on('find:result', handler)
-    return () => { ipcRenderer.removeListener('find:result', handler) }
-  },
   updateMenuLanguage: (lang: string): void => {
     ipcRenderer.send('menu:updateLanguage', lang)
   },

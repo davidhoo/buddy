@@ -261,6 +261,7 @@ export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck,
         )}
         <div
           className="message-body"
+          data-conversation-search-segment
           dangerouslySetInnerHTML={{ __html: html }}
         />
         {isHealthCheckFailed && onRetryHealthCheck && (

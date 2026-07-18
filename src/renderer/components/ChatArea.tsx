@@ -99,9 +99,10 @@ interface ChatAreaProps {
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
+  onFindScopeChange?: (scope: HTMLDivElement | null) => void
 }
 
-export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
+export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, draft, onDraftChange, attachments, onAttachmentsChange, onFindScopeChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -113,6 +114,10 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
   const activeRunId = task?.state?.active_run?.run_id ?? null
   const activeActor = task?.state?.active_run?.actor ?? null
   const streamLines = useActorStream(task?.task_id ?? null, activeRunId ?? null)
+  const setTranscriptRef = useCallback((scope: HTMLDivElement | null) => {
+    transcriptRef.current = scope
+    onFindScopeChange?.(scope)
+  }, [onFindScopeChange])
 
   const lastActorMessage = useMemo(() => {
     if (!activeActor || !task?.transcript) return undefined
@@ -189,7 +194,12 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
 
   return (
     <div className="flex-1 flex flex-col bg-bg-elevated min-w-0">
-      <div ref={transcriptRef} className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <div
+        id="buddy-conversation-transcript"
+        ref={setTranscriptRef}
+        data-conversation-search-root
+        className="flex-1 overflow-y-auto px-6 py-4 min-h-0"
+      >
         {!task ? (
           !hasAnyTasks ? (
             <div className="flex items-center justify-center h-full min-h-[60vh]">
@@ -226,6 +236,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
                   </div>
                   <div
                     className="message-body"
+                    data-conversation-search-segment
                     dangerouslySetInnerHTML={{ __html: renderMarkdown(taskText) }}
                   />
                 </div>
