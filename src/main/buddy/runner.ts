@@ -1416,7 +1416,7 @@ export class BuddyRunner {
     const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
     const summarizePromptFile = join(taskDirectory, 'artifacts', `summarize_${Date.now()}-prompt.md`)
     await mkdir(join(taskDirectory, 'artifacts'), { recursive: true })
-    await writeFile(summarizePromptFile, summarizePrompt, 'utf-8')
+    await writeFile(summarizePromptFile, summarizePrompt, { encoding: 'utf8', mode: 0o600 })
 
     const summarizeCommand = buildLauncherCommand({
       actor,
