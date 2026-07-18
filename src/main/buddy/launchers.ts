@@ -309,9 +309,9 @@ export function commandKindFor(
     if (backend === 'contract') return 'contract'
     return `native_${backend}` as LauncherCommandKind
   }
-  // Detect native CLI by executable name first, regardless of actor name.
-  // This allows e.g. actor='kimi' with command='opencode -m provider/kimi-k2.6'
-  // to be correctly identified as native_opencode.
+  // Detect a recognized native CLI by executable name first, regardless of
+  // actor name. This allows e.g. actor='kimi' with command='opencode -m
+  // provider/kimi-k2.6' to be correctly identified as native_opencode.
   if (executable === 'claude' || (executable === 'wecode' && baseCmd[1] !== 'codex')) return 'native_claude'
   if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
   if (executable === 'opencode') return 'native_opencode'
@@ -321,7 +321,9 @@ export function commandKindFor(
     executable === 'agent'
     && (actor === 'cursor' || actor === 'cursor-agent' || actor.startsWith('cursor-agent-'))
   ) return 'native_cursor'
-  // Fallback: when no command is specified, infer from actor name
+  // Preserve the legacy contract behavior for unrecognized commands. Wrapper
+  // commands are indistinguishable from contract launchers, so they opt in to
+  // native flags through an explicit backend selection.
   if (executable === '' || executable === 'wecode') {
     if (actor === 'claude') return 'native_claude'
     if (actor === 'codex') return 'native_codex'

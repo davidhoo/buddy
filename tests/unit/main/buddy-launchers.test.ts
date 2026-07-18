@@ -203,7 +203,45 @@ describe('launcher command builder', () => {
   it('detects both Cursor Agent executable names', () => {
     expect(commandKindFor('cursor-agent-2', 'agent')).toBe('native_cursor')
     expect(commandKindFor('profile-b', '/usr/local/bin/cursor-agent')).toBe('native_cursor')
-    expect(commandKindFor('claude', 'agent')).toBe('contract')
+    // Bare `agent` only maps to cursor for cursor actors; for a non-cursor,
+    // non-built-in actor it falls through to contract.
+    expect(commandKindFor('some-actor', 'agent')).toBe('contract')
+  })
+
+  it('preserves contract semantics for unrecognized auto commands', () => {
+    expect(commandKindFor('claude', '/opt/buddy-contract')).toBe('contract')
+    expect(commandKindFor('claude', '/opt/buddy-contract', 'auto')).toBe('contract')
+  })
+
+  it('uses an explicit native backend for wrapper commands', () => {
+    expect(commandKindFor('claude', 'claude-wrapper', 'claude')).toBe('native_claude')
+    expect(commandKindFor('kimi', 'vendor-wrapper', 'opencode')).toBe('native_opencode')
+    expect(commandKindFor('claude', 'claude', 'contract')).toBe('contract')
+  })
+
+  it('builds native Claude flags for an explicitly configured wrapper', () => {
+    const command = buildLauncherCommand({
+      actor: 'claude',
+      command: 'claude-wrapper --dangerously-skip-permissions',
+      backend: 'claude',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(command).toEqual({
+      command: 'claude-wrapper',
+      args: [
+        '--dangerously-skip-permissions',
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--input-format',
+        'text'
+      ],
+      kind: 'native_claude',
+      stdinText: 'hello'
+    })
+    expect(command.args).not.toContain('--actor')
   })
 
   it('buffers JSONL records split across stdout chunks', async () => {

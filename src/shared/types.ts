@@ -146,7 +146,11 @@ export interface Launcher {
   command: string
   env: Record<string, string>
   timeout_seconds: number
-  /** Explicit backend selection. `auto` preserves executable-name detection. */
+  /**
+   * Explicit launcher protocol. `auto` detects known executable names and
+   * preserves the legacy contract protocol for unknown commands. Select a
+   * native backend explicitly when `command` is a wrapper around that CLI.
+   */
   backend?: LauncherBackend
   /** Human-readable profile name. The record key remains the stable actor ID. */
   display_name?: string

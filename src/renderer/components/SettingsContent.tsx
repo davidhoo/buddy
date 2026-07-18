@@ -25,7 +25,7 @@ import {
   eventToBinding,
   bindingsEqual,
 } from '../lib/keyboard'
-import type { GlobalSettings, Launcher, PromptPreset } from '../../shared/types'
+import type { GlobalSettings, Launcher, LauncherBackend, PromptPreset } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 
@@ -359,7 +359,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               actor={actor}
               launcher={launcher}
               info={launcherInfoFor(actor, t)}
-              onSaveCommand={(command) => saveLauncher(actor, { command })}
+              onSave={(patch) => saveLauncher(actor, patch)}
             />
           )
         })}
@@ -579,21 +579,24 @@ function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   )
 }
 
-function LauncherSection({ actor, launcher, info, onSaveCommand }: {
+function LauncherSection({ actor, launcher, info, onSave }: {
   actor: string
   launcher: Launcher
   info: LauncherInfo
-  onSaveCommand: (command: string) => void
+  onSave: (patch: Pick<Launcher, 'command' | 'backend'>) => void
 }) {
   const t = useT()
   const saved = launcher.command || ''
+  const savedBackend = launcher.backend ?? 'auto'
   const [draft, setDraft] = useState(saved)
+  const [draftBackend, setDraftBackend] = useState<LauncherBackend>(savedBackend)
 
   useEffect(() => {
     setDraft(saved)
-  }, [saved])
+    setDraftBackend(savedBackend)
+  }, [saved, savedBackend])
 
-  const dirty = draft !== saved
+  const dirty = draft !== saved || draftBackend !== savedBackend
 
   const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
   const testLauncherMutation = useTestLauncher()
@@ -623,27 +626,47 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
         <h2 className="text-base font-semibold text-fg">{info.title}</h2>
       </div>
       <p className="text-sm text-fg-secondary mb-3 leading-relaxed">{info.hint}</p>
-      <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={draft}
-          placeholder={info.placeholder}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && dirty) {
-              e.preventDefault()
-              onSaveCommand(draft)
-            }
-            if (e.key === 'Escape') {
-              setDraft(saved)
-            }
-          }}
-          className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-        />
+      <div className="flex items-end gap-2">
+        <label className="flex-1 min-w-0">
+          <span className="block text-xs font-medium text-fg-secondary mb-1.5">{info.label}</span>
+          <input
+            type="text"
+            value={draft}
+            placeholder={info.placeholder}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && dirty) {
+                e.preventDefault()
+                onSave({ command: draft, backend: draftBackend })
+              }
+              if (e.key === 'Escape') {
+                setDraft(saved)
+                setDraftBackend(savedBackend)
+              }
+            }}
+            className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+          />
+        </label>
+        <label className="w-40 shrink-0">
+          <span className="block text-xs font-medium text-fg-secondary mb-1.5">
+            {t('settings.launcher.protocol')}
+          </span>
+          <select
+            value={draftBackend}
+            onChange={(event) => setDraftBackend(event.target.value as LauncherBackend)}
+            className="w-full px-3 py-2 text-sm bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+          >
+            <option value="auto">{t('settings.launcher.protocol.auto')}</option>
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex</option>
+            <option value="opencode">OpenCode</option>
+            <option value="kimi">Kimi Code</option>
+            <option value="contract">{t('settings.launcher.protocol.contract')}</option>
+          </select>
+        </label>
         <button
           type="button"
-          onClick={() => onSaveCommand(draft)}
+          onClick={() => onSave({ command: draft, backend: draftBackend })}
           disabled={!dirty}
           className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
         >
@@ -664,6 +687,7 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
           {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
         </button>
       </div>
+      <p className="mt-1.5 text-xs text-fg-muted">{t('settings.launcher.protocol.hint')}</p>
       {testResult && (
         <div className={`mt-3 px-3 py-2 rounded-lg text-xs leading-relaxed ${
           testResult.success
