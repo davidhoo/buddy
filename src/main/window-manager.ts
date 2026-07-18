@@ -53,6 +53,11 @@ export class WindowManager {
       this.mainWindow?.webContents.send('window:fullScreenChange', false)
     })
 
+    // Forward native find-in-page results so the renderer can show a match counter.
+    this.mainWindow.webContents.on('found-in-page', (_event, result) => {
+      this.mainWindow?.webContents.send('find:result', result)
+    })
+
     return this.mainWindow
   }
 

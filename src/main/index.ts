@@ -77,6 +77,16 @@ app.whenReady().then(async () => {
     return windowManager.getMainWindow()?.isFullScreen() ?? false
   })
 
+  ipcMain.handle('find:start', (_event, text: string, options?: Electron.FindInPageOptions) => {
+    const win = windowManager.getMainWindow()
+    if (!win || !text) return null
+    return win.webContents.findInPage(text, options)
+  })
+
+  ipcMain.handle('find:stop', (_event, action: 'clearSelection' | 'keepSelection' = 'clearSelection') => {
+    windowManager.getMainWindow()?.webContents.stopFindInPage(action)
+  })
+
   ipcMain.on('menu:updateLanguage', (_event, lang: string) => {
     updateMenuLanguage(lang)
   })

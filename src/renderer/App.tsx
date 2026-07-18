@@ -10,6 +10,7 @@ import type { ShortcutActions } from './hooks/useKeyboardShortcuts'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { ChatArea } from './components/ChatArea'
+import { FindBar } from './components/FindBar'
 import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { UpdateNotification } from './components/UpdateNotification'
@@ -33,6 +34,7 @@ export default function App() {
   // Track just-created task to prevent auto-select from overriding its selection
   const justCreatedTaskId = useRef<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [findOpen, setFindOpen] = useState(false)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -539,6 +541,9 @@ export default function App() {
       } else if (action === 'showKeyboardShortcuts') {
         setView('settings')
         setSettingsTab('keyboard')
+      } else if (action === 'find') {
+        setView('chat')
+        setFindOpen(true)
       }
     })
     return cleanup
@@ -561,6 +566,7 @@ export default function App() {
     onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
     onToggleStatusBar: () => setIsStatusBarOpen(prev => !prev),
     onCommitAndPush: () => window.dispatchEvent(new CustomEvent('buddy:commit')),
+    onFind: () => { setView('chat'); setFindOpen(true) },
     onSelectTaskByIndex: (index: number) => selectVisibleTaskBySlot(index + 1),
     onNextTask: () => selectVisibleTaskByOffset(1),
     onPrevTask: () => selectVisibleTaskByOffset(-1),
@@ -656,25 +662,28 @@ export default function App() {
           ) : (
             <>
               {/* 中间对话区域 */}
-              <ChatArea
-                task={taskDetail ?? null}
-                hasAnyTasks={hasAnyTasks}
-                onSendMessage={handleSendMessage}
-                onStartTask={handleStartTask}
-                onInterrupt={handleInterrupt}
-                onEnqueueInstruction={handleEnqueueInstruction}
-                onInterruptAndInsert={handleInterruptAndInsert}
-                onDequeueInstruction={handleDequeueInstruction}
-                onEditInstruction={handleEditInstruction}
-                onClearInstructionQueue={handleClearInstructionQueue}
-                onCreateTask={handleOpenCreateModal}
-                onRetryHealthCheck={handleRetryHealthCheck}
-                isRetryingHealthCheck={isRetryingHealthCheck}
-                draft={currentDraft}
-                onDraftChange={handleDraftChange}
-                attachments={currentAttachments}
-                onAttachmentsChange={handleAttachmentsChange}
-              />
+              <div className="relative flex-1 flex min-w-0">
+                <ChatArea
+                  task={taskDetail ?? null}
+                  hasAnyTasks={hasAnyTasks}
+                  onSendMessage={handleSendMessage}
+                  onStartTask={handleStartTask}
+                  onInterrupt={handleInterrupt}
+                  onEnqueueInstruction={handleEnqueueInstruction}
+                  onInterruptAndInsert={handleInterruptAndInsert}
+                  onDequeueInstruction={handleDequeueInstruction}
+                  onEditInstruction={handleEditInstruction}
+                  onClearInstructionQueue={handleClearInstructionQueue}
+                  onCreateTask={handleOpenCreateModal}
+                  onRetryHealthCheck={handleRetryHealthCheck}
+                  isRetryingHealthCheck={isRetryingHealthCheck}
+                  draft={currentDraft}
+                  onDraftChange={handleDraftChange}
+                  attachments={currentAttachments}
+                  onAttachmentsChange={handleAttachmentsChange}
+                />
+                <FindBar open={findOpen} onClose={() => setFindOpen(false)} />
+              </div>
 
               {/* 右侧状态栏 */}
               <StatusBar
