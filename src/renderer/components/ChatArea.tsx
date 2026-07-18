@@ -104,7 +104,7 @@ interface ChatAreaProps {
 
 export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, draft, onDraftChange, attachments, onAttachmentsChange, onFindScopeChange }: ChatAreaProps) {
   const t = useT()
-  const transcriptRef = useRef<HTMLDivElement>(null)
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [detailExpanded, setDetailExpanded] = useState(false)
   const userScrolledUp = useRef(false)
