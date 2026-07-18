@@ -58,8 +58,12 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
 
 /** ANSI escape sequence pattern for stripping TTY output */
 const ANSI_PATTERN = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g
-const CURSOR_STDIN_PROMPT_INSTRUCTION = 'Follow the complete Buddy turn instructions provided on stdin.'
-const CURSOR_POSITIONAL_PROMPT_MAX_BYTES = 24_000
+// cursor-agent's print mode (`-p`) only accepts the prompt as a positional
+// argument; it does NOT read a prompt piped on stdin. Buddy turns are well under
+// the platform argv limit (macOS ARG_MAX is ~1 MiB for argv+envp combined), so we
+// always pass the prompt positionally and only refuse prompts large enough to risk
+// an E2BIG spawn failure.
+const CURSOR_POSITIONAL_PROMPT_MAX_BYTES = 256_000
 
 /** Result from a PTY-based launcher run */
 export interface PtyRunResult {
@@ -238,17 +242,21 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     if (input.sessionId) args.push('--resume', input.sessionId)
     args.push(...(options.extra_args ?? []).filter((arg) => arg.trim() !== ''))
     const promptText = input.promptText ?? ''
-    const useStdin = Buffer.byteLength(promptText, 'utf8') > CURSOR_POSITIONAL_PROMPT_MAX_BYTES
-    // Cursor's documented print mode takes a positional prompt. Very large
-    // Buddy turns would exceed platform argv limits, so those use Cursor's
-    // documented pipe-as-context form plus a short positional instruction.
-    args.push(useStdin ? CURSOR_STDIN_PROMPT_INSTRUCTION : promptText)
+    // cursor-agent -p reads the prompt only from this positional argument, never
+    // from piped stdin. Refuse prompts large enough to risk an E2BIG spawn error
+    // instead of silently truncating — the caller surfaces this as a run failure.
+    if (Buffer.byteLength(promptText, 'utf8') > CURSOR_POSITIONAL_PROMPT_MAX_BYTES) {
+      throw new Error(
+        `Cursor Agent prompt is too large (${Buffer.byteLength(promptText, 'utf8')} bytes > ${CURSOR_POSITIONAL_PROMPT_MAX_BYTES}). `
+        + 'Reduce the turn/context size for this actor.'
+      )
+    }
+    args.push(promptText)
 
     return {
       command,
       args,
-      kind,
-      ...(useStdin ? { stdinText: promptText } : {})
+      kind
     }
   }
 

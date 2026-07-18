@@ -5,7 +5,6 @@ import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
 import { useGitStatus, type GitStatusResult } from '../hooks/useBuddy'
 import {
-  ACTOR_LABEL_KEY,
   Actor,
   actorColorVar,
   actorDisplayName,
@@ -148,6 +147,7 @@ export function StatusBar({
             failure={latestFailure}
             t={t}
             lang={lang}
+            taskSettings={taskSettings}
           />
 
           {isHealthCheckFailed && (
@@ -197,7 +197,7 @@ export function StatusBar({
             <span>{t('statusBar.events')}</span>
             <span className="text-xs font-normal text-fg-secondary">{t('common.collapse')}</span>
           </summary>
-          <EventLog events={events} t={t} lang={lang} />
+          <EventLog events={events} t={t} lang={lang} taskSettings={taskSettings} />
         </details>
       </div>
 
@@ -222,11 +222,6 @@ export function StatusBar({
       )}
     </div>
   )
-}
-
-function actorLabel(actor: string | undefined, t: TFunction): string {
-  if (!actor) return '-'
-  return ACTOR_LABEL_KEY[actor] ? t(ACTOR_LABEL_KEY[actor]) : actor
 }
 
 function InlineStatus({
@@ -272,16 +267,18 @@ function FailureDetail({
   status,
   failure,
   t,
-  lang
+  lang,
+  taskSettings
 }: {
   status: TaskStatus | undefined
   failure: Failure | null
   t: TFunction
   lang: Language
+  taskSettings: TaskSettings | null
 }) {
   if (status !== 'FAILED' || !failure?.message) return null
   const failureSnippet = truncate(decodeErrorText(failure.message), 240)
-  const failureActor = failure.actor ? actorLabel(failure.actor, t) : ''
+  const failureActor = failure.actor ? actorDisplayName(failure.actor, taskSettings) : ''
   const failureWhen = failure.ts ? formatTimeWithRelativeDate(failure.ts, lang) : ''
   return (
     <div className="mb-3 rounded-lg border border-danger bg-bg-subtle px-3 py-2 text-xs text-fg-secondary">
@@ -357,7 +354,7 @@ function ActorCard({
   )
 }
 
-function EventLog({ events, t, lang }: { events: Event[]; t: TFunction; lang: Language }) {
+function EventLog({ events, t, lang, taskSettings }: { events: Event[]; t: TFunction; lang: Language; taskSettings: TaskSettings | null }) {
   const [expanded, setExpanded] = useState(false)
   if (!events.length) {
     return <div className="px-4 pb-4 text-xs text-fg-muted">{t('statusBar.eventsEmpty')}</div>
@@ -379,7 +376,7 @@ function EventLog({ events, t, lang }: { events: Event[]; t: TFunction; lang: La
                 {event.seq} · {eventTypeLabel(event.type, lang)}
               </span>
               <span className="text-fg-secondary flex-shrink-0">
-                {event.actor ? `${actorLabel(event.actor, t)} ` : ''}
+                {event.actor ? `${actorDisplayName(event.actor, taskSettings)} ` : ''}
                 {formatTimeWithRelativeDate(event.ts, lang)}
               </span>
             </div>

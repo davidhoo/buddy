@@ -228,7 +228,7 @@ describe('launcher command builder', () => {
     expect(JSON.parse(lines[0]).result).toHaveLength(120000)
   })
 
-  it('pipes oversized Cursor prompts while keeping an explicit instruction', () => {
+  it('passes a large Cursor prompt positionally (cursor-agent ignores stdin)', () => {
     const promptText = 'x'.repeat(30_000)
     const command = buildLauncherCommand({
       actor: 'cursor-agent',
@@ -238,8 +238,19 @@ describe('launcher command builder', () => {
       promptText
     })
 
-    expect(command.args.at(-1)).toBe('Follow the complete Buddy turn instructions provided on stdin.')
-    expect(command.stdinText).toBe(promptText)
+    expect(command.args.at(-1)).toBe(promptText)
+    expect(command.stdinText).toBeUndefined()
+  })
+
+  it('rejects a Cursor prompt too large to pass as an argument', () => {
+    const promptText = 'x'.repeat(300_000)
+    expect(() => buildLauncherCommand({
+      actor: 'cursor-agent',
+      command: 'agent',
+      backend: 'cursor',
+      promptFile: '/tmp/prompt.md',
+      promptText
+    })).toThrow(/too large/)
   })
 
   it('builds custom launcher contract flags and environment', () => {
