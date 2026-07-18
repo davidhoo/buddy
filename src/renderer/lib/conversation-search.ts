@@ -3,10 +3,10 @@ export const CONVERSATION_ACTIVE_HIGHLIGHT = 'buddy-find-active'
 
 const SEGMENT_SELECTOR = '[data-conversation-search-segment]'
 const BLOCK_ELEMENTS = new Set([
-  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET',
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DETAILS', 'DIV', 'DL', 'FIELDSET',
   'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4',
   'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
-  'SECTION', 'TABLE', 'TR', 'UL'
+  'SECTION', 'SUMMARY', 'TABLE', 'TR', 'UL'
 ])
 
 interface TextSpan {
@@ -43,12 +43,19 @@ function indexSegment(segment: Element): IndexedSegment {
       node.matches('script, style, template, noscript, [hidden], [aria-hidden="true"], [data-conversation-search-exclude]')
       || style.display === 'none'
       || style.visibility === 'hidden'
+      || style.visibility === 'collapse'
       || style.contentVisibility === 'hidden'
+      || style.opacity === '0'
     ) return
 
     const isBoundary = node !== segment && (node.tagName === 'BR' || BLOCK_ELEMENTS.has(node.tagName))
     if (isBoundary) appendBoundary()
-    for (const child of node.childNodes) visit(child)
+    if (node.tagName === 'DETAILS' && !node.hasAttribute('open')) {
+      const summary = Array.from(node.children).find((child) => child.tagName === 'SUMMARY')
+      if (summary) visit(summary)
+    } else {
+      for (const child of node.childNodes) visit(child)
+    }
     if (isBoundary) appendBoundary()
   }
 

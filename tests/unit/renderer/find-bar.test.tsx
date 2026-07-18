@@ -117,4 +117,30 @@ describe('FindBar', () => {
     rerender(<FindBar open={false} activation={1} scope={scope} scopeKey="task-1" onClose={onClose} />)
     expect(previous).toHaveFocus()
   })
+
+  it('reindexes when visible content is hidden or revealed', async () => {
+    const scope = document.createElement('div')
+    scope.innerHTML = `
+      <div data-conversation-search-segment>
+        first needle
+        <span id="conditional-match">second needle</span>
+      </div>
+    `
+    document.body.appendChild(scope)
+    render(
+      <FindBar open activation={1} scope={scope} scopeKey="task-1" onClose={() => {}} />
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'needle' } })
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+
+    scrollIntoView.mockClear()
+    const conditional = scope.querySelector<HTMLElement>('#conditional-match')!
+    conditional.hidden = true
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/1'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    conditional.hidden = false
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
 })

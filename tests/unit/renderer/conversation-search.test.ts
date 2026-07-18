@@ -58,14 +58,20 @@ describe('conversation-scoped search', () => {
         visible needle
         <span hidden>hidden needle</span>
         <span style="display: none">also hidden needle</span>
+        <span style="visibility: collapse">collapsed needle</span>
+        <span style="opacity: 0">transparent needle</span>
+        <details>
+          <summary>visible summary needle</summary>
+          <span>closed details needle</span>
+        </details>
         <span data-conversation-search-segment>nested needle</span>
       </div>
     `)
 
     const ranges = findConversationRanges(root, 'needle')
 
-    expect(ranges).toHaveLength(2)
-    expect(ranges.map((range) => range.toString())).toEqual(['needle', 'needle'])
+    expect(ranges).toHaveLength(3)
+    expect(ranges.map((range) => range.toString())).toEqual(['needle', 'needle', 'needle'])
   })
 
   it('treats the query as literal text rather than a regular expression', () => {

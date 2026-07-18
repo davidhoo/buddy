@@ -54,6 +54,7 @@ export function useConversationFind(
     recompute(true)
     const observer = new MutationObserver((mutations) => {
       const hasSearchableMutation = mutations.some((mutation) => {
+        if (mutation.type === 'attributes') return true
         const element = mutation.target instanceof Element
           ? mutation.target
           : mutation.target.parentElement
@@ -67,7 +68,21 @@ export function useConversationFind(
         recompute(false)
       })
     })
-    observer.observe(scope, { childList: true, subtree: true, characterData: true })
+    observer.observe(scope, {
+      attributes: true,
+      attributeFilter: [
+        'aria-hidden',
+        'class',
+        'data-conversation-search-exclude',
+        'data-conversation-search-segment',
+        'hidden',
+        'open',
+        'style'
+      ],
+      childList: true,
+      subtree: true,
+      characterData: true
+    })
 
     return () => {
       cancelled = true
