@@ -22,6 +22,7 @@ const menuLabels = {
     copy: 'Copy',
     paste: 'Paste',
     selectAll: 'Select All',
+    find: 'Find in Conversation…',
     view: 'View',
     prevTask: 'Previous Task',
     nextTask: 'Next Task',
@@ -64,6 +65,7 @@ const menuLabels = {
     copy: '复制',
     paste: '粘贴',
     selectAll: '全选',
+    find: '在对话中查找…',
     view: '视图',
     prevTask: '上一个任务',
     nextTask: '下一个任务',
@@ -106,6 +108,7 @@ const menuLabels = {
     copy: '拷貝',
     paste: '貼上',
     selectAll: '全選',
+    find: '在對話中尋找…',
     view: '檢視',
     prevTask: '上一個任務',
     nextTask: '下一個任務',
@@ -187,7 +190,13 @@ function buildMenu(): Menu {
         { role: 'cut', label: t.cut },
         { role: 'copy', label: t.copy },
         { role: 'paste', label: t.paste },
-        { role: 'selectAll', label: t.selectAll }
+        { role: 'selectAll', label: t.selectAll },
+        { type: 'separator' },
+        {
+          label: t.find,
+          accelerator: 'CmdOrCtrl+F',
+          click: () => sendMenuAction('find')
+        }
       ]
     },
     {

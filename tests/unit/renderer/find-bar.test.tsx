@@ -1,0 +1,146 @@
+// @vitest-environment jsdom
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
+import { FindBar } from '../../../src/renderer/components/FindBar'
+import {
+  CONVERSATION_ACTIVE_HIGHLIGHT,
+  CONVERSATION_MATCH_HIGHLIGHT
+} from '../../../src/renderer/lib/conversation-search'
+
+class FakeHighlight {
+  readonly ranges: AbstractRange[]
+
+  constructor(...ranges: AbstractRange[]) {
+    this.ranges = ranges
+  }
+}
+
+describe('FindBar', () => {
+  const highlights = new Map<string, FakeHighlight>()
+  const scrollIntoView = vi.fn()
+
+  beforeEach(() => {
+    window.localStorage.setItem('buddy.language', 'en')
+    highlights.clear()
+    scrollIntoView.mockClear()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView
+    })
+    vi.stubGlobal('CSS', { highlights })
+    vi.stubGlobal('Highlight', FakeHighlight)
+  })
+
+  afterEach(() => {
+    cleanup()
+    window.localStorage.clear()
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    vi.unstubAllGlobals()
+  })
+
+  it('navigates scoped matches, reacts to mutations, and cleans up', async () => {
+    const scope = document.createElement('div')
+    scope.innerHTML = `
+      <div data-conversation-search-segment>first needle</div>
+      <div data-conversation-search-segment>second needle</div>
+      <div>needle outside the searchable segments</div>
+    `
+    document.body.appendChild(scope)
+    const onClose = vi.fn()
+    const { rerender, unmount } = render(
+      <FindBar open activation={1} scope={scope} scopeKey="task-1" onClose={onClose} />
+    )
+
+    const input = screen.getByRole('textbox', { name: 'Find in conversation' }) as HTMLInputElement
+    expect(input).toHaveFocus()
+    fireEvent.change(input, { target: { value: 'needle' } })
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(highlights.get(CONVERSATION_MATCH_HIGHLIGHT)?.ranges).toHaveLength(2)
+    expect(highlights.get(CONVERSATION_ACTIVE_HIGHLIGHT)?.ranges).toHaveLength(1)
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByRole('status')).toHaveTextContent('2/2')
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(screen.getByRole('status')).toHaveTextContent('1/2')
+    fireEvent.click(screen.getByRole('button', { name: 'Previous match' }))
+    expect(screen.getByRole('status')).toHaveTextContent('2/2')
+
+    scrollIntoView.mockClear()
+    const added = document.createElement('div')
+    added.dataset.conversationSearchSegment = ''
+    added.textContent = 'third needle'
+    scope.appendChild(added)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('2/3'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    input.setSelectionRange(2, 2)
+    scope.innerHTML = `
+      <div data-conversation-search-segment>new needle one</div>
+      <div data-conversation-search-segment>new needle two</div>
+      <div data-conversation-search-segment>new needle three</div>
+    `
+    rerender(<FindBar open activation={2} scope={scope} scopeKey="task-2" onClose={onClose} />)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/3'))
+    expect(input).toHaveFocus()
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(input.value.length)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(highlights.has(CONVERSATION_MATCH_HIGHLIGHT)).toBe(false)
+    expect(highlights.has(CONVERSATION_ACTIVE_HIGHLIGHT)).toBe(false)
+  })
+
+  it('keeps button activation independent and restores prior focus on close', async () => {
+    const previous = document.createElement('button')
+    previous.textContent = 'previous focus'
+    document.body.appendChild(previous)
+    previous.focus()
+
+    const scope = document.createElement('div')
+    scope.innerHTML = '<div data-conversation-search-segment>needle needle</div>'
+    document.body.appendChild(scope)
+    const onClose = vi.fn()
+    const { rerender } = render(
+      <FindBar open activation={1} scope={scope} scopeKey="task-1" onClose={onClose} />
+    )
+    const input = screen.getByRole('textbox') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'needle' } })
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    rerender(<FindBar open={false} activation={1} scope={scope} scopeKey="task-1" onClose={onClose} />)
+    expect(previous).toHaveFocus()
+  })
+
+  it('reindexes when visible content is hidden or revealed', async () => {
+    const scope = document.createElement('div')
+    scope.innerHTML = `
+      <div data-conversation-search-segment>
+        first needle
+        <span id="conditional-match">second needle</span>
+      </div>
+    `
+    document.body.appendChild(scope)
+    render(
+      <FindBar open activation={1} scope={scope} scopeKey="task-1" onClose={() => {}} />
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'needle' } })
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+
+    scrollIntoView.mockClear()
+    const conditional = scope.querySelector<HTMLElement>('#conditional-match')!
+    conditional.hidden = true
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/1'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    conditional.hidden = false
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1/2'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+})

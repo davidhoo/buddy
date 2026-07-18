@@ -127,10 +127,12 @@ export function RunningStatusMessage({
         </div>
         <div
           className="running-status-body"
+          data-conversation-search-segment
           onClick={onToggleExpand}
           style={onToggleExpand ? { cursor: 'pointer' } : undefined}
         >
-          {hint}{dotsPhases[dots]}
+          {hint}
+          <span aria-hidden="true" data-conversation-search-exclude>{dotsPhases[dots]}</span>
         </div>
       </div>
     </div>
@@ -187,13 +189,13 @@ export function RunningDetailPanel({
       <div ref={scrollRef} className="running-detail-content">
         {streamLines.length === 0 ? (
           lastMessage ? (
-            <div className="running-detail-line running-detail-fallback">{lastMessage}</div>
+            <div className="running-detail-line running-detail-fallback" data-conversation-search-segment>{lastMessage}</div>
           ) : (
             <div className="running-detail-empty">{t('running.streamingWaiting')}</div>
           )
         ) : (
           streamLines.map((line, i) => (
-            <div key={i} className="running-detail-line">{line.text}</div>
+            <div key={i} className="running-detail-line" data-conversation-search-segment>{line.text}</div>
           ))
         )}
       </div>

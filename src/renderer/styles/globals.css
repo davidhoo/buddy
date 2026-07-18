@@ -20,6 +20,18 @@ body {
   overflow: hidden;
 }
 
+::highlight(buddy-find-match) {
+  background-color: var(--accent-soft-hover);
+  color: inherit;
+}
+
+::highlight(buddy-find-active) {
+  background-color: var(--accent-primary);
+  color: var(--fg-inverse);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
 /* Window drag region */
 .drag-region {
   -webkit-app-region: drag;

@@ -13,6 +13,7 @@ export type ShortcutId =
   | 'toggleSidebar'
   | 'toggleStatusBar'
   | 'commitAndPush'
+  | 'find'
   | 'selectTask1'
   | 'selectTask2'
   | 'selectTask3'
@@ -60,6 +61,7 @@ export const SHORTCUT_DEFS: ShortcutDef[] = [
   { id: 'toggleSidebar',  group: 'application', labelKey: 'shortcuts.toggleSidebar',  defaultBinding: { key: 'b',  metaKey: true,  ctrlKey: false, altKey: false, shiftKey: false } },
   { id: 'toggleStatusBar',group: 'application', labelKey: 'shortcuts.toggleStatusBar',defaultBinding: { key: 'b',  metaKey: true,  ctrlKey: false, altKey: true,  shiftKey: false } },
   { id: 'commitAndPush',  group: 'application', labelKey: 'shortcuts.commitAndPush',  defaultBinding: { key: 'm',  metaKey: true,  ctrlKey: false, altKey: false, shiftKey: false } },
+  { id: 'find',           group: 'application', labelKey: 'shortcuts.find',           defaultBinding: { key: 'f',  metaKey: true,  ctrlKey: false, altKey: false, shiftKey: false } },
   { id: 'interrupt',      group: 'application', labelKey: 'shortcuts.interrupt',      defaultBinding: { key: '.',  metaKey: true,  ctrlKey: false, altKey: false, shiftKey: false } },
   { id: 'showShortcuts',  group: 'application', labelKey: 'shortcuts.showShortcuts',  defaultBinding: { key: '/',  metaKey: true,  ctrlKey: false, altKey: false, shiftKey: true  } },
   // Navigation

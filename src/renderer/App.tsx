@@ -10,6 +10,7 @@ import type { ShortcutActions } from './hooks/useKeyboardShortcuts'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { ChatArea } from './components/ChatArea'
+import { FindBar } from './components/FindBar'
 import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { UpdateNotification } from './components/UpdateNotification'
@@ -33,6 +34,9 @@ export default function App() {
   // Track just-created task to prevent auto-select from overriding its selection
   const justCreatedTaskId = useRef<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findActivation, setFindActivation] = useState(0)
+  const [findScope, setFindScope] = useState<HTMLElement | null>(null)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -48,6 +52,18 @@ export default function App() {
 
   useTheme()
   const updater = useUpdater()
+  const openFind = useCallback(() => {
+    setView('chat')
+    setFindOpen(true)
+    setFindActivation((value) => value + 1)
+  }, [])
+  const closeFind = useCallback(() => setFindOpen(false), [])
+
+  useEffect(() => {
+    if (findOpen && (view !== 'chat' || showCreateModal)) {
+      setFindOpen(false)
+    }
+  }, [findOpen, showCreateModal, view])
 
   useEffect(() => {
     window.api.isFullScreen().then(setIsFullScreen).catch(() => {})
@@ -539,10 +555,12 @@ export default function App() {
       } else if (action === 'showKeyboardShortcuts') {
         setView('settings')
         setSettingsTab('keyboard')
+      } else if (action === 'find') {
+        openFind()
       }
     })
     return cleanup
-  }, [handleOpenCreateModal, selectVisibleTaskByOffset, updater])
+  }, [handleOpenCreateModal, openFind, selectVisibleTaskByOffset, updater])
 
   const selectVisibleTaskBySlot = useCallback((slot: number) => {
     const visibleTasks = visibleTasksForShortcuts(
@@ -561,12 +579,15 @@ export default function App() {
     onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
     onToggleStatusBar: () => setIsStatusBarOpen(prev => !prev),
     onCommitAndPush: () => window.dispatchEvent(new CustomEvent('buddy:commit')),
+    onFind: openFind,
     onSelectTaskByIndex: (index: number) => selectVisibleTaskBySlot(index + 1),
     onNextTask: () => selectVisibleTaskByOffset(1),
     onPrevTask: () => selectVisibleTaskByOffset(-1),
     onInterrupt: handleInterrupt,
     onEscape: () => {
-      if (showCreateModal) {
+      if (findOpen) {
+        closeFind()
+      } else if (showCreateModal) {
         setShowCreateModal(false)
         setPendingRepoRoot(null)
       } else if (view === 'settings') {
@@ -574,7 +595,7 @@ export default function App() {
       }
     },
     onShowShortcuts: () => { setView('settings'); setSettingsTab('keyboard') },
-  }), [handleOpenCreateModal, handleInterrupt, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
+  }), [closeFind, findOpen, handleOpenCreateModal, handleInterrupt, openFind, selectVisibleTaskByOffset, selectVisibleTaskBySlot, showCreateModal, view])
 
   useKeyboardShortcuts(shortcutActions)
 
@@ -656,25 +677,37 @@ export default function App() {
           ) : (
             <>
               {/* 中间对话区域 */}
-              <ChatArea
-                task={taskDetail ?? null}
-                hasAnyTasks={hasAnyTasks}
-                onSendMessage={handleSendMessage}
-                onStartTask={handleStartTask}
-                onInterrupt={handleInterrupt}
-                onEnqueueInstruction={handleEnqueueInstruction}
-                onInterruptAndInsert={handleInterruptAndInsert}
-                onDequeueInstruction={handleDequeueInstruction}
-                onEditInstruction={handleEditInstruction}
-                onClearInstructionQueue={handleClearInstructionQueue}
-                onCreateTask={handleOpenCreateModal}
-                onRetryHealthCheck={handleRetryHealthCheck}
-                isRetryingHealthCheck={isRetryingHealthCheck}
-                draft={currentDraft}
-                onDraftChange={handleDraftChange}
-                attachments={currentAttachments}
-                onAttachmentsChange={handleAttachmentsChange}
-              />
+              <div className="relative flex-1 flex min-w-0">
+                <ChatArea
+                  task={taskDetail ?? null}
+                  hasAnyTasks={hasAnyTasks}
+                  onSendMessage={handleSendMessage}
+                  onStartTask={handleStartTask}
+                  onInterrupt={handleInterrupt}
+                  onEnqueueInstruction={handleEnqueueInstruction}
+                  onInterruptAndInsert={handleInterruptAndInsert}
+                  onDequeueInstruction={handleDequeueInstruction}
+                  onEditInstruction={handleEditInstruction}
+                  onClearInstructionQueue={handleClearInstructionQueue}
+                  onCreateTask={handleOpenCreateModal}
+                  onRetryHealthCheck={handleRetryHealthCheck}
+                  isRetryingHealthCheck={isRetryingHealthCheck}
+                  draft={currentDraft}
+                  onDraftChange={handleDraftChange}
+                  attachments={currentAttachments}
+                  onAttachmentsChange={handleAttachmentsChange}
+                  onFindScopeChange={setFindScope}
+                />
+                <FindBar
+                  open={findOpen}
+                  activation={findActivation}
+                  scope={findScope}
+                  scopeKey={selectedTaskId && selectedWorkspaceKey
+                    ? `${selectedWorkspaceKey}:${selectedTaskId}`
+                    : null}
+                  onClose={closeFind}
+                />
+              </div>
 
               {/* 右侧状态栏 */}
               <StatusBar
