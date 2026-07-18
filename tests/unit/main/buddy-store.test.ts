@@ -307,4 +307,32 @@ describe('BuddyStore read model', () => {
       context_text: 'Legacy context text'
     })
   })
+
+  it('parses Cursor Agent camelCase token usage from a result event', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-store-cursor-usage-'))
+    const taskDir = join(root, 'workspaces', 'abc123def456', 'tasks', 'demo')
+    await mkdir(join(taskDir, 'artifacts'), { recursive: true })
+    await writeFile(join(taskDir, 'settings.json'), JSON.stringify({
+      protocol_version: '1',
+      countdown_seconds: 30,
+      role_mode: 'claude_implements',
+      launchers: {
+        'cursor-agent': { command: 'agent', backend: 'cursor', env: {}, timeout_seconds: 600 }
+      }
+    }))
+    await writeFile(join(taskDir, 'artifacts', 'run-1-events.jsonl'), [
+      '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"ok\\"}"}]},"session_id":"s1"}',
+      '{"type":"result","subtype":"success","duration_ms":19095,"result":"{\\"type\\":\\"chat\\",\\"content\\":\\"ok\\"}","session_id":"s1","usage":{"inputTokens":3,"outputTokens":472,"cacheReadTokens":216683,"cacheWriteTokens":6001}}',
+      ''
+    ].join('\n'))
+
+    const store = new BuddyStore(root)
+    const summary = await store.getRoundEvents('demo', 'run-1', 'abc123def456', 'cursor-agent')
+
+    expect(summary).not.toBeNull()
+    expect(summary?.inputTokens).toBe(3)
+    expect(summary?.outputTokens).toBe(472)
+    expect(summary?.cacheReadTokens).toBe(216683)
+    expect(summary?.durationMs).toBe(19095)
+  })
 })

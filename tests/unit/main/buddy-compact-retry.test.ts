@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -411,6 +411,11 @@ process.exit(1);
     // is a contract launcher, not native Claude, so stdin isn't used)
     const summarizeFailedEvent = detail.events.find((e) => e.type === 'actor.summarize_failed')
     expect(summarizeFailedEvent).toBeDefined()
+    const artifactsDir = join(store.taskDirectory('demo', created.workspace_key), 'artifacts')
+    const summarizePrompt = (await readdir(artifactsDir))
+      .find((name) => name.startsWith('summarize_') && name.endsWith('-prompt.md'))
+    expect(summarizePrompt).toBeDefined()
+    expect((await stat(join(artifactsDir, summarizePrompt!))).mode & 0o777).toBe(0o600)
 
     // Session reset should record that it fell back to truncation
     const resetEvent = detail.events.find((e) => e.type === 'actor.session_reset')

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { TaskNotifier } from '../../../src/main/buddy/notifications'
 import type { BuddyStore } from '../../../src/main/buddy/store'
-import type { GlobalSettings, TaskStats } from '../../../src/shared/types'
+import type { GlobalSettings, TaskSettings, TaskStats } from '../../../src/shared/types'
 
 // Mock electron Notification - factory must not reference external variables
 vi.mock('electron', () => {
@@ -14,6 +14,7 @@ vi.mock('electron', () => {
 function createMockStore(overrides: {
   settings?: Partial<GlobalSettings>
   stats?: TaskStats | null
+  taskSettings?: Partial<TaskSettings>
 } = {}): BuddyStore {
   const settings: GlobalSettings = {
     system_notifications_enabled: true,
@@ -22,6 +23,7 @@ function createMockStore(overrides: {
   return {
     readGlobalSettings: vi.fn().mockResolvedValue(settings),
     getTaskStats: vi.fn().mockResolvedValue(overrides.stats ?? null),
+    getTaskDetail: vi.fn().mockResolvedValue({ settings: overrides.taskSettings ?? {} }),
   } as unknown as BuddyStore
 }
 
@@ -142,6 +144,33 @@ describe('TaskNotifier', () => {
       expect(Notification).toHaveBeenCalledWith(
         expect.objectContaining({
           body: expect.stringContaining('...')
+        })
+      )
+    })
+
+    it('uses the configured actor display name', async () => {
+      const store = createMockStore({
+        taskSettings: {
+          launchers: {
+            'cursor-agent': {
+              command: 'agent',
+              env: {},
+              timeout_seconds: 600,
+              backend: 'cursor',
+              display_name: 'Cursor Reviewer'
+            }
+          }
+        }
+      })
+      const { createTaskNotifier } = await import('../../../src/main/buddy/notifications')
+      const notifier = createTaskNotifier(store)
+
+      await notifier.notifyTaskFailed('test-task', 'ws1', 'cursor-agent', 'connection failed')
+
+      const Notification = await getNotificationMock()
+      expect(Notification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.stringContaining('Actor：Cursor Reviewer')
         })
       )
     })

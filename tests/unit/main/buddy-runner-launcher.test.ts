@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -97,6 +97,101 @@ describe('BuddyRunner with fake launcher', () => {
         content: 'cursor output',
         meta: expect.objectContaining({ backend: 'cursor', display_name: 'Cursor Implementer' })
       })
+    ]))
+  })
+
+  it('loads a large Cursor prompt from a private artifact and redacts it from raw events', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-cursor-large-'))
+    const fake = join(root, 'agent')
+    const marker = 'PRIVATE_LARGE_PROMPT_MARKER'
+    await writeFile(fake, [
+      '#!/usr/bin/env node',
+      "const fs = require('fs')",
+      'const args = process.argv.slice(2)',
+      "const instruction = args.at(-1) || ''",
+      "const match = instruction.match(/from (\"(?:[^\"\\\\]|\\\\.)*\") before/)",
+      'if (!match) process.exit(21)',
+      'const promptFile = JSON.parse(match[1])',
+      "const prompt = fs.readFileSync(promptFile, 'utf8')",
+      `if (!prompt.includes('${marker}')) process.exit(22)`,
+      "const session_id = 'cursor-large-session'",
+      "const response = JSON.stringify({ type: 'chat', content: 'large prompt loaded' })",
+      "console.log(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] }, session_id }))",
+      "console.log(JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: response }] }, session_id }))",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: response, session_id, usage: { inputTokens: 11, outputTokens: 7 } }))"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'cursor-large',
+      repo_root: root,
+      context_text: `${marker}\n${'x'.repeat(30_000)}`,
+      settings: {
+        implementer_actor: 'cursor-agent',
+        reviewer_actor: 'codex',
+        launchers: {
+          'cursor-agent': {
+            command: fake,
+            env: {},
+            timeout_seconds: 5,
+            backend: 'cursor'
+          }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('cursor-large', {
+      workspace_key: created.workspace_key,
+      actor: 'cursor-agent'
+    })
+
+    const detail = await store.getTaskDetail('cursor-large', created.workspace_key)
+    expect(detail.state.status).toBe('PAUSED')
+    expect(detail.transcript).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'cursor-agent', content: 'large prompt loaded' })
+    ]))
+
+    const artifactsDir = join(store.taskDirectory('cursor-large', created.workspace_key), 'artifacts')
+    const artifactNames = await readdir(artifactsDir)
+    const promptName = artifactNames.find((name) => name.endsWith('-prompt.md'))
+    const eventName = artifactNames.find((name) => name.endsWith('-events.jsonl'))
+    expect(promptName).toBeDefined()
+    expect(eventName).toBeDefined()
+    expect((await stat(join(artifactsDir, promptName!))).mode & 0o777).toBe(0o600)
+
+    const persistedEvents = await readFile(join(artifactsDir, eventName!), 'utf8')
+    expect(persistedEvents).not.toContain(marker)
+    expect(persistedEvents).toContain('[REDACTED: Buddy prompt]')
+    expect(persistedEvents).toContain('"inputTokens":11')
+  })
+
+  it('marks preparation failures instead of leaving the task running', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-preparation-failure-'))
+    const store = new BuddyStore(root)
+    const created = await store.createTask({
+      task_id: 'preparation-failure',
+      repo_root: root
+    })
+    const runner = new BuddyRunner(store)
+    const internals = runner as unknown as { executeActorInner: () => Promise<void> }
+    internals.executeActorInner = async () => {
+      throw new Error('command preparation failed')
+    }
+
+    await expect(runner.startTask('preparation-failure', {
+      workspace_key: created.workspace_key,
+      actor: 'claude'
+    })).rejects.toThrow('command preparation failed')
+
+    const detail = await store.getTaskDetail('preparation-failure', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.active_run).toBeNull()
+    expect(detail.state.latest_failure?.message).toBe('command preparation failed')
+    expect(detail.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'actor.failed', actor: 'claude' })
     ]))
   })
 

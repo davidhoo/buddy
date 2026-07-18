@@ -413,7 +413,8 @@ export class BuddyRunner {
   private async executePing(
     taskId: string,
     workspaceKey: string,
-    actor: string
+    actor: string,
+    taskSettings: TaskSettings
   ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string }> {
     const globalSettings = await this.store.readGlobalSettings()
     const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
@@ -440,7 +441,7 @@ export class BuddyRunner {
           taskId,
           workspaceKey,
           'system',
-          `${actorDisplayName(actor)} 连通性检查检测到自动升级，等待升级完成后重试 (${upgradeRetries}/${maxUpgradeRetries})...`,
+          `${actorDisplayName(actor, taskSettings)} 连通性检查检测到自动升级，等待升级完成后重试 (${upgradeRetries}/${maxUpgradeRetries})...`,
           { kind: 'health_check_upgrade_retry', retry_attempt: upgradeRetries, actor }
         )
         await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
@@ -470,7 +471,7 @@ export class BuddyRunner {
     const promptFile = join(artifactsDir, `${runId}-prompt.md`)
     const outputFile = join(artifactsDir, `${runId}-output.md`)
     const eventFile = join(artifactsDir, `${runId}-events.jsonl`)
-    await writeFile(promptFile, prompt)
+    await writeFile(promptFile, prompt, { mode: 0o600 })
 
     const cwd = await existingCwd(detail.state.repo_root)
     const commandKind = commandKindFor(actor, launcher.command, launcher.backend)
@@ -548,6 +549,7 @@ export class BuddyRunner {
     reviewer: string
   ): Promise<string> {
     const actors = [implementer, reviewer]
+    const taskSettings = (await this.store.getTaskDetail(taskId, workspaceKey)).settings
     const actorResults: Record<string, 'pending' | 'running' | 'passed' | 'failed'> = {}
     for (const a of actors) actorResults[a] = 'pending'
 
@@ -579,7 +581,7 @@ export class BuddyRunner {
     }))
 
     const pingResults = await Promise.allSettled(
-      actors.map((actor) => this.executePing(taskId, workspaceKey, actor))
+      actors.map((actor) => this.executePing(taskId, workspaceKey, actor, taskSettings))
     )
 
     let allPassed = true
@@ -660,9 +662,10 @@ export class BuddyRunner {
       return `ping_ok_${Date.now()}`
     } else {
       const failedAt = new Date().toISOString()
+      const failureMessage = `连通性检查失败：${failedActor ? actorDisplayName(failedActor, taskSettings) : '未知'} — ${failedReason ?? '未知错误'}`
       const failureRecord: Failure = {
         actor: failedActor ?? undefined,
-        message: `连通性检查失败：${failedActor ? actorDisplayName(failedActor) : '未知'} — ${failedReason ?? '未知错误'}`,
+        message: failureMessage,
         ts: failedAt
       }
       await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
@@ -691,7 +694,7 @@ export class BuddyRunner {
       if (this.notifier) {
         await this.notifier.notifyTaskFailed(taskId, workspaceKey, failedActor ?? 'unknown', `健康检查失败：${failedReason ?? '未知错误'}`)
       }
-      throw new Error(`连通性检查失败：${actorDisplayName(failedActor)} — ${failedReason ?? '未知错误'}`)
+      throw new Error(failureMessage)
     }
   }
 
@@ -729,7 +732,16 @@ export class BuddyRunner {
   }
 
   private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = '', compactRetries = 0): Promise<void> {
-    return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, 0)
+    try {
+      await this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, 0)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // executeActorInner handles runtime failures itself. Its run-id guard
+      // makes this a no-op in that case, while still covering preparation
+      // failures that happen before the inner try/finally is established.
+      await this.markFailed(taskId, workspaceKey, actor, message, runId)
+      throw error
+    }
   }
 
   private async executeActorInner(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage: string, compactRetries: number, upgradeRetries: number): Promise<void> {
@@ -758,7 +770,7 @@ export class BuddyRunner {
     const promptFile = join(artifactsDir, `${runId}-prompt.md`)
     const outputFile = join(artifactsDir, `${runId}-output.md`)
     const eventFile = join(artifactsDir, `${runId}-events.jsonl`)
-    await writeFile(promptFile, prompt)
+    await writeFile(promptFile, prompt, { mode: 0o600 })
     const cwd = await existingCwd(detail.state.repo_root)
     const existingSessionId = sessionIdForActor(actor, detail.state, detail.settings)
     const commandKind = commandKindFor(actor, launcher.command, launcher.backend)
@@ -1194,6 +1206,7 @@ export class BuddyRunner {
       actor,
       ts: new Date().toISOString()
     }
+    const taskSettings = (await this.store.getTaskDetail(taskId, workspaceKey)).settings
     const stateBefore = await this.store.readTaskState(taskId, workspaceKey)
     const pendingBreak = stateBefore.pending_break
     const otherActorBreak = pendingBreak?.actor && pendingBreak.actor !== actor ? pendingBreak : null
@@ -1217,7 +1230,7 @@ export class BuddyRunner {
         taskId,
         workspaceKey,
         'system',
-        `${actorDisplayName(otherActorBreak.actor)} 请求结束任务，${actorDisplayName(actor)} 因错误无法继续，自动确认结束。`,
+        `${actorDisplayName(otherActorBreak.actor, taskSettings)} 请求结束任务，${actorDisplayName(actor, taskSettings)} 因错误无法继续，自动确认结束。`,
         { kind: 'round_notice', round }
       )
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1266,7 +1279,7 @@ export class BuddyRunner {
         taskId,
         workspaceKey,
         'system',
-        `${actorDisplayName(actor)} 连续失败 ${newConsecutiveFailures} 次，已达到上限 (${maxConsecutiveFailures})，暂停等待用户处理。`,
+        `${actorDisplayName(actor, taskSettings)} 连续失败 ${newConsecutiveFailures} 次，已达到上限 (${maxConsecutiveFailures})，暂停等待用户处理。`,
         { kind: 'round_notice', round: stateBefore.round ?? 0 }
       )
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -1403,7 +1416,7 @@ export class BuddyRunner {
     const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
     const summarizePromptFile = join(taskDirectory, 'artifacts', `summarize_${Date.now()}-prompt.md`)
     await mkdir(join(taskDirectory, 'artifacts'), { recursive: true })
-    await writeFile(summarizePromptFile, summarizePrompt, 'utf-8')
+    await writeFile(summarizePromptFile, summarizePrompt, { encoding: 'utf8', mode: 0o600 })
 
     const summarizeCommand = buildLauncherCommand({
       actor,
@@ -1758,7 +1771,12 @@ export async function collectRawEvents(
   kind: LauncherCommandKind
 ): Promise<string> {
   if (kind !== 'contract') {
-    if (stdoutText) await writeFile(eventFile, stdoutText)
+    if (stdoutText) {
+      const persistedText = kind === 'native_cursor'
+        ? redactCursorUserTextEvents(stdoutText)
+        : stdoutText
+      await writeFile(eventFile, persistedText, { mode: 0o600 })
+    }
     return stdoutText
   }
 
@@ -1770,6 +1788,44 @@ export async function collectRawEvents(
     return stdoutText
   }
   return ''
+}
+
+export function redactCursorUserTextEvents(jsonl: string): string {
+  return jsonl.split(/\r?\n/).map((line) => {
+    if (!line.trim()) return line
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>
+      if (event.type !== 'user' || !event.message || typeof event.message !== 'object') return line
+      const message = event.message as Record<string, unknown>
+      if (typeof message.content === 'string') {
+        return JSON.stringify({
+          ...event,
+          message: { ...message, content: '[REDACTED: Buddy prompt]' }
+        })
+      }
+      if (!Array.isArray(message.content)) return line
+
+      let changed = false
+      const content = message.content.map((item) => {
+        if (
+          item
+          && typeof item === 'object'
+          && !Array.isArray(item)
+          && (item as Record<string, unknown>).type === 'text'
+          && typeof (item as Record<string, unknown>).text === 'string'
+        ) {
+          changed = true
+          return { ...(item as Record<string, unknown>), text: '[REDACTED: Buddy prompt]' }
+        }
+        return item
+      })
+      return changed
+        ? JSON.stringify({ ...event, message: { ...message, content } })
+        : line
+    } catch {
+      return line
+    }
+  }).join('\n')
 }
 
 export async function collectOutputText(

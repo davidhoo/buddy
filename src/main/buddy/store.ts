@@ -430,9 +430,18 @@ export class BuddyStore {
       if (event.type === 'result') {
         if (event.usage) {
           const u = event.usage as Record<string, unknown>
-          inputTokens = (u.input_tokens as number) ?? inputTokens
-          outputTokens = (u.output_tokens as number) ?? outputTokens
-          cacheReadTokens = (u.cache_read_input_tokens as number) ?? cacheReadTokens
+          // Cursor Agent reports usage in camelCase (inputTokens/outputTokens/
+          // cacheReadTokens); claude/codex/kimi use snake_case. Accept both.
+          const pick = (...keys: string[]): number | undefined => {
+            for (const key of keys) {
+              const value = u[key]
+              if (typeof value === 'number') return value
+            }
+            return undefined
+          }
+          inputTokens = pick('input_tokens', 'inputTokens') ?? inputTokens
+          outputTokens = pick('output_tokens', 'outputTokens') ?? outputTokens
+          cacheReadTokens = pick('cache_read_input_tokens', 'cacheReadTokens', 'cache_read_tokens') ?? cacheReadTokens
         }
         if (event.duration_ms != null) durationMs = event.duration_ms as number
         if (event.total_cost_usd != null) costUsd = event.total_cost_usd as number

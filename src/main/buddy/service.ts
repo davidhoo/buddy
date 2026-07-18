@@ -300,7 +300,7 @@ export class BuddyCoreService {
       const promptFile = join(testDir, `${runId}-prompt.md`)
       const outputFile = join(testDir, `${runId}-output.md`)
       const eventFile = join(testDir, `${runId}-events.jsonl`)
-      await writeFile(promptFile, prompt)
+      await writeFile(promptFile, prompt, { mode: 0o600 })
 
       const commandKind = commandKindFor(actor, command, launcher.backend)
       const launcherCommand = buildLauncherCommand({

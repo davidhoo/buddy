@@ -1,5 +1,5 @@
 import { Notification } from 'electron'
-import type { TaskStats } from '../../shared/types'
+import type { TaskSettings, TaskStats } from '../../shared/types'
 import type { BuddyStore } from './store'
 import { actorDisplayName } from './prompts'
 
@@ -44,6 +44,14 @@ export function createTaskNotifier(store: BuddyStore): TaskNotifier {
     }
   }
 
+  const getTaskSettings = async (taskId: string, workspaceKey: string): Promise<TaskSettings | undefined> => {
+    try {
+      return (await store.getTaskDetail(taskId, workspaceKey)).settings
+    } catch {
+      return undefined
+    }
+  }
+
   return {
     async notifyTaskDone(taskId, workspaceKey, reason, actors) {
       if (!(await isEnabled())) return
@@ -52,7 +60,8 @@ export function createTaskNotifier(store: BuddyStore): TaskNotifier {
       let body: string
 
       if (reason === 'break_confirmed_on_failure' && actors?.first && actors?.second) {
-        body = `任务：${taskId}\n状态：已完成\n${actorDisplayName(actors.first)} 请求结束，${actorDisplayName(actors.second)} 执行失败后自动确认结束。`
+        const taskSettings = await getTaskSettings(taskId, workspaceKey)
+        body = `任务：${taskId}\n状态：已完成\n${actorDisplayName(actors.first, taskSettings)} 请求结束，${actorDisplayName(actors.second, taskSettings)} 执行失败后自动确认结束。`
       } else {
         const stats = await getTaskStats(taskId, workspaceKey)
         if (stats) {
@@ -65,24 +74,26 @@ export function createTaskNotifier(store: BuddyStore): TaskNotifier {
       sendNotification(title, body)
     },
 
-    async notifyTaskFailed(taskId, _workspaceKey, actor, error) {
+    async notifyTaskFailed(taskId, workspaceKey, actor, error) {
       if (!(await isEnabled())) return
 
+      const taskSettings = await getTaskSettings(taskId, workspaceKey)
       const truncatedError = error.length > MAX_ERROR_LENGTH
         ? error.slice(0, MAX_ERROR_LENGTH) + '...'
         : error
 
       const title = 'Buddy - 任务失败'
-      const body = `任务：${taskId}\n状态：失败\nActor：${actorDisplayName(actor)}\n原因：${truncatedError}`
+      const body = `任务：${taskId}\n状态：失败\nActor：${actorDisplayName(actor, taskSettings)}\n原因：${truncatedError}`
 
       sendNotification(title, body)
     },
 
-    async notifyTaskPaused(taskId, _workspaceKey, actor, consecutiveFailures, maxFailures) {
+    async notifyTaskPaused(taskId, workspaceKey, actor, consecutiveFailures, maxFailures) {
       if (!(await isEnabled())) return
 
+      const taskSettings = await getTaskSettings(taskId, workspaceKey)
       const title = 'Buddy - 任务已暂停'
-      const body = `任务：${taskId}\n状态：已暂停\n${actorDisplayName(actor)} 连续失败 ${consecutiveFailures} 次，已达到上限 (${maxFailures})，等待用户处理。`
+      const body = `任务：${taskId}\n状态：已暂停\n${actorDisplayName(actor, taskSettings)} 连续失败 ${consecutiveFailures} 次，已达到上限 (${maxFailures})，等待用户处理。`
 
       sendNotification(title, body)
     }

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { basename } from 'node:path'
+import { basename, dirname } from 'node:path'
 import type { CursorLauncherOptions, LauncherBackend } from '../../shared/types'
 import { installHintFor } from './shell-path'
 
@@ -58,7 +58,9 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
 
 /** ANSI escape sequence pattern for stripping TTY output */
 const ANSI_PATTERN = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g
-const CURSOR_STDIN_PROMPT_INSTRUCTION = 'Follow the complete Buddy turn instructions provided on stdin.'
+// cursor-agent's print mode (`-p`) does not read a prompt from stdin. Keep
+// ordinary prompts positional, but use the private prompt artifact for larger
+// turns so no single argv entry approaches platform-specific size limits.
 const CURSOR_POSITIONAL_PROMPT_MAX_BYTES = 24_000
 
 /** Result from a PTY-based launcher run */
@@ -238,17 +240,20 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     if (input.sessionId) args.push('--resume', input.sessionId)
     args.push(...(options.extra_args ?? []).filter((arg) => arg.trim() !== ''))
     const promptText = input.promptText ?? ''
-    const useStdin = Buffer.byteLength(promptText, 'utf8') > CURSOR_POSITIONAL_PROMPT_MAX_BYTES
-    // Cursor's documented print mode takes a positional prompt. Very large
-    // Buddy turns would exceed platform argv limits, so those use Cursor's
-    // documented pipe-as-context form plus a short positional instruction.
-    args.push(useStdin ? CURSOR_STDIN_PROMPT_INSTRUCTION : promptText)
+    if (Buffer.byteLength(promptText, 'utf8') > CURSOR_POSITIONAL_PROMPT_MAX_BYTES) {
+      args.push('--add-dir', dirname(input.promptFile))
+      args.push(
+        `Read the complete UTF-8 Buddy turn instructions from ${JSON.stringify(input.promptFile)} `
+        + 'before doing anything else, then follow those instructions exactly.'
+      )
+    } else {
+      args.push(promptText)
+    }
 
     return {
       command,
       args,
-      kind,
-      ...(useStdin ? { stdinText: promptText } : {})
+      kind
     }
   }
 
@@ -353,16 +358,12 @@ export async function runLauncher(input: {
       stdio: ['pipe', 'pipe', 'pipe']
     })
   } catch (error) {
-    throw commandNotFoundError(command, error)
+    throw normalizeLauncherSpawnError(command, error)
   }
 
   const spawnError = await new Promise<Error | null>((resolve) => {
     child.on('error', (err) => {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        resolve(commandNotFoundError(command, err))
-      } else {
-        resolve(err)
-      }
+      resolve(normalizeLauncherSpawnError(command, err))
     })
     child.on('spawn', () => resolve(null))
   })
@@ -394,6 +395,19 @@ export async function runLauncher(input: {
   const [exitCode, signal] = await once(child, 'close') as [number | null, string | null]
   clearTimeout(timeout)
   return { exitCode, signal }
+}
+
+export function normalizeLauncherSpawnError(command: string, error: unknown): Error {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  if (code === 'ENOENT') return commandNotFoundError(command, error)
+  if (code === 'E2BIG') {
+    const normalized = new Error(
+      `Cannot start '${command}': command arguments or environment exceed the operating system size limit.`
+    )
+    Object.assign(normalized, { cause: error, code })
+    return normalized
+  }
+  return error instanceof Error ? error : new Error(String(error))
 }
 
 function commandNotFoundError(command: string, cause: unknown): Error {

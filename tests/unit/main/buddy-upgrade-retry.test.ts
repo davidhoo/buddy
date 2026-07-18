@@ -211,14 +211,15 @@ process.exit(1);
       settings: {
         role_mode: 'claude_implements',
         launchers: {
-          claude: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 },
-          codex: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 }
+          claude: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5, display_name: 'Primary Reviewer' },
+          codex: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5, display_name: 'Secondary Reviewer' }
         }
       }
     })
 
     const runner = new BuddyRunner(store)
-    await expect(runner.startTask('demo', { workspace_key: created.workspace_key })).rejects.toThrow()
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key }))
+      .rejects.toThrow(/Primary Reviewer/)
 
     const detail = await store.getTaskDetail('demo', created.workspace_key)
 
@@ -226,12 +227,15 @@ process.exit(1);
     expect(retryEvents.length).toBeGreaterThanOrEqual(1)
     expect(retryEvents[0]?.payload.retry_attempt).toBe(1)
 
-    const retryTranscript = detail.transcript.find((t) => t.meta?.kind === 'health_check_upgrade_retry')
+    const retryTranscript = detail.transcript.find(
+      (t) => t.meta?.kind === 'health_check_upgrade_retry' && t.meta?.actor === 'claude'
+    )
     expect(retryTranscript).toBeDefined()
-    expect(retryTranscript?.content).toContain('自动升级')
+    expect(retryTranscript?.content).toContain('Primary Reviewer')
 
     expect(detail.state.status).toBe('FAILED')
     expect(detail.state.health_check?.failed_actor).toBeTruthy()
+    expect(detail.state.latest_failure?.message).toContain('Primary Reviewer')
   })
 
   it('recovers the health check when an auto-upgrading CLI succeeds on retry', { timeout: 30000 }, async () => {

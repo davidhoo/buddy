@@ -245,6 +245,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
                 entry={entry}
                 taskId={task.task_id}
                 workspaceKey={task.workspace_key}
+                taskSettings={task.settings}
                 onRetryHealthCheck={onRetryHealthCheck}
                 isRetryingHealthCheck={isRetryingHealthCheck}
               />
