@@ -148,10 +148,18 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
   const [command, ...prefixArgs] = cleanedBaseCmd
 
   if (kind === 'native_claude') {
+    // Buddy runs Claude in headless print mode (-p), where interactive
+    // permission prompts are impossible, so any tool call that isn't
+    // pre-allowlisted is auto-denied (WebFetch, reads/writes outside cwd,
+    // MCP tools, compound Bash commands). Inject the bypass flag so the
+    // actor can actually work, matching the codex/opencode launchers.
+    // Skip if the user already put it in the command string.
+    const hasSkipPermissions = prefixArgs.includes('--dangerously-skip-permissions')
     return {
       command,
       args: [
         ...prefixArgs,
+        ...(hasSkipPermissions ? [] : ['--dangerously-skip-permissions']),
         '-p',
         '--output-format',
         'stream-json',

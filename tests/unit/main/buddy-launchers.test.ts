@@ -29,6 +29,38 @@ describe('launcher command builder', () => {
     })
   })
 
+  it('injects --dangerously-skip-permissions for a bare claude command', () => {
+    expect(buildLauncherCommand({
+      actor: 'claude',
+      command: 'claude',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'claude',
+      args: [
+        '--dangerously-skip-permissions',
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--input-format',
+        'text'
+      ],
+      kind: 'native_claude',
+      stdinText: 'hello'
+    })
+  })
+
+  it('does not duplicate --dangerously-skip-permissions when already present', () => {
+    const { args } = buildLauncherCommand({
+      actor: 'claude',
+      command: 'claude --dangerously-skip-permissions',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(args.filter((arg) => arg === '--dangerously-skip-permissions')).toHaveLength(1)
+  })
+
   it('builds Codex exec json command', () => {
     expect(buildLauncherCommand({
       actor: 'codex',
