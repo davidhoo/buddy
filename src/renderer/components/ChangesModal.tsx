@@ -28,15 +28,15 @@ function diffBodyLines(diff: string): string[] {
 
 function DiffLine({ line }: { line: string }) {
   if (line.startsWith('@@')) {
-    return <div className="px-3 py-0.5 text-accent-primary bg-accent-primary/5 whitespace-pre">{line}</div>
+    return <div className="px-5 py-0.5 text-accent-primary bg-accent-primary/5 whitespace-pre">{line}</div>
   }
   if (line.startsWith('+')) {
-    return <div className="px-3 py-0 text-success-fg bg-success-bg/40 whitespace-pre-wrap break-all">{line}</div>
+    return <div className="px-5 py-0 text-success-fg bg-success-bg/40 whitespace-pre-wrap break-all">{line}</div>
   }
   if (line.startsWith('-')) {
-    return <div className="px-3 py-0 text-danger bg-danger/10 whitespace-pre-wrap break-all">{line}</div>
+    return <div className="px-5 py-0 text-danger bg-danger/10 whitespace-pre-wrap break-all">{line}</div>
   }
-  return <div className="px-3 py-0 text-fg-secondary whitespace-pre-wrap break-all">{line || ' '}</div>
+  return <div className="px-5 py-0 text-fg-secondary whitespace-pre-wrap break-all">{line || ' '}</div>
 }
 
 function FileDiffView({ repoRoot, filePath }: { repoRoot: string; filePath: string }) {
@@ -49,18 +49,18 @@ function FileDiffView({ repoRoot, filePath }: { repoRoot: string; filePath: stri
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-3 text-xs text-fg-muted">
+      <div className="flex items-center gap-2 px-5 py-3 text-xs text-fg-muted">
         <Loader2 size={12} className="animate-spin" />
         {t('common.loading')}
       </div>
     )
   }
   if (isError) {
-    return <div className="px-3 py-3 text-xs text-danger">{t('git.diffError')}</div>
+    return <div className="px-5 py-3 text-xs text-danger">{t('git.diffError')}</div>
   }
   const lines = data ? diffBodyLines(data) : []
   if (!lines.length) {
-    return <div className="px-3 py-3 text-xs text-fg-muted">{t('git.diffEmpty')}</div>
+    return <div className="px-5 py-3 text-xs text-fg-muted">{t('git.diffEmpty')}</div>
   }
   return (
     <div className="max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed border-t border-border bg-bg">
@@ -87,7 +87,7 @@ function FileDrawer({
     <div className="border-b border-border last:border-b-0">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-bg-subtle transition-colors text-left"
+        className="w-full flex items-center gap-2 px-5 py-2 text-xs hover:bg-bg-subtle transition-colors text-left"
       >
         <ChevronRight
           size={13}
