@@ -262,20 +262,11 @@ body {
 .status-dot-unread { border: none; }
 .status-dot-read { background: transparent !important; border: 1.5px solid currentColor; }
 .status-dot-ready { background: var(--success-fg); color: var(--success-fg); }
-.status-dot-running { background: transparent; border: 2.5px solid var(--status-running); color: var(--status-running); }
 .status-dot-paused { background: var(--status-paused); color: var(--status-paused); }
 .status-dot-danger { background: var(--danger); color: var(--danger); }
 .status-dot-done { background: var(--success-fg); color: var(--success-fg); }
 .status-dot-neutral { background: var(--fg-muted); color: var(--fg-muted); }
 .status-dot-queued { background: var(--fg-muted); color: var(--fg-muted); border: 1.5px solid var(--fg-muted); }
-
-@keyframes status-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.35); opacity: 0.7; }
-}
-.status-dot-pulse {
-  animation: status-pulse 1.9s ease-in-out infinite;
-}
 
 
 /* ===== Running status card ===== */

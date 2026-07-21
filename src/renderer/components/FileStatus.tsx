@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
+import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
 import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
@@ -215,6 +215,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
   const hasRemotes = (gitStatus?.remotes.length ?? 0) > 0
   const [shouldPush, setShouldPush] = useState(hasRemotes)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const generateSeq = useRef(0)
 
   const stageAll = useGitStageAll()
   const commitAndPush = useGitCommitAndPush()
@@ -249,21 +250,31 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
   }, [repoRoot, stageAll, onError])
 
   const handleGenerate = useCallback(async () => {
+    const seq = ++generateSeq.current
     setIsGenerating(true)
     setGenerateFailed(false)
     try {
       const result = await api.generateCommitMessage(repoRoot, undefined, lang)
+      if (seq !== generateSeq.current) return // 已被打断,丢弃结果
       if (result) {
         setMessage(result)
       } else {
         setGenerateFailed(true)
       }
     } catch {
+      if (seq !== generateSeq.current) return
       setGenerateFailed(true)
     } finally {
-      setIsGenerating(false)
+      if (seq === generateSeq.current) setIsGenerating(false)
     }
   }, [repoRoot, lang])
+
+  // 打断正在进行的生成,恢复为可点击的“生成”按钮
+  const handleCancelGenerate = useCallback(() => {
+    generateSeq.current++
+    api.cancelGenerateCommitMessage()
+    setIsGenerating(false)
+  }, [])
 
   // 打开时自动生成
   useEffect(() => {
@@ -417,15 +428,21 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
           {gitStatus && gitStatus.remotes.length > 1 && (
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('git.remote')}</label>
-              <select
-                value={selectedRemote}
-                onChange={(e) => setSelectedRemote(e.target.value)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {gitStatus.remotes.map((r: GitRemote) => (
-                  <option key={r.name} value={r.name}>{r.name} ({r.url})</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={selectedRemote}
+                  onChange={(e) => setSelectedRemote(e.target.value)}
+                  className="w-full appearance-none px-3 pr-9 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {gitStatus.remotes.map((r: GitRemote) => (
+                    <option key={r.name} value={r.name}>{r.name} ({r.url})</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
           )}
 
@@ -434,8 +451,9 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-fg-secondary">{t('git.commitMessage')}</label>
               <button
-                onClick={handleGenerate}
-                disabled={isBusy}
+                onClick={isGenerating ? handleCancelGenerate : handleGenerate}
+                disabled={isStaging || isCommitting}
+                title={isGenerating ? t('git.cancelGenerate') : undefined}
                 className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50"
               >
                 {isGenerating ? (
@@ -443,7 +461,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
                 ) : (
                   <Sparkles size={12} />
                 )}
-                {t('git.generateMessage')}
+                {isGenerating ? t('git.generatingButton') : t('git.generateMessage')}
               </button>
             </div>
             <textarea

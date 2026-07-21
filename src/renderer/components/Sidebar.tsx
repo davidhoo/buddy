@@ -16,7 +16,7 @@ import {
   Upload,
   RotateCw
 } from 'lucide-react'
-import { Task, TaskStatus } from '../../shared/types'
+import { Task } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
@@ -26,16 +26,7 @@ import { projectNameForTask, readStringArraySetting, writeStringArraySetting, is
 import logo from '../assets/logo.png'
 
 import type { SettingsTab } from './SettingsContent'
-
-function statusClass(status: TaskStatus): string {
-  if (status === 'READY') return 'ready'
-  if (status === 'QUEUED') return 'queued'
-  if (status.startsWith('RUNNING_')) return 'running'
-  if (status === 'FAILED') return 'danger'
-  if (status === 'PAUSED') return 'paused'
-  if (status === 'DONE') return 'done'
-  return 'neutral'
-}
+import { TaskStatusIcon } from './TaskStatusIcon'
 
 interface SidebarProps {
   isOpen: boolean
@@ -435,7 +426,6 @@ function ChatSidebar({
                 <div className="px-2 pt-2 pb-1 text-xs text-fg-muted font-medium">{t('sidebar.pinned')}</div>
                 {pinnedTasks.map((task) => {
                   const isSelected = selectedTaskId === task.task_id
-                  const isRunning = statusClass(task.status) === 'running'
                   const unread = isTaskUnread(task, selectedTaskId)
                   const proj = projectNameForTask(task, projectNames)
                   const isTaskMenuOpen = openMenuTaskId === task.task_id
@@ -452,7 +442,7 @@ function ChatSidebar({
                       } ${task.status === 'DONE' ? 'task-done' : ''}`}
                     >
                       <div className="flex h-full items-center gap-2">
-                        <span className={`status-dot status-dot-${statusClass(task.status)} ${unread ? 'status-dot-unread' : 'status-dot-read'} ${isRunning ? 'status-dot-pulse' : ''}`} />
+                        <TaskStatusIcon status={task.status} dimmed={!unread} />
                         <span className={`text-xs truncate flex-1 ${
                             isSelected ? 'text-fg' : 'text-fg-secondary'
                         }`}>
@@ -607,7 +597,6 @@ function ChatSidebar({
                     <div className="pt-0.5">
                       {(expandedTaskProjects.has(projectKey) ? workspaceTasks : workspaceTasks.slice(0, 10)).map((task) => {
                       const isSelected = selectedTaskId === task.task_id
-                      const isRunning = statusClass(task.status) === 'running'
                       const unread = isTaskUnread(task, selectedTaskId)
                       const isTaskMenuOpen = openMenuTaskId === task.task_id
                       const displayName = displayNameForTask(task, taskNames)
@@ -624,7 +613,7 @@ function ChatSidebar({
                           } ${task.status === 'DONE' ? 'task-done' : ''}`}
                         >
                           <div className="flex h-full items-center gap-2">
-                            <span className={`status-dot status-dot-${statusClass(task.status)} ${unread ? 'status-dot-unread' : 'status-dot-read'} ${isRunning ? 'status-dot-pulse' : ''}`} />
+                            <TaskStatusIcon status={task.status} dimmed={!unread} />
                             <span className={`text-xs truncate flex-1 ${
                           isSelected ? 'text-fg' : 'text-fg-secondary'
                             }`}>

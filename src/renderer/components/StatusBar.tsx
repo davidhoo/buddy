@@ -3,6 +3,7 @@ import { Copy, Play, RotateCw } from 'lucide-react'
 import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
+import { TaskStatusIcon } from './TaskStatusIcon'
 import { useGitStatus, type GitStatusResult } from '../hooks/useBuddy'
 import {
   ACTOR_DISPLAY_NAME,
@@ -233,10 +234,10 @@ function InlineStatus({
   t: TFunction
 }) {
   const info = compactStatusInfo(status)
-  if (!info) return null
+  if (!info || !status) return null
   return (
     <div className="h-5 flex flex-shrink-0 items-center gap-1.5">
-      <span className={`status-dot status-dot-${info.cls} ${info.pulse ? 'status-dot-pulse' : ''}`} />
+      <TaskStatusIcon status={status} />
       <span className={`text-xs font-medium status-text-${info.cls}`}>{t(info.labelKey)}</span>
       {status === 'PAUSED' && (
         <button

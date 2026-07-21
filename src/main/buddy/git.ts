@@ -6,6 +6,15 @@ import type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStat
 
 export type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
 
+// 进行中的提交信息生成进程(提交弹窗同一时间只有一个,单实例即可)
+let activeGenerateChild: ReturnType<typeof spawn> | null = null
+
+/** 中断正在进行的提交信息生成;没有进行中的生成时为空操作 */
+export function cancelGenerateCommitMessage(): void {
+  activeGenerateChild?.kill('SIGTERM')
+  activeGenerateChild = null
+}
+
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
   try {
@@ -336,6 +345,11 @@ ${diffSummary}`
       return
     }
 
+    activeGenerateChild = child
+    const clearActive = () => {
+      if (activeGenerateChild === child) activeGenerateChild = null
+    }
+
     const chunks: Buffer[] = []
     const errChunks: Buffer[] = []
     child.stdout!.on('data', (c: Buffer) => chunks.push(c))
@@ -352,6 +366,7 @@ ${diffSummary}`
 
     once(child, 'exit').then(() => {
       clearTimeout(timeout)
+      clearActive()
       if (timedOut) return
       const raw = Buffer.concat(chunks).toString('utf8').trim()
       const match = raw.match(/```\w*\n?([\s\S]*?)\n?```$/)
@@ -359,11 +374,13 @@ ${diffSummary}`
       resolve(text || '')
     }).catch(() => {
       clearTimeout(timeout)
+      clearActive()
       resolve('')
     })
 
     child.on('error', () => {
       clearTimeout(timeout)
+      clearActive()
       resolve('')
     })
   })

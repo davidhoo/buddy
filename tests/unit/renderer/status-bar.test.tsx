@@ -65,9 +65,9 @@ describe('StatusBar inline run status', () => {
     expect(html).toContain('class="flex items-center justify-between gap-3 mb-2"')
     expect(html).toContain('class="text-sm font-semibold min-w-0"')
     expect(html).toContain('class="h-5 flex flex-shrink-0 items-center gap-1.5"')
-    expect(html).toContain('status-dot-running')
+    expect(html).toContain('lucide-loader-circle')
+    expect(html).toContain('animate-spin')
     expect(html).toContain('status-text-running')
-    expect(html).toContain('status-dot-pulse')
     expect(html).not.toContain('Codex running')
     expect(html).not.toContain('Codex 运行中')
   })
@@ -82,7 +82,7 @@ describe('StatusBar inline run status', () => {
       }
     })
 
-    expect(html).toContain('status-dot-danger')
+    expect(html).toContain('lucide-x')
     expect(html).toContain('lucide-rotate-cw')
     expect(html).toContain('Command failed')
   })

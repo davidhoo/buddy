@@ -40,6 +40,7 @@ export interface BuddyHandlerService {
   gitCheckout(repoRoot: string, branch: string): Promise<void>
   gitCreateBranch(repoRoot: string, branch: string): Promise<void>
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string>
+  cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
@@ -124,6 +125,9 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string) =>
     service.generateCommitMessage(repoRoot, actorCommand, lang)
+  )
+  ipcMain.handle('buddy:cancelGenerateCommitMessage', () =>
+    service.cancelGenerateCommitMessage()
   )
   ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
     service.testLauncher(actor, command, env)

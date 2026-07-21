@@ -83,6 +83,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitCreateBranch', repoRoot, branch) as Promise<void>,
     generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string): Promise<string> =>
       ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang) as Promise<string>,
+    cancelGenerateCommitMessage: (): Promise<void> =>
+      ipc.invoke('buddy:cancelGenerateCommitMessage') as Promise<void>,
     testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>
       ipc.invoke('buddy:testLauncher', actor, command, env) as Promise<TestLauncherResult>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>

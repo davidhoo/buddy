@@ -73,6 +73,8 @@ export const api = {
     buddy().gitCreateBranch(repoRoot, branch),
   generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
     buddy().generateCommitMessage(repoRoot, actorCommand, lang),
+  cancelGenerateCommitMessage: () =>
+    buddy().cancelGenerateCommitMessage(),
   testLauncher: (actor: string, command: string, env?: Record<string, string>) =>
     buddy().testLauncher(actor, command, env) as Promise<TestLauncherResult>,
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>

@@ -25,6 +25,7 @@ import {
   gitCommitAndPush,
   gitDiffForCommitMessage,
   generateCommitMessage,
+  cancelGenerateCommitMessage,
   gitFileDiff,
   gitBranches,
   gitCheckout,
@@ -219,6 +220,10 @@ export class BuddyCoreService {
 
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string> {
     return generateCommitMessage(repoRoot, actorCommand, lang)
+  }
+
+  cancelGenerateCommitMessage(): void {
+    cancelGenerateCommitMessage()
   }
 
   async recoverInterruptedRuns(): Promise<void> {
