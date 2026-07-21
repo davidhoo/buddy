@@ -32,7 +32,7 @@ export interface BuddyHandlerService {
   interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void>
   getEvents(taskId: string, since: number, workspaceKey?: string): Promise<unknown>
   getRoundEvents(taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null>
-  getTaskStats(taskId: string, workspaceKey?: string): Promise<TaskStats | null>
+  getTaskStats(taskId: string, workspaceKey?: string, throughRound?: number): Promise<TaskStats | null>
   updateGlobalSettings(settings: GlobalSettings): Promise<unknown>
   listCursorModels(input?: CursorModelDiscoveryInput): Promise<CursorModelCatalog>
   gitStatus(repoRoot: string): Promise<unknown>
@@ -92,8 +92,8 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:getRoundEvents', (_event, taskId: string, runId: string, workspaceKey?: string, actor?: string) =>
     service.getRoundEvents(taskId, runId, workspaceKey, actor)
   )
-  ipcMain.handle('buddy:getTaskStats', (_event, taskId: string, workspaceKey?: string) =>
-    service.getTaskStats(taskId, workspaceKey)
+  ipcMain.handle('buddy:getTaskStats', (_event, taskId: string, workspaceKey?: string, throughRound?: number) =>
+    service.getTaskStats(taskId, workspaceKey, throughRound)
   )
   ipcMain.handle('buddy:updateGlobalSettings', (_event, settings: GlobalSettings) =>
     service.updateGlobalSettings(settings)

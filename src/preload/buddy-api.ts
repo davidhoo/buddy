@@ -64,8 +64,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:getEvents', taskId, since, workspaceKey) as Promise<{ events: Event[] }>,
     getRoundEvents: (taskId: string, runId: string, workspaceKey?: string, actor?: string): Promise<RoundEventSummary | null> =>
       ipc.invoke('buddy:getRoundEvents', taskId, runId, workspaceKey, actor) as Promise<RoundEventSummary | null>,
-    getTaskStats: (taskId: string, workspaceKey?: string): Promise<TaskStats | null> =>
-      ipc.invoke('buddy:getTaskStats', taskId, workspaceKey) as Promise<TaskStats | null>,
+    getTaskStats: (taskId: string, workspaceKey?: string, throughRound?: number): Promise<TaskStats | null> =>
+      ipc.invoke('buddy:getTaskStats', taskId, workspaceKey, throughRound) as Promise<TaskStats | null>,
     updateGlobalSettings: (settings: GlobalSettings): Promise<GlobalSettings> =>
       ipc.invoke('buddy:updateGlobalSettings', settings) as Promise<GlobalSettings>,
     listCursorModels: (input?: CursorModelDiscoveryInput): Promise<CursorModelCatalog> =>

@@ -330,9 +330,104 @@ describe('BuddyStore read model', () => {
     const summary = await store.getRoundEvents('demo', 'run-1', 'abc123def456', 'cursor-agent')
 
     expect(summary).not.toBeNull()
-    expect(summary?.inputTokens).toBe(3)
+    expect(summary?.inputTokens).toBe(6004)
     expect(summary?.outputTokens).toBe(472)
     expect(summary?.cacheReadTokens).toBe(216683)
     expect(summary?.durationMs).toBe(19095)
+  })
+
+  it('uses aggregate Claude modelUsage and counts cache creation as input', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-store-claude-usage-'))
+    const taskDir = join(root, 'workspaces', 'abc123def456', 'tasks', 'demo')
+    await mkdir(join(taskDir, 'artifacts'), { recursive: true })
+    await writeFile(join(taskDir, 'settings.json'), JSON.stringify({
+      protocol_version: '1',
+      countdown_seconds: 30,
+      role_mode: 'claude_implements',
+      launchers: {
+        claude: { command: 'claude', backend: 'claude', env: {}, timeout_seconds: 600 }
+      }
+    }))
+    await writeFile(join(taskDir, 'artifacts', 'run-1-events.jsonl'), [
+      '{"type":"system","subtype":"init","model":"claude-opus-4-8"}',
+      '{"type":"result","duration_ms":1000,"usage":{"input_tokens":1,"cache_creation_input_tokens":10,"cache_read_input_tokens":20,"output_tokens":3},"modelUsage":{"claude-opus-4-8":{"inputTokens":5,"cacheCreationInputTokens":100,"cacheReadInputTokens":200,"outputTokens":50}}}',
+      ''
+    ].join('\n'))
+
+    const store = new BuddyStore(root)
+    const summary = await store.getRoundEvents('demo', 'run-1', 'abc123def456', 'claude')
+
+    expect(summary).toMatchObject({
+      inputTokens: 105,
+      outputTokens: 50,
+      cacheReadTokens: 200,
+      tokenUsageScope: 'run',
+      model: 'claude-opus-4-8'
+    })
+  })
+
+  it('takes the latest cumulative Codex counters once per resumed thread', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-store-codex-usage-'))
+    const taskDir = join(root, 'workspaces', 'abc123def456', 'tasks', 'demo')
+    await mkdir(join(taskDir, 'artifacts'), { recursive: true })
+    await writeFile(join(taskDir, 'settings.json'), JSON.stringify({
+      protocol_version: '1',
+      countdown_seconds: 30,
+      role_mode: 'codex_implements',
+      launchers: {
+        codex: { command: 'codex', backend: 'codex', env: {}, timeout_seconds: 600 }
+      }
+    }))
+    await writeFile(join(taskDir, 'transcript.jsonl'), [
+      '{"seq":1,"ts":"2026-07-20T00:00:00Z","role":"codex","content":"one","meta":{"run_id":"run-1","round":1,"elapsed_ms":1000}}',
+      '{"seq":2,"ts":"2026-07-20T00:01:00Z","role":"codex","content":"two","meta":{"run_id":"run-2","round":2,"elapsed_ms":2000}}',
+      ''
+    ].join('\n'))
+    await writeFile(join(taskDir, 'artifacts', 'run-1-events.jsonl'), [
+      '{"type":"thread.started","thread_id":"thread-1"}',
+      '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":60,"output_tokens":10}}',
+      ''
+    ].join('\n'))
+    await writeFile(join(taskDir, 'artifacts', 'run-2-events.jsonl'), [
+      '{"type":"thread.started","thread_id":"thread-1"}',
+      '{"type":"turn.completed","usage":{"input_tokens":180,"cached_input_tokens":110,"output_tokens":18}}',
+      ''
+    ].join('\n'))
+
+    const store = new BuddyStore(root)
+    const secondRound = await store.getRoundEvents('demo', 'run-2', 'abc123def456', 'codex')
+    const stats = await store.getTaskStats('demo', 'abc123def456')
+    const firstRoundStats = await store.getTaskStats('demo', 'abc123def456', 1)
+
+    expect(secondRound).toMatchObject({
+      inputTokens: 70,
+      outputTokens: 18,
+      cacheReadTokens: 110,
+      tokenUsageScope: 'session',
+      tokenUsageSessionId: 'thread-1'
+    })
+    expect(stats).toMatchObject({
+      version: 2,
+      totalInputTokens: 70,
+      totalOutputTokens: 18,
+      totalCacheReadTokens: 110,
+      totalDurationMs: 3000,
+      totalRounds: 2,
+      actors: [
+        expect.objectContaining({
+          actor: 'codex',
+          inputTokens: 70,
+          outputTokens: 18,
+          cacheReadTokens: 110,
+          rounds: 2
+        })
+      ]
+    })
+    expect(firstRoundStats).toMatchObject({
+      totalInputTokens: 40,
+      totalOutputTokens: 10,
+      totalCacheReadTokens: 60,
+      totalRounds: 1
+    })
   })
 })

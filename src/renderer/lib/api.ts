@@ -81,8 +81,8 @@ export const api = {
     buddy().getEvents(taskId, since, workspaceKey),
   getRoundEvents: (taskId: string, runId: string, workspaceKey?: string, actor?: string) =>
     buddy().getRoundEvents(taskId, runId, workspaceKey, actor) as Promise<RoundEventSummary | null>,
-  getTaskStats: (taskId: string, workspaceKey?: string) =>
-    buddy().getTaskStats(taskId, workspaceKey) as Promise<TaskStats | null>,
+  getTaskStats: (taskId: string, workspaceKey?: string, throughRound?: number) =>
+    buddy().getTaskStats(taskId, workspaceKey, throughRound) as Promise<TaskStats | null>,
   updateGlobalSettings: (settings: GlobalSettings) =>
     buddy().updateGlobalSettings(settings),
   updateGlobalSettingsPatch,

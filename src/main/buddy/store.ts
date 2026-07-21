@@ -27,6 +27,7 @@ import type {
   TaskStats,
   TranscriptEntry
 } from '../../shared/types'
+import { TASK_STATS_VERSION } from '../../shared/types'
 import { normalizeGlobalSettings, normalizeLaunchers } from '../../shared/defaults'
 import { canonicalRepoRoot, createBuddyPaths, taskDir, workspaceKeyForRepo } from './paths'
 import { redactJsonValue } from './redact'
@@ -362,6 +363,8 @@ export class BuddyStore {
     let durationMs: number | undefined
     let costUsd: number | undefined
     let model: string | undefined
+    let tokenUsageScope: RoundEventSummary['tokenUsageScope'] = 'run'
+    let tokenUsageSessionId: string | undefined
     let firstTs: number | undefined
     let lastTs: number | undefined
 
@@ -377,6 +380,14 @@ export class BuddyStore {
           if (firstTs == null || ms < firstTs) firstTs = ms
           if (lastTs == null || ms > lastTs) lastTs = ms
         }
+      }
+
+      if (event.type === 'thread.started') {
+        tokenUsageSessionId = textValue(event.thread_id) ?? tokenUsageSessionId
+      } else if (event.type === 'buddy.session') {
+        tokenUsageSessionId = textValue(event.thread_id)
+          ?? textValue(event.session_id)
+          ?? tokenUsageSessionId
       }
 
       // Claude stream-json format
@@ -428,20 +439,15 @@ export class BuddyStore {
       }
 
       if (event.type === 'result') {
-        if (event.usage) {
-          const u = event.usage as Record<string, unknown>
-          // Cursor Agent reports usage in camelCase (inputTokens/outputTokens/
-          // cacheReadTokens); claude/codex/kimi use snake_case. Accept both.
-          const pick = (...keys: string[]): number | undefined => {
-            for (const key of keys) {
-              const value = u[key]
-              if (typeof value === 'number') return value
-            }
-            return undefined
-          }
-          inputTokens = pick('input_tokens', 'inputTokens') ?? inputTokens
-          outputTokens = pick('output_tokens', 'outputTokens') ?? outputTokens
-          cacheReadTokens = pick('cache_read_input_tokens', 'cacheReadTokens', 'cache_read_tokens') ?? cacheReadTokens
+        // Claude Code's top-level usage describes only the final API call when
+        // a run contains tool turns. modelUsage is the authoritative per-run
+        // aggregate. Cursor Agent has no modelUsage and uses camelCase fields.
+        const aggregate = aggregateClaudeModelUsage(event.modelUsage)
+        const usage = aggregate ?? normalizeSplitTokenUsage(event.usage)
+        if (usage) {
+          inputTokens = usage.inputTokens
+          outputTokens = usage.outputTokens
+          cacheReadTokens = usage.cacheReadTokens
         }
         if (event.duration_ms != null) durationMs = event.duration_ms as number
         if (event.total_cost_usd != null) costUsd = event.total_cost_usd as number
@@ -451,6 +457,19 @@ export class BuddyStore {
         if (!model && event.modelUsage && typeof event.modelUsage === 'object') {
           const keys = Object.keys(event.modelUsage as Record<string, unknown>)
           if (keys.length > 0) model = keys[0]
+        }
+      }
+
+      // Codex reports counters cumulative over the resumed thread. Keep the
+      // cached subset separate and let task aggregation take the maximum per
+      // thread instead of summing every cumulative snapshot.
+      if (event.type === 'turn.completed') {
+        const usage = normalizeInclusiveTokenUsage(event.usage)
+        if (usage) {
+          inputTokens = usage.inputTokens
+          outputTokens = usage.outputTokens
+          cacheReadTokens = usage.cacheReadTokens
+          tokenUsageScope = 'session'
         }
       }
 
@@ -466,9 +485,11 @@ export class BuddyStore {
       }
       if (event.type === 'response.completed' && event.response) {
         const resp = event.response as Record<string, unknown>
-        if (resp.usage) {
-          inputTokens = (resp.usage as Record<string, unknown>).input_tokens as number ?? inputTokens
-          outputTokens = (resp.usage as Record<string, unknown>).output_tokens as number ?? outputTokens
+        const usage = normalizeInclusiveTokenUsage(resp.usage)
+        if (usage) {
+          inputTokens = usage.inputTokens
+          outputTokens = usage.outputTokens
+          cacheReadTokens = usage.cacheReadTokens
         }
         if (resp.model) model = resp.model as string
       }
@@ -483,13 +504,19 @@ export class BuddyStore {
           events.push({ type: 'tool_use', toolName: (tc.function ?? tc.name) as string | undefined, toolInput: tc.arguments as Record<string, unknown> | undefined })
         }
       }
-      // Kimi/OpenAI-compatible: usage and model in final response
-      if (event.usage && typeof event.usage === 'object') {
-        const u = event.usage as Record<string, unknown>
-        if (u.input_tokens != null) inputTokens = (u.input_tokens as number) ?? inputTokens
-        if (u.prompt_tokens != null) inputTokens = (u.prompt_tokens as number) ?? inputTokens
-        if (u.output_tokens != null) outputTokens = (u.output_tokens as number) ?? outputTokens
-        if (u.completion_tokens != null) outputTokens = (u.completion_tokens as number) ?? outputTokens
+      // Kimi/OpenAI-compatible usage in final responses. The provider-specific
+      // event types above must not be overwritten by this generic fallback.
+      if (
+        event.type !== 'result'
+        && event.type !== 'turn.completed'
+        && event.type !== 'response.completed'
+      ) {
+        const usage = normalizeGenericTokenUsage(event.usage)
+        if (usage) {
+          inputTokens = usage.inputTokens
+          outputTokens = usage.outputTokens
+          cacheReadTokens = usage.cacheReadTokens
+        }
       }
       if (event.model && typeof event.model === 'string' && !model) {
         model = event.model as string
@@ -522,8 +549,10 @@ export class BuddyStore {
         const part = objectValue(event.part)
         const tokens = objectValue(part?.tokens)
         if (tokens) {
-          const cacheRead = (objectValue(tokens.cache)?.read as number) ?? 0
-          inputTokens = (tokens.input as number) ?? 0
+          const cache = objectValue(tokens.cache)
+          const cacheRead = numberValue(cache?.read) ?? 0
+          const cacheWrite = numberValue(cache?.write) ?? 0
+          inputTokens = (numberValue(tokens.input) ?? 0) + cacheWrite
           cacheReadTokens = cacheRead
           outputTokens = (tokens.output as number) ?? outputTokens
         }
@@ -550,10 +579,21 @@ export class BuddyStore {
       if (!model) model = await detectModelFromConfig(actor, command)
     }
 
-    return { runId, events, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
+    return {
+      runId,
+      events,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      tokenUsageScope,
+      tokenUsageSessionId,
+      durationMs,
+      costUsd,
+      model
+    }
   }
 
-  async getTaskStats(taskId: string, workspaceKey: string): Promise<TaskStats | null> {
+  async getTaskStats(taskId: string, workspaceKey: string, throughRound?: number): Promise<TaskStats | null> {
     const transcript = await this.readTranscriptJsonl(taskId, workspaceKey)
     if (transcript.length === 0) return null
 
@@ -563,6 +603,8 @@ export class BuddyStore {
     for (const entry of transcript) {
       if (entry.role === 'human' || entry.role === 'system') continue
       const meta = entry.meta as Record<string, unknown> | undefined
+      const round = numberValue(meta?.round) ?? entry.round
+      if (throughRound != null && round != null && round > throughRound) continue
       const runId = meta?.run_id as string | undefined
       if (!runId) continue
       const elapsedMs = (meta?.elapsed_ms as number) ?? 0
@@ -583,24 +625,50 @@ export class BuddyStore {
       let durationMs = 0
       let costUsd: number | undefined
       let model: string | undefined
+      const cumulativeUsage = new Map<string, {
+        inputTokens: number
+        outputTokens: number
+        cacheReadTokens: number
+        costUsd?: number
+      }>()
 
       for (const run of runs) {
         durationMs += run.elapsedMs
         const summary = await this.getRoundEvents(taskId, run.runId, workspaceKey, actor)
         if (summary) {
-          inputTokens += summary.inputTokens
-          outputTokens += summary.outputTokens
-          cacheReadTokens += summary.cacheReadTokens
+          if (summary.tokenUsageScope === 'session') {
+            const sessionKey = summary.tokenUsageSessionId ?? run.runId
+            const previous = cumulativeUsage.get(sessionKey)
+            cumulativeUsage.set(sessionKey, {
+              inputTokens: Math.max(previous?.inputTokens ?? 0, summary.inputTokens),
+              outputTokens: Math.max(previous?.outputTokens ?? 0, summary.outputTokens),
+              cacheReadTokens: Math.max(previous?.cacheReadTokens ?? 0, summary.cacheReadTokens),
+              costUsd: summary.costUsd == null
+                ? previous?.costUsd
+                : Math.max(previous?.costUsd ?? 0, summary.costUsd)
+            })
+          } else {
+            inputTokens += summary.inputTokens
+            outputTokens += summary.outputTokens
+            cacheReadTokens += summary.cacheReadTokens
+            if (summary.costUsd != null) {
+              costUsd = (costUsd ?? 0) + summary.costUsd
+            }
+          }
           if (summary.durationMs != null && summary.durationMs > 0) {
             // Use actor-reported duration if available, otherwise fall back to elapsed_ms
             durationMs = durationMs - run.elapsedMs + summary.durationMs
           }
-          if (summary.costUsd != null) {
-            costUsd = (costUsd ?? 0) + summary.costUsd
-          }
           // Use the latest model reported by the actor
           if (summary.model) model = summary.model
         }
+      }
+
+      for (const usage of cumulativeUsage.values()) {
+        inputTokens += usage.inputTokens
+        outputTokens += usage.outputTokens
+        cacheReadTokens += usage.cacheReadTokens
+        if (usage.costUsd != null) costUsd = (costUsd ?? 0) + usage.costUsd
       }
 
       actors.push({
@@ -624,6 +692,7 @@ export class BuddyStore {
     const totalCostUsd = hasCost ? actors.reduce((s, a) => s + (a.costUsd ?? 0), 0) : undefined
 
     return {
+      version: TASK_STATS_VERSION,
       actors,
       totalInputTokens,
       totalOutputTokens,
@@ -769,6 +838,133 @@ function textValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+interface NormalizedTokenUsage {
+  /** Input not served from cache, including tokens written to a new cache entry. */
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+}
+
+function aggregateClaudeModelUsage(value: unknown): NormalizedTokenUsage | undefined {
+  const modelUsage = objectValue(value)
+  if (!modelUsage) return undefined
+
+  let found = false
+  const total: NormalizedTokenUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0
+  }
+
+  for (const rawUsage of Object.values(modelUsage)) {
+    const usage = objectValue(rawUsage)
+    if (!usage) continue
+    const directInput = firstNumber(usage, 'inputTokens', 'input_tokens')
+    const cacheCreation = firstNumber(
+      usage,
+      'cacheCreationInputTokens',
+      'cache_creation_input_tokens',
+      'cacheWriteTokens',
+      'cache_write_tokens'
+    )
+    const cacheRead = firstNumber(
+      usage,
+      'cacheReadInputTokens',
+      'cache_read_input_tokens',
+      'cacheReadTokens',
+      'cache_read_tokens'
+    )
+    const output = firstNumber(usage, 'outputTokens', 'output_tokens')
+    if ([directInput, cacheCreation, cacheRead, output].some(item => item != null)) {
+      found = true
+    }
+    total.inputTokens += (directInput ?? 0) + (cacheCreation ?? 0)
+    total.cacheReadTokens += cacheRead ?? 0
+    total.outputTokens += output ?? 0
+  }
+
+  return found ? total : undefined
+}
+
+/**
+ * Claude-style usage separates direct input, cache creation/write, and cache
+ * reads. Cache writes are new input; cache reads stay in their own UI column.
+ */
+function normalizeSplitTokenUsage(value: unknown): NormalizedTokenUsage | undefined {
+  const usage = objectValue(value)
+  if (!usage) return undefined
+  const directInput = firstNumber(usage, 'input_tokens', 'prompt_tokens', 'inputTokens', 'promptTokens')
+  const cacheCreation = firstNumber(
+    usage,
+    'cache_creation_input_tokens',
+    'cacheCreationInputTokens',
+    'cacheWriteTokens',
+    'cache_write_tokens'
+  )
+  const cacheRead = firstNumber(
+    usage,
+    'cache_read_input_tokens',
+    'cacheReadInputTokens',
+    'cacheReadTokens',
+    'cache_read_tokens'
+  )
+  const output = firstNumber(usage, 'output_tokens', 'completion_tokens', 'outputTokens', 'completionTokens')
+  if ([directInput, cacheCreation, cacheRead, output].every(item => item == null)) return undefined
+  return {
+    inputTokens: (directInput ?? 0) + (cacheCreation ?? 0),
+    outputTokens: output ?? 0,
+    cacheReadTokens: cacheRead ?? 0
+  }
+}
+
+/**
+ * OpenAI/Codex-style input totals already include cached tokens. Convert them
+ * to the table's non-cache input column while preserving the cached subset.
+ */
+function normalizeInclusiveTokenUsage(value: unknown): NormalizedTokenUsage | undefined {
+  const usage = objectValue(value)
+  if (!usage) return undefined
+  const totalInput = firstNumber(usage, 'input_tokens', 'prompt_tokens', 'inputTokens', 'promptTokens')
+  const details = objectValue(usage.input_tokens_details) ?? objectValue(usage.prompt_tokens_details)
+  const cacheRead = firstNumber(usage, 'cached_input_tokens', 'cachedInputTokens')
+    ?? firstNumber(details, 'cached_tokens', 'cachedTokens')
+    ?? 0
+  const output = firstNumber(usage, 'output_tokens', 'completion_tokens', 'outputTokens', 'completionTokens')
+  if (totalInput == null && output == null && cacheRead === 0) return undefined
+  return {
+    inputTokens: Math.max(0, (totalInput ?? 0) - cacheRead),
+    outputTokens: output ?? 0,
+    cacheReadTokens: cacheRead
+  }
+}
+
+function normalizeGenericTokenUsage(value: unknown): NormalizedTokenUsage | undefined {
+  const usage = objectValue(value)
+  if (!usage) return undefined
+  const hasSplitCacheFields = [
+    'cache_creation_input_tokens',
+    'cacheCreationInputTokens',
+    'cacheWriteTokens',
+    'cache_write_tokens',
+    'cache_read_input_tokens',
+    'cacheReadInputTokens',
+    'cacheReadTokens',
+    'cache_read_tokens'
+  ].some(key => numberValue(usage[key]) != null)
+  return hasSplitCacheFields
+    ? normalizeSplitTokenUsage(usage)
+    : normalizeInclusiveTokenUsage(usage)
+}
+
+function firstNumber(value: Record<string, unknown> | undefined, ...keys: string[]): number | undefined {
+  if (!value) return undefined
+  for (const key of keys) {
+    const result = numberValue(value[key])
+    if (result != null) return result
+  }
+  return undefined
 }
 
 async function listDirectoryNames(path: string): Promise<string[]> {

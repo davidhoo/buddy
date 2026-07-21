@@ -283,10 +283,10 @@ export function useRoundEvents(taskId: string | null, runId: string | null, work
   })
 }
 
-export function useTaskStats(taskId: string | null, workspaceKey?: string) {
+export function useTaskStats(taskId: string | null, workspaceKey?: string, throughRound?: number) {
   return useQuery({
-    queryKey: ['taskStats', taskId],
-    queryFn: () => api.getTaskStats(taskId!, workspaceKey),
+    queryKey: ['taskStats', workspaceKey, taskId, throughRound],
+    queryFn: () => api.getTaskStats(taskId!, workspaceKey, throughRound),
     enabled: !!taskId,
     staleTime: Infinity
   })

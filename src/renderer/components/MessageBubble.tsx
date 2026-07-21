@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Wrench, Terminal, FilePen, FileText, Brain, FileCode2, File, FileJson, FileArchive, FileSpreadsheet, Image as ImageIcon, RotateCw } from 'lucide-react'
-import { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry, TaskStats, TaskSettings } from '../../shared/types'
+import { TASK_STATS_VERSION } from '../../shared/types'
+import type { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry, TaskStats, TaskSettings } from '../../shared/types'
 import { renderMarkdown } from '../lib/markdown'
 import { formatDuration, formatTimeWithRelativeDate, decodeErrorText, unescapeText, ACTOR_LABEL_KEY, actorDisplayName } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
-import { useRoundEvents } from '../hooks/useBuddy'
+import { useRoundEvents, useTaskStats } from '../hooks/useBuddy'
 import { translate } from '../lib/i18n'
 
 interface MessageBubbleProps {
@@ -282,11 +283,39 @@ export function MessageBubble({ entry, taskId, workspaceKey, taskSettings, onRet
           <RoundEvents taskId={taskId} runId={runId} workspaceKey={workspaceKey} actor={entry.role} elapsedMs={meta.elapsed_ms as number | undefined} />
         )}
         {taskDoneStats ? (
-          <TaskDoneStats stats={taskDoneStats} taskSettings={taskSettings} />
+          taskDoneStats.version === TASK_STATS_VERSION || !taskId || !workspaceKey
+            ? <TaskDoneStats stats={taskDoneStats} taskSettings={taskSettings} />
+            : (
+              <RefreshedTaskDoneStats
+                taskId={taskId}
+                workspaceKey={workspaceKey}
+                throughRound={typeof meta.round === 'number' ? meta.round : undefined}
+                fallback={taskDoneStats}
+                taskSettings={taskSettings}
+              />
+            )
         ) : null}
       </div>
     </div>
   )
+}
+
+function RefreshedTaskDoneStats({
+  taskId,
+  workspaceKey,
+  throughRound,
+  fallback,
+  taskSettings
+}: {
+  taskId: string
+  workspaceKey: string
+  throughRound?: number
+  fallback: TaskStats
+  taskSettings?: TaskSettings | null
+}) {
+  const { data, isLoading } = useTaskStats(taskId, workspaceKey, throughRound)
+  if (isLoading) return <div className="task-done-stats-loading">...</div>
+  return <TaskDoneStats stats={data ?? fallback} taskSettings={taskSettings} />
 }
 
 function RoundEvents({ taskId, runId, workspaceKey, actor, elapsedMs }: { taskId: string; runId: string; workspaceKey: string; actor: string; elapsedMs?: number }) {

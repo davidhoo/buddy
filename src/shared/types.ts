@@ -364,9 +364,14 @@ export interface RoundEventEntry {
 export interface RoundEventSummary {
   runId: string
   events: RoundEventEntry[]
+  /** Input tokens not served from cache; cache creation/write tokens are included. */
   inputTokens: number
   outputTokens: number
+  /** Input tokens served from a provider cache, reported separately from inputTokens. */
   cacheReadTokens: number
+  /** Some CLIs (notably Codex) report counters cumulative over a resumed session. */
+  tokenUsageScope?: 'run' | 'session'
+  tokenUsageSessionId?: string
   durationMs?: number
   costUsd?: number
   model?: string
@@ -375,6 +380,7 @@ export interface RoundEventSummary {
 export interface TaskActorStats {
   actor: string
   model?: string
+  /** Input tokens not served from cache; cache creation/write tokens are included. */
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -383,7 +389,11 @@ export interface TaskActorStats {
   rounds: number
 }
 
+export const TASK_STATS_VERSION = 2
+
 export interface TaskStats {
+  /** Missing on persisted summaries created before token accounting v2. */
+  version?: number
   actors: TaskActorStats[]
   totalInputTokens: number
   totalOutputTokens: number
