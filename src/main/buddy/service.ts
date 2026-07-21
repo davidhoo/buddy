@@ -24,7 +24,11 @@ import {
   gitStageAll,
   gitCommitAndPush,
   gitDiffForCommitMessage,
-  generateCommitMessage
+  generateCommitMessage,
+  gitFileDiff,
+  gitBranches,
+  gitCheckout,
+  gitCreateBranch
 } from './git'
 import type { GitStatusResult } from '../../shared/types'
 import { BuddyRunner } from './runner'
@@ -195,6 +199,22 @@ export class BuddyCoreService {
 
   gitDiffForCommitMessage(repoRoot: string): Promise<string> {
     return gitDiffForCommitMessage(repoRoot)
+  }
+
+  gitFileDiff(repoRoot: string, filePath: string): Promise<string> {
+    return gitFileDiff(repoRoot, filePath)
+  }
+
+  gitBranches(repoRoot: string): Promise<string[]> {
+    return gitBranches(repoRoot)
+  }
+
+  gitCheckout(repoRoot: string, branch: string): Promise<void> {
+    return gitCheckout(repoRoot, branch)
+  }
+
+  gitCreateBranch(repoRoot: string, branch: string): Promise<void> {
+    return gitCreateBranch(repoRoot, branch)
   }
 
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string> {

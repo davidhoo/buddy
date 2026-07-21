@@ -31,6 +31,7 @@ import { normalizeGlobalSettings, normalizeLaunchers } from '../../shared/defaul
 import { canonicalRepoRoot, createBuddyPaths, taskDir, workspaceKeyForRepo } from './paths'
 import { redactJsonValue } from './redact'
 import { detectModelFromConfig } from './model-detect'
+import { readKimiSessionInsight, readOpencodeSessionModel } from './session-insight'
 import { parseJsonlBuffer } from './parsers'
 import { parseEventLine, parseGlobalSettings, parseTaskSettings, parseTaskState } from './schemas'
 
@@ -506,7 +507,7 @@ export class BuddyStore {
       durationMs = lastTs - firstTs
     }
 
-    // Fallback: detect model from actor config file when not available in streaming output
+    // Fallback: detect model from actor session state / config file when not available in streaming output
     if (!model && actor) {
       // If command wasn't provided by caller, try reading it from task settings
       if (!command) {
@@ -518,10 +519,37 @@ export class BuddyStore {
           // Settings may not exist — that's fine
         }
       }
-      model = await detectModelFromConfig(actor, command)
+      // kimi/opencode stdout carries no model — read it from their session state
+      const sessionId = await this.actorSessionId(taskId, workspaceKey, actor)
+      if (actor === 'kimi' && sessionId) {
+        const insight = await readKimiSessionInsight(sessionId)
+        if (insight?.model) model = insight.model
+      } else if (actor === 'opencode' && sessionId) {
+        model = await readOpencodeSessionModel(sessionId)
+      }
+      if (!model) {
+        model = await detectModelFromConfig(actor, command)
+      }
     }
 
     return { runId, events, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
+  }
+
+  /** Session id an actor used for this task, from persisted task state. */
+  private async actorSessionId(taskId: string, workspaceKey: string, actor: string): Promise<string | undefined> {
+    const field = actor === 'kimi' ? 'kimi_session_id'
+      : actor === 'opencode' ? 'opencode_session_id'
+      : actor === 'claude' ? 'claude_session_id'
+      : actor === 'codex' ? 'codex_thread_id'
+      : null
+    if (!field) return undefined
+    try {
+      const state = await this.readTaskState(taskId, workspaceKey)
+      const value = (state as unknown as Record<string, unknown>)[field]
+      return typeof value === 'string' && value ? value : undefined
+    } catch {
+      return undefined
+    }
   }
 
   async getTaskStats(taskId: string, workspaceKey: string): Promise<TaskStats | null> {
@@ -529,7 +557,7 @@ export class BuddyStore {
     if (transcript.length === 0) return null
 
     // Collect run_ids grouped by actor, and track elapsed_ms per run
-    const actorRuns = new Map<string, { runId: string; elapsedMs: number }[]>()
+    const actorRuns = new Map<string, { runId: string; elapsedMs: number; endTs: number | undefined }[]>()
 
     const ACTOR_ROLES = new Set(['claude', 'codex', 'opencode', 'kimi'])
     for (const entry of transcript) {
@@ -538,10 +566,12 @@ export class BuddyStore {
       const runId = meta?.run_id as string | undefined
       if (!runId) continue
       const elapsedMs = (meta?.elapsed_ms as number) ?? 0
+      const parsedTs = Date.parse(entry.ts ?? '')
+      const endTs = Number.isNaN(parsedTs) ? undefined : parsedTs
       if (!actorRuns.has(entry.role)) {
         actorRuns.set(entry.role, [])
       }
-      actorRuns.get(entry.role)!.push({ runId, elapsedMs })
+      actorRuns.get(entry.role)!.push({ runId, elapsedMs, endTs })
     }
 
     if (actorRuns.size === 0) return null
@@ -572,6 +602,28 @@ export class BuddyStore {
           }
           // Use the latest model reported by the actor
           if (summary.model) model = summary.model
+        }
+      }
+
+      // kimi stdout carries no usage events — attribute wire.jsonl usage
+      // records to runs by their [endTs - elapsedMs, endTs] time windows.
+      if (actor === 'kimi' && inputTokens + outputTokens + cacheReadTokens === 0) {
+        const sessionId = await this.actorSessionId(taskId, workspaceKey, actor)
+        const insight = sessionId ? await readKimiSessionInsight(sessionId) : undefined
+        if (insight) {
+          const WINDOW_SLACK_MS = 5_000
+          for (const record of insight.records) {
+            const run = runs.find((r) =>
+              r.endTs != null &&
+              record.timeMs >= r.endTs - r.elapsedMs - WINDOW_SLACK_MS &&
+              record.timeMs <= r.endTs + WINDOW_SLACK_MS
+            )
+            if (!run) continue
+            inputTokens += record.inputTokens
+            outputTokens += record.outputTokens
+            cacheReadTokens += record.cacheReadTokens
+          }
+          if (!model && insight.model) model = insight.model
         }
       }
 

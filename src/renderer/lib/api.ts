@@ -63,6 +63,14 @@ export const api = {
     buddy().gitCommitAndPush(repoRoot, message, remote, push),
   gitDiffForCommitMessage: (repoRoot: string) =>
     buddy().gitDiffForCommitMessage(repoRoot),
+  gitFileDiff: (repoRoot: string, filePath: string) =>
+    buddy().gitFileDiff(repoRoot, filePath),
+  gitBranches: (repoRoot: string) =>
+    buddy().gitBranches(repoRoot) as Promise<string[]>,
+  gitCheckout: (repoRoot: string, branch: string) =>
+    buddy().gitCheckout(repoRoot, branch),
+  gitCreateBranch: (repoRoot: string, branch: string) =>
+    buddy().gitCreateBranch(repoRoot, branch),
   generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
     buddy().generateCommitMessage(repoRoot, actorCommand, lang),
   testLauncher: (actor: string, command: string, env?: Record<string, string>) =>

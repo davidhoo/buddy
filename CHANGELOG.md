@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.6] - 2026-07-21
+
+### Added
+- 变更文件 diff 查看弹窗：右侧「文件状态-变更」行改为可点击按钮，弹出 ChangesModal 展示所有变更文件；文件列表采用抽屉式折叠，点击展开后通过 React Query 按需加载 git diff，语法着色显示（`@@` 高亮、`+` 绿、`-` 红），支持 Esc/遮罩关闭
+- 新增 `gitFileDiff` IPC 链路（git.ts → service → handler → preload → renderer），支持单文件 unified diff 获取（优先 `git diff HEAD`，无 HEAD 回退 staged+unstaged 拼接，未跟踪文件合成伪 diff，二进制文件提示，200KB 截断）
+- 新增 `session-insight.ts`：从 actor 本地会话存储读取 stdout 中缺失的模型名和 token 用量——kimi 从 `~/.kimi-code/sessions/*/<sessionId>/agents/*/wire.jsonl` 的 `usage.record` 聚合输入/输出/缓存 token；opencode 从 SQLite/JSON 会话存储读取模型名
+- `getTaskStats` 新增 kimi token 时间窗归因：利用 transcript 时间戳和 `elapsed_ms` 构造运行窗口（±5s 容差），将 wire.jsonl 的 usage 记录归因到对应 run，健康检查 ping 用量在窗口外不会误计
+- `model-detect.ts`：kimi 配置路径改为 `~/.kimi-code/config.toml` 优先（`~/.kimi` 兜底）；opencode 新增从 launcher 命令解析 `-m`/`--model`/`--model=`
+- 任务完成总结消息末尾新增「点击查看变更文件」链接，点击弹出与右侧「文件状态-变更」相同的 ChangesModal diff 弹窗（MessageBubble → ChatArea → App 透传 `onViewChanges`，App 内按当前任务 repo 拉取 gitStatus）
+- 右侧「文件状态-分支」行改为可点击，弹出分支切换弹窗（BranchModal）：列出本地分支并标记当前分支，点击即执行 `git checkout`；切换失败时在弹窗内展示 git 报错且不切换，成功后自动关闭并刷新 git 状态；新增 `gitBranches`/`gitCheckout` IPC 链路（分支名合法性校验防注入）
+- BranchModal 新增「创建新分支」功能：弹窗顶部输入框 + 创建按钮（Enter 快捷提交），执行 `git checkout -b` 从当前 HEAD 创建并切换；失败在弹窗内展示报错，成功自动关闭并刷新；新增 `gitCreateBranch` IPC 链路
+
+### Changed
+- `BuddyStore.getRoundEvents` 模型回退链：kimi/opencode 优先从会话存储读取模型，再回退到配置文件
+
 ## [1.2.5] - 2026-07-13
 
 ### Added

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
+import { ChangesModal } from './components/ChangesModal'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
 import { setServerLocale } from './lib/i18n'
@@ -33,6 +34,7 @@ export default function App() {
   // Track just-created task to prevent auto-select from overriding its selection
   const justCreatedTaskId = useRef<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showTaskDoneChanges, setShowTaskDoneChanges] = useState(false)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -65,6 +67,9 @@ export default function App() {
   const { data: bootstrap, isLoading: isLoadingBootstrap, error: bootstrapError } = useBootstrap()
   const { data: tasks = [], isLoading: isLoadingTasks, error: tasksError } = useTasks()
   const { data: taskDetail } = useTaskDetail(selectedTaskId, selectedWorkspaceKey ?? undefined)
+
+  const changesRepoRoot = taskDetail?.state?.repo_root || null
+  const { data: changesGitStatus } = useGitStatus(changesRepoRoot)
 
   // Feed main-process locale to renderer language detection as fallback
   useEffect(() => {
@@ -670,6 +675,7 @@ export default function App() {
                 onCreateTask={handleOpenCreateModal}
                 onRetryHealthCheck={handleRetryHealthCheck}
                 isRetryingHealthCheck={isRetryingHealthCheck}
+                onViewChanges={() => setShowTaskDoneChanges(true)}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}
@@ -696,6 +702,15 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* 任务完成 - 变更文件弹窗 */}
+      {showTaskDoneChanges && changesGitStatus && changesRepoRoot && (
+        <ChangesModal
+          gitStatus={changesGitStatus}
+          repoRoot={changesRepoRoot}
+          onClose={() => setShowTaskDoneChanges(false)}
+        />
+      )}
 
       {/* 创建任务模态框 */}
       {showCreateModal && (

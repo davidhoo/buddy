@@ -73,6 +73,14 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitCommitAndPush', repoRoot, message, remote, push),
     gitDiffForCommitMessage: (repoRoot: string): Promise<string> =>
       ipc.invoke('buddy:gitDiffForCommitMessage', repoRoot) as Promise<string>,
+    gitFileDiff: (repoRoot: string, filePath: string): Promise<string> =>
+      ipc.invoke('buddy:gitFileDiff', repoRoot, filePath) as Promise<string>,
+    gitBranches: (repoRoot: string): Promise<string[]> =>
+      ipc.invoke('buddy:gitBranches', repoRoot) as Promise<string[]>,
+    gitCheckout: (repoRoot: string, branch: string): Promise<void> =>
+      ipc.invoke('buddy:gitCheckout', repoRoot, branch) as Promise<void>,
+    gitCreateBranch: (repoRoot: string, branch: string): Promise<void> =>
+      ipc.invoke('buddy:gitCreateBranch', repoRoot, branch) as Promise<void>,
     generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string): Promise<string> =>
       ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang) as Promise<string>,
     testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>

@@ -7,6 +7,8 @@ import { useLanguage } from '../hooks/useI18n'
 import { api } from '../lib/api'
 import { formatBinding, loadBindings } from '../lib/keyboard'
 import { useQueryClient } from '@tanstack/react-query'
+import { ChangesModal } from './ChangesModal'
+import { BranchModal } from './BranchModal'
 
 export interface CommitFeedback {
   type: 'success' | 'error'
@@ -23,7 +25,7 @@ interface FileStatusProps {
   onDismissFeedback?: () => void
 }
 
-function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunction }) {
+export function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunction }) {
   const config: Record<GitFileStatusCode, { label: string; cls: string }> = {
     M: { label: t('git.statusModified'), cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
     A: { label: t('git.statusAdded'), cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
@@ -39,6 +41,8 @@ function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunctio
 
 export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
   const t = useT()
+  const [showChangesModal, setShowChangesModal] = useState(false)
+  const [showBranchModal, setShowBranchModal] = useState(false)
 
   // Only show feedback for the current project
   const activeFeedback = commitFeedback && commitFeedback.repoRoot === repoRoot ? commitFeedback : null
@@ -82,14 +86,20 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
   const hasChanges = totalFiles > 0
 
   return (
+    <>
     <details open className="border-b border-border">
       <summary className="px-4 py-3 text-sm font-semibold cursor-pointer flex items-center justify-between hover:bg-bg-subtle select-none">
         <span>{t('git.fileStatus')}</span>
         <span className="text-xs font-normal text-fg-secondary">{t('common.collapse')}</span>
       </summary>
       <div className="px-4 pb-3 space-y-0.5">
-        {/* 变更 */}
-        <div className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 hover:bg-bg-subtle transition-colors">
+        {/* 变更(点击查看 diff) */}
+        <button
+          onClick={() => setShowChangesModal(true)}
+          disabled={!hasChanges}
+          title={hasChanges ? t('git.changesTitle') : undefined}
+          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-60 disabled:cursor-default text-left"
+        >
           <FileDiff size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.changes')}</span>
           <span className="ml-auto flex items-center gap-1.5">
@@ -103,14 +113,18 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
               <span className="text-fg-muted">{t('git.noChanges')}</span>
             )}
           </span>
-        </div>
+        </button>
 
-        {/* 分支 */}
-        <div className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 hover:bg-bg-subtle transition-colors">
+        {/* 分支(点击切换) */}
+        <button
+          onClick={() => setShowBranchModal(true)}
+          title={t('git.switchBranch')}
+          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors text-left"
+        >
           <GitBranch size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.branch')}</span>
           <span className="ml-auto truncate">{gitStatus.branch}</span>
-        </div>
+        </button>
 
         {/* 提交 */}
         <button
@@ -149,6 +163,25 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         )}
       </div>
     </details>
+
+    {/* 变更详情弹窗 */}
+    {showChangesModal && hasChanges && repoRoot && (
+      <ChangesModal
+        gitStatus={gitStatus}
+        repoRoot={repoRoot}
+        onClose={() => setShowChangesModal(false)}
+      />
+    )}
+
+    {/* 分支切换弹窗 */}
+    {showBranchModal && repoRoot && gitStatus.branch && (
+      <BranchModal
+        repoRoot={repoRoot}
+        currentBranch={gitStatus.branch}
+        onClose={() => setShowBranchModal(false)}
+      />
+    )}
+    </>
   )
 }
 

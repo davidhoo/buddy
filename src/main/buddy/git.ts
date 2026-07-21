@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
@@ -189,6 +189,56 @@ export async function gitStageAll(cwd: string): Promise<void> {
   await execGit(['add', '-A'], cwd)
 }
 
+const MAX_DIFF_BYTES = 200_000
+
+function buildNewFileDiff(filePath: string, content: string): string {
+  const lines = content.split('\n')
+  // A trailing newline produces an empty final segment; drop it
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  const body = lines.map(l => `+${l}`).join('\n')
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    'new file mode 100644',
+    '--- /dev/null',
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    body
+  ].join('\n')
+}
+
+/**
+ * Unified diff for a single file (staged + unstaged vs HEAD).
+ * Falls back to an all-added pseudo diff for untracked files or repos without commits.
+ */
+export async function gitFileDiff(cwd: string, filePath: string): Promise<string> {
+  let diff = ''
+  try {
+    diff = await execGit(['diff', 'HEAD', '--no-renames', '--', filePath], cwd)
+  } catch {
+    // HEAD may not exist yet (no commits); try staged + unstaged separately
+    const [staged, unstaged] = await Promise.all([
+      execGit(['diff', '--cached', '--no-renames', '--', filePath], cwd).catch(() => ''),
+      execGit(['diff', '--no-renames', '--', filePath], cwd).catch(() => '')
+    ])
+    diff = [staged, unstaged].filter(Boolean).join('\n')
+  }
+  if (diff) {
+    return diff.length > MAX_DIFF_BYTES ? `${diff.slice(0, MAX_DIFF_BYTES)}\n… (diff truncated)` : diff
+  }
+  // Untracked file: synthesize an all-added diff from disk content
+  try {
+    const abs = join(cwd, filePath)
+    if (!existsSync(abs) || !statSync(abs).isFile()) return ''
+    const buf = readFileSync(abs)
+    if (buf.includes(0)) return '(binary file)'
+    let content = buf.toString('utf8')
+    if (content.length > MAX_DIFF_BYTES) content = `${content.slice(0, MAX_DIFF_BYTES)}\n… (file truncated)`
+    return buildNewFileDiff(filePath, content)
+  } catch {
+    return ''
+  }
+}
+
 export async function gitCommitAndPush(
   cwd: string,
   message: string,
@@ -202,6 +252,35 @@ export async function gitCommitAndPush(
     await execGit(['push', remote], cwd)
   }
   return { commitHash }
+}
+
+/** List local branch names (short form). Returns [] on error. */
+export async function gitBranches(cwd: string): Promise<string[]> {
+  try {
+    const output = await execGit(['branch', '--format=%(refname:short)'], cwd)
+    if (!output) return []
+    return output.split('\n').map(b => b.trim()).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+/** Switch to a local branch. Throws with git's stderr on failure (e.g. dirty tree). */
+export async function gitCheckout(cwd: string, branch: string): Promise<void> {
+  assertValidBranchName(branch)
+  await execGit(['checkout', branch], cwd)
+}
+
+/** Create a new branch from HEAD and switch to it. Throws with git's stderr on failure. */
+export async function gitCreateBranch(cwd: string, branch: string): Promise<void> {
+  assertValidBranchName(branch)
+  await execGit(['checkout', '-b', branch], cwd)
+}
+
+function assertValidBranchName(branch: string): void {
+  if (!/^[^\s~^:?*[\]\\]+$/.test(branch) || branch.startsWith('-')) {
+    throw new Error(`Invalid branch name: ${branch}`)
+  }
 }
 
 export async function gitDiffForCommitMessage(cwd: string): Promise<string> {

@@ -8,10 +8,12 @@ import { join } from 'node:path'
  * streaming output events.
  *
  * Config file locations:
- * - opencode: ~/.config/opencode/opencode.json  → JSON "model" field
+ * - opencode: `-m`/`--model` in the launcher command, then
+ *   ~/.config/opencode/opencode.json → JSON "model" field
  * - codex:    ~/.codex/config.toml              → TOML "model" field
  *   (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
- * - kimi:     ~/.kimi/config.toml               → TOML "default_model" field
+ * - kimi:     ~/.kimi-code/config.toml          → TOML "default_model" field
+ *   (~/.kimi/config.toml is checked as a legacy fallback)
  * - claude:   not needed (model reliably emitted in stream-json output)
  *
  * @param actor  Actor name (codex, opencode, kimi, claude)
@@ -25,6 +27,9 @@ export async function detectModelFromConfig(
   try {
     const home = homedir()
     if (actor === 'opencode') {
+      // Prefer the model explicitly passed on the command line (-m provider/model)
+      const fromCommand = modelFromCommandArgs(command)
+      if (fromCommand) return fromCommand
       return await readJsonModel(join(home, '.config', 'opencode', 'opencode.json'), 'model')
     }
     if (actor === 'codex') {
@@ -37,10 +42,33 @@ export async function detectModelFromConfig(
       return await readTomlModel(join(home, '.codex', 'config.toml'), 'model')
     }
     if (actor === 'kimi') {
+      // Kimi Code CLI reads ~/.kimi-code/config.toml; ~/.kimi is the legacy path
+      const primary = await readTomlModel(join(home, '.kimi-code', 'config.toml'), 'default_model').catch(() => undefined)
+      if (primary) return primary
       return await readTomlModel(join(home, '.kimi', 'config.toml'), 'default_model')
     }
   } catch {
     // Config file may not exist or be unreadable — that's fine
+  }
+  return undefined
+}
+
+/**
+ * Extract the model from a launcher command's `-m` / `--model` argument,
+ * e.g. `opencode -m agnes/agnes-2.0-flash` → `agnes/agnes-2.0-flash`.
+ */
+function modelFromCommandArgs(command?: string): string | undefined {
+  if (!command) return undefined
+  const parts = command.match(/(?:[^\s"]+|"[^"]*")+/g)
+  if (!parts) return undefined
+  const clean = parts.map((p) => p.replace(/^"|"$/g, ''))
+  for (let i = 0; i < clean.length; i++) {
+    if (clean[i].startsWith('--model=')) {
+      return clean[i].slice('--model='.length) || undefined
+    }
+    if ((clean[i] === '-m' || clean[i] === '--model') && i + 1 < clean.length) {
+      return clean[i + 1] || undefined
+    }
   }
   return undefined
 }

@@ -95,13 +95,14 @@ interface ChatAreaProps {
   onCreateTask: () => void
   onRetryHealthCheck: () => void
   isRetryingHealthCheck: boolean
+  onViewChanges?: () => void
   draft: string
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
+export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInterrupt, onEnqueueInstruction, onInterruptAndInsert, onDequeueInstruction, onEditInstruction, onClearInstructionQueue, onCreateTask, onRetryHealthCheck, isRetryingHealthCheck, onViewChanges, draft, onDraftChange, attachments, onAttachmentsChange }: ChatAreaProps) {
   const t = useT()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -247,6 +248,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
                 workspaceKey={task.workspace_key}
                 onRetryHealthCheck={onRetryHealthCheck}
                 isRetryingHealthCheck={isRetryingHealthCheck}
+                onViewChanges={onViewChanges}
               />
             ))}
             {isRunning && task.state.active_run?.actor && (
