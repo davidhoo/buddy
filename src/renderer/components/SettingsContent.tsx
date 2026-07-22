@@ -216,11 +216,11 @@ function GeneralSection() {
           title={t('settings.general.language.title')}
           description={t('settings.general.language.desc')}
           right={
-            <div className="relative">
+            <div className="relative min-w-[220px]">
               <select
                 value={pref}
                 onChange={(e) => setPref(e.target.value as LanguagePref)}
-                className="appearance-none pl-2 pr-7 py-1 text-sm bg-bg border border-border rounded-md focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                className="w-full appearance-none pl-2 pr-7 py-1 text-sm bg-bg border border-border rounded-md focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
               >
                 {LANGUAGE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
