@@ -86,7 +86,7 @@ export function deriveTokens(theme: BuddyTheme): DerivedTokens {
   const successBg = withAlpha(success, isDark ? 0.15 : 0.12)
   const dangerHover = isDark ? lighten(danger, 0.08) : darken(danger, 0.08)
 
-  // 进行中使用当前皮肤的强调色,与完成态(绿色对钩)区分
+  // 进行中使用当前皮肤的强调色,与完成态(绿色圆圈)区分
   const statusRunning = accent
   const statusPaused = withAlpha(ink, 0.5 + c * 0.1)
 

@@ -59,7 +59,7 @@ describe('TitleBar compact status', () => {
   it('shows completed status without an action icon', () => {
     const html = renderTitleBar({ taskStatus: 'DONE' })
 
-    expect(html).toContain('lucide-check')
+    expect(html).toContain('lucide-circle')
     expect(html).toContain('status-text-done')
     expect(html).not.toContain('lucide-play')
     expect(html).not.toContain('lucide-rotate-cw')
