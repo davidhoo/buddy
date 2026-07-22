@@ -265,6 +265,7 @@ body {
 .status-dot-paused { background: var(--status-paused); color: var(--status-paused); }
 .status-dot-danger { background: var(--danger); color: var(--danger); }
 .status-dot-done { background: var(--success-fg); color: var(--success-fg); }
+.status-dot-done-ring { background: transparent; border: 1.5px solid var(--success-fg); }
 .status-dot-neutral { background: var(--fg-muted); color: var(--fg-muted); }
 .status-dot-queued { background: var(--fg-muted); color: var(--fg-muted); border: 1.5px solid var(--fg-muted); }
 

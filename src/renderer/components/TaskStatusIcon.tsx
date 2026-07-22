@@ -1,4 +1,4 @@
-import { Circle, Loader2, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import type { TaskStatus } from '../../shared/types'
 
 export function statusClass(status: TaskStatus): string {
@@ -13,7 +13,7 @@ export function statusClass(status: TaskStatus): string {
 }
 
 /**
- * 任务状态指示器:进行中=强调色转圈,完成=绿色圆圈,出错=红色叉;
+ * 任务状态指示器:进行中=强调色转圈,完成=绿色描边圈(与暂停灰圈同为 7px/1.5px),出错=红色叉;
  * 图标始终使用主题全色(与原小圆点颜色一致),不做透明度弱化;
  * 其余状态沿用原有小圆点,dimmed 用于已读任务的空心圆点显示。
  */
@@ -31,12 +31,9 @@ export function TaskStatusIcon({ status, dimmed = false }: { status: TaskStatus;
   }
   if (cls === 'done') {
     return (
-      <Circle
-        size={12}
-        strokeWidth={2.5}
-        className="flex-shrink-0"
-        style={{ color: 'var(--success-fg)' }}
-      />
+      <span className="flex-shrink-0 inline-flex items-center justify-center" style={{ width: 12, height: 12 }}>
+        <span className="status-dot status-dot-done-ring" />
+      </span>
     )
   }
   if (cls === 'danger') {
