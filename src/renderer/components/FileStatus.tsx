@@ -92,13 +92,13 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         <span>{t('git.fileStatus')}</span>
         <span className="text-xs font-normal text-fg-secondary">{t('common.collapse')}</span>
       </summary>
-      <div className="px-4 pb-3 space-y-0.5">
+      <div className="pb-3 space-y-0.5">
         {/* 变更(点击查看 diff) */}
         <button
           onClick={() => setShowChangesModal(true)}
           disabled={!hasChanges}
           title={hasChanges ? t('git.changesTitle') : undefined}
-          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-60 disabled:cursor-default text-left"
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-60 disabled:cursor-default text-left"
         >
           <FileDiff size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.changes')}</span>
@@ -119,7 +119,7 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         <button
           onClick={() => setShowBranchModal(true)}
           title={t('git.switchBranch')}
-          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors text-left"
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors text-left"
         >
           <GitBranch size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.branch')}</span>
@@ -130,7 +130,7 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         <button
           onClick={onOpenCommit}
           disabled={!hasChanges}
-          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
         >
           <GitCommit size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.commit')}</span>
@@ -142,7 +142,7 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         {/* 提交反馈 */}
         {activeFeedback && (
           <div
-            className={`flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 ${
+            className={`flex items-center gap-2 text-xs px-6 py-1.5 ${
               activeFeedback.type === 'success'
                 ? 'text-success-fg bg-success-bg/50'
                 : 'text-danger bg-danger/10'

@@ -83,7 +83,7 @@ export function BranchModal({ repoRoot, currentBranch, onClose }: BranchModalPro
       onClick={onClose}
     >
       <div
-        className="bg-bg-elevated rounded-xl shadow-xl w-[340px] max-w-[90vw] max-h-[70vh] flex flex-col"
+        className="bg-bg-elevated rounded-xl shadow-xl w-[340px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         tabIndex={-1}
       >
@@ -110,14 +110,14 @@ export function BranchModal({ repoRoot, currentBranch, onClose }: BranchModalPro
         )}
 
         {/* 分支列表 */}
-        <div className="flex-1 overflow-y-auto px-5">
+        <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="flex items-center gap-2 py-4 text-xs text-fg-muted">
+            <div className="flex items-center gap-2 px-5 py-4 text-xs text-fg-muted">
               <Loader2 size={12} className="animate-spin" />
               {t('common.loading')}
             </div>
           ) : !branches || branches.length === 0 ? (
-            <div className="py-4 text-xs text-fg-muted">{t('git.noBranches')}</div>
+            <div className="px-5 py-4 text-xs text-fg-muted">{t('git.noBranches')}</div>
           ) : (
             branches.map((branch) => {
               const isCurrent = branch === currentBranch
@@ -127,7 +127,7 @@ export function BranchModal({ repoRoot, currentBranch, onClose }: BranchModalPro
                   key={branch}
                   onClick={() => handleSelect(branch)}
                   disabled={isCurrent || isBusy}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-md text-left transition-colors ${
+                  className={`w-full flex items-center gap-2 px-8 py-2 text-xs text-left transition-colors ${
                     isCurrent
                       ? 'text-fg font-medium bg-bg-subtle cursor-default'
                       : 'hover:bg-bg-subtle text-fg-secondary disabled:opacity-50'

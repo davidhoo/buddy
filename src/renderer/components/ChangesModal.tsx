@@ -144,7 +144,7 @@ export function ChangesModal({ gitStatus, repoRoot, onClose }: ChangesModalProps
       onClick={onClose}
     >
       <div
-        className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-w-[90vw] max-h-[85vh] flex flex-col"
+        className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-w-[90vw] max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         tabIndex={-1}
       >

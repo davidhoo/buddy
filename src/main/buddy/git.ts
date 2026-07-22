@@ -299,6 +299,7 @@ export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
       execGit(['diff', '--cached', '--stat'], cwd).catch(() => ''),
       execGit(['status', '--short'], cwd).catch(() => '')
     ])
+    if (!unstaged.trim() && !staged.trim() && !statusShort.trim()) return ''
     return [
       '## git status --short',
       statusShort || '(clean)',
@@ -328,6 +329,7 @@ export async function generateCommitMessage(cwd: string, actorCommand?: string, 
 - If the changes are non-trivial, add a blank line then a bullet-point body explaining what and why
 - Be specific: mention file names, function names, or key concepts that changed
 - Do not add Co-Authored-By or other metadata
+- Output only the commit message itself — no explanations, no markdown fences, no tool use
 ${langInstruction}
 
 ${diffSummary}`
@@ -335,7 +337,12 @@ ${diffSummary}`
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(command, ['-p', '--output-format', 'text', '--input-format', 'text'], {
+      // --tools "": disable the agent tool loop so the model answers directly;
+      // --no-session-persistence: don't write session files for one-shot runs.
+      // Together they keep generation at ~5-10s instead of minutes.
+      // NOTE: --bare is deliberately NOT used — it skips keychain reads, which
+      // would break users who authenticated claude via OAuth (no API key env).
+      child = spawn(command, ['-p', '--tools', '', '--no-session-persistence', '--output-format', 'text', '--input-format', 'text'], {
         cwd,
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe']
@@ -370,7 +377,14 @@ ${diffSummary}`
       if (timedOut) return
       const raw = Buffer.concat(chunks).toString('utf8').trim()
       const match = raw.match(/```\w*\n?([\s\S]*?)\n?```$/)
-      const text = (match ? match[1] : raw).trim()
+      let text = (match ? match[1] : raw).trim()
+      // 部分后端(经中继的弱模型)即使禁用工具也会先输出解释性前言,
+      // 从首个 conventional commit 行开始截取,丢弃前言
+      const lines = text.split('\n')
+      const start = lines.findIndex((l) =>
+        /^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([^)]*\))?!?:\s/.test(l)
+      )
+      if (start > 0) text = lines.slice(start).join('\n').trim()
       resolve(text || '')
     }).catch(() => {
       clearTimeout(timeout)

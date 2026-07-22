@@ -49,9 +49,13 @@ export function TaskStatusIcon({ status, dimmed = false }: { status: TaskStatus;
       />
     )
   }
+  // 小圆点外套一个 12×12 居中盒,与转圈/对钩/叉(11-12px)保持相同的占位宽度,
+  // 使不同状态的图标在列表中左缘对齐
   return (
-    <span
-      className={`status-dot status-dot-${cls} ${dimmed ? 'status-dot-read' : 'status-dot-unread'}`}
-    />
+    <span className="flex-shrink-0 inline-flex items-center justify-center" style={{ width: 12, height: 12 }}>
+      <span
+        className={`status-dot status-dot-${cls} ${dimmed ? 'status-dot-read' : 'status-dot-unread'}`}
+      />
+    </span>
   )
 }
