@@ -17,6 +17,7 @@ import {
   RotateCw
 } from 'lucide-react'
 import { Task } from '../../shared/types'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
@@ -275,6 +276,7 @@ function ChatSidebar({
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>(() => readStringArraySetting('buddy.pinnedTaskIds'))
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<string[]>(() => readStringArraySetting('buddy.collapsedProjectKeys'))
   const [expandedTaskProjects, setExpandedTaskProjects] = useState<Set<string>>(new Set())
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
 
   const togglePin = useCallback((taskId: string) => {
     setPinnedTaskIds(prev => {
@@ -487,8 +489,11 @@ function ChatSidebar({
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setOpenMenuTaskId(null)
-                                  const ok = window.confirm(t('sidebar.confirmDeleteTask', { id: task.task_id }))
-                                  if (ok) onDeleteTask(task.task_id, task.workspace_key)
+                                  setConfirmState({
+                                    title: t('sidebar.deleteTaskTitle'),
+                                    message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
+                                    onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
+                                  })
                                 }}
                                 className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                               >
@@ -571,8 +576,11 @@ function ChatSidebar({
                             onClick={(e) => {
                               e.stopPropagation()
                               setOpenMenuRepoRoot(null)
-                              const ok = window.confirm(t('sidebar.confirmRemoveProject', { name: projectKey }))
-                              if (ok) onRemoveProject(repoRoot)
+                              setConfirmState({
+                                title: t('sidebar.removeProjectTitle'),
+                                message: t('sidebar.confirmRemoveProject', { name: projectKey }),
+                                onConfirm: () => onRemoveProject(repoRoot)
+                              })
                             }}
                             className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                           >
@@ -657,8 +665,11 @@ function ChatSidebar({
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       setOpenMenuTaskId(null)
-                                      const ok = window.confirm(t('sidebar.confirmDeleteTask', { id: task.task_id }))
-                                      if (ok) onDeleteTask(task.task_id, task.workspace_key)
+                                      setConfirmState({
+                                        title: t('sidebar.deleteTaskTitle'),
+                                        message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
+                                        onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
+                                      })
                                     }}
                                     className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                                   >
@@ -731,6 +742,15 @@ function ChatSidebar({
           {t('sidebar.settings')}
         </button>
       </div>
+
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
     </>
   )
 }

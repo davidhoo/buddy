@@ -90,13 +90,20 @@ export function StatusBar({
   const { data: gitStatus, isLoading: isGitLoading } = useGitStatus(repoRoot)
   const [showCommitModal, setShowCommitModal] = useState(false)
   const [commitFeedback, setCommitFeedback] = useState<CommitFeedback | null>(null)
+  // 任务执行中(RUNNING_* / PINGING)时禁止提交,COUNTDOWN 是人工介入窗口,允许提交
+  const status = taskState?.status
+  const isTaskRunning = !!status && (status.startsWith('RUNNING_') || status === 'PINGING')
 
   // Listen for ⌘M shortcut: open commit modal on user request
   useEffect(() => {
-    const handler = () => { setCommitFeedback(null); setShowCommitModal(true) }
+    const handler = () => {
+      if (isTaskRunning) return
+      setCommitFeedback(null)
+      setShowCommitModal(true)
+    }
     window.addEventListener('buddy:commit', handler)
     return () => window.removeEventListener('buddy:commit', handler)
-  }, [])
+  }, [isTaskRunning])
 
   if (!isOpen) return null
 
@@ -179,6 +186,7 @@ export function StatusBar({
           gitStatus={gitStatus}
           isLoading={isGitLoading}
           repoRoot={repoRoot}
+          isTaskRunning={isTaskRunning}
           onOpenCommit={() => { setCommitFeedback(null); setShowCommitModal(true) }}
           commitFeedback={commitFeedback}
           onDismissFeedback={() => setCommitFeedback(null)}
@@ -200,6 +208,7 @@ export function StatusBar({
           gitStatus={gitStatus}
           repoRoot={repoRoot}
           globalSettings={globalSettings}
+          isTaskRunning={isTaskRunning}
           onClose={() => {
             setShowCommitModal(false)
             requestAnimationFrame(() => {

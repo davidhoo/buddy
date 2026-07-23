@@ -1,4 +1,4 @@
-import { Loader2, X } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import type { TaskStatus } from '../../shared/types'
 
 export function statusClass(status: TaskStatus): string {
@@ -13,7 +13,7 @@ export function statusClass(status: TaskStatus): string {
 }
 
 /**
- * 任务状态指示器:进行中=强调色转圈,完成=绿色描边圈(与暂停灰圈同为 7px/1.5px),出错=红色叉;
+ * 任务状态指示器:进行中=强调色转圈,完成=绿色描边圈(与暂停灰圈同为 7px/1.5px),出错=红色小圆点;
  * 图标始终使用主题全色(与原小圆点颜色一致),不做透明度弱化;
  * 其余状态沿用原有小圆点,dimmed 用于已读任务的空心圆点显示。
  */
@@ -36,17 +36,7 @@ export function TaskStatusIcon({ status, dimmed = false }: { status: TaskStatus;
       </span>
     )
   }
-  if (cls === 'danger') {
-    return (
-      <X
-        size={12}
-        strokeWidth={2.5}
-        className="flex-shrink-0"
-        style={{ color: 'var(--danger)' }}
-      />
-    )
-  }
-  // 小圆点外套一个 12×12 居中盒,与转圈/圆圈/叉(11-12px)保持相同的占位宽度,
+  // 小圆点外套一个 12×12 居中盒,与转圈/圆圈(11-12px)保持相同的占位宽度,
   // 使不同状态的图标在列表中左缘对齐
   return (
     <span className="flex-shrink-0 inline-flex items-center justify-center" style={{ width: 12, height: 12 }}>

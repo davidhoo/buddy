@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
+import { ChevronDown, FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { ChangesModal } from './components/ChangesModal'
 import { useTheme } from './hooks/useTheme'
@@ -956,7 +956,7 @@ function CreateTaskModal({
         onClose()
       }
     }}>
-      <div className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-h-[85vh] flex flex-col">
+      <div className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-h-[calc(100vh-3rem)] flex flex-col">
         {/* 头部 */}
         <div className="px-6 py-4 border-b border-border">
           <div className="flex items-center justify-between">
@@ -971,7 +971,7 @@ function CreateTaskModal({
         </div>
 
         {/* 内容 */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="overflow-y-auto p-6 flex flex-col gap-4">
           {/* 任务名 */}
           <div>
             <label className="block text-xs font-medium text-fg-secondary mb-1">
@@ -1003,8 +1003,8 @@ function CreateTaskModal({
               value={taskText}
               onChange={(e) => setTaskText(e.target.value)}
               onPaste={handlePaste}
-              rows={10}
-              className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
+              rows={8}
+              className="w-full h-[160px] px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
             />
             {/* Attachment previews — same layout as Composer */}
             {attachments.length > 0 && (
@@ -1106,27 +1106,39 @@ function CreateTaskModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.implementer')}</label>
-              <select
-                value={implementer}
-                onChange={(e) => setImplementer(e.target.value as Actor)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={implementer}
+                  onChange={(e) => setImplementer(e.target.value as Actor)}
+                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {actorOptions.map(a => (
+                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.reviewer')}</label>
-              <select
-                value={reviewer}
-                onChange={(e) => setReviewer(e.target.value as Actor)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={reviewer}
+                  onChange={(e) => setReviewer(e.target.value as Actor)}
+                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {actorOptions.map(a => (
+                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
           </div>
 

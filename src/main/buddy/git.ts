@@ -198,6 +198,18 @@ export async function gitStageAll(cwd: string): Promise<void> {
   await execGit(['add', '-A'], cwd)
 }
 
+/**
+ * 只暂存指定文件:先清空暂存区,再精确暂存所选路径,
+ * 保证接下来的 commit 恰好包含且仅包含这些文件。
+ */
+export async function gitStageFiles(cwd: string, paths: string[]): Promise<void> {
+  if (!paths.length) throw new Error('No files selected to stage')
+  removeStaleIndexLock(cwd)
+  // 无 HEAD 的新仓库上 reset 会失败,此时本来也没有可清空的暂存内容,忽略
+  await execGit(['reset', '-q'], cwd).catch(() => '')
+  await execGit(['add', '-A', '--', ...paths], cwd)
+}
+
 const MAX_DIFF_BYTES = 200_000
 
 function buildNewFileDiff(filePath: string, content: string): string {
@@ -292,12 +304,15 @@ function assertValidBranchName(branch: string): void {
   }
 }
 
-export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
+export async function gitDiffForCommitMessage(cwd: string, paths?: string[]): Promise<string> {
+  // paths 为 undefined 表示全部变更;空数组表示没有选择任何文件
+  if (paths && paths.length === 0) return ''
+  const pathspec = paths ? ['--', ...paths] : []
   try {
     const [unstaged, staged, statusShort] = await Promise.all([
-      execGit(['diff', '--stat'], cwd).catch(() => ''),
-      execGit(['diff', '--cached', '--stat'], cwd).catch(() => ''),
-      execGit(['status', '--short'], cwd).catch(() => '')
+      execGit(['diff', '--stat', ...pathspec], cwd).catch(() => ''),
+      execGit(['diff', '--cached', '--stat', ...pathspec], cwd).catch(() => ''),
+      execGit(['status', '--short', ...pathspec], cwd).catch(() => '')
     ])
     if (!unstaged.trim() && !staged.trim() && !statusShort.trim()) return ''
     return [
@@ -315,8 +330,8 @@ export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
   }
 }
 
-export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string): Promise<string> {
-  const diffSummary = await gitDiffForCommitMessage(cwd)
+export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
+  const diffSummary = await gitDiffForCommitMessage(cwd, paths)
   if (!diffSummary.trim()) return ''
 
   const command = actorCommand?.trim() || 'claude'

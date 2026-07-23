@@ -51,7 +51,7 @@ describe('TitleBar compact status', () => {
     expect(paused).toContain('status-dot-paused')
     expect(paused).toContain('lucide-play')
     expect(paused).not.toContain('lucide-rotate-cw')
-    expect(failed).toContain('lucide-x')
+    expect(failed).toContain('status-dot-danger')
     expect(failed).toContain('lucide-rotate-cw')
     expect(failed).not.toContain('lucide-play')
   })

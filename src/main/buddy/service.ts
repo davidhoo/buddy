@@ -22,6 +22,7 @@ import { BuddyEventBus } from './events'
 import {
   getGitStatus,
   gitStageAll,
+  gitStageFiles,
   gitCommitAndPush,
   gitDiffForCommitMessage,
   generateCommitMessage,
@@ -194,12 +195,16 @@ export class BuddyCoreService {
     return gitStageAll(repoRoot)
   }
 
+  gitStageFiles(repoRoot: string, paths: string[]): Promise<void> {
+    return gitStageFiles(repoRoot, paths)
+  }
+
   gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<{ commitHash: string }> {
     return gitCommitAndPush(repoRoot, message, remote, push)
   }
 
-  gitDiffForCommitMessage(repoRoot: string): Promise<string> {
-    return gitDiffForCommitMessage(repoRoot)
+  gitDiffForCommitMessage(repoRoot: string, paths?: string[]): Promise<string> {
+    return gitDiffForCommitMessage(repoRoot, paths)
   }
 
   gitFileDiff(repoRoot: string, filePath: string): Promise<string> {
@@ -218,8 +223,8 @@ export class BuddyCoreService {
     return gitCreateBranch(repoRoot, branch)
   }
 
-  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string> {
-    return generateCommitMessage(repoRoot, actorCommand, lang)
+  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
+    return generateCommitMessage(repoRoot, actorCommand, lang, paths)
   }
 
   cancelGenerateCommitMessage(): void {

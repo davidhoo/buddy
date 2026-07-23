@@ -26,6 +26,7 @@ describe('registerBuddyHandlers', () => {
       updateGlobalSettings: vi.fn(),
       gitStatus: vi.fn(),
       gitStageAll: vi.fn(),
+      gitStageFiles: vi.fn(),
       gitCommitAndPush: vi.fn(),
       gitDiffForCommitMessage: vi.fn(),
       gitFileDiff: vi.fn(),
@@ -47,7 +48,8 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitBranches', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitCheckout', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitCreateBranch', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(31)
+    expect(handle).toHaveBeenCalledTimes(32)
   })
 })

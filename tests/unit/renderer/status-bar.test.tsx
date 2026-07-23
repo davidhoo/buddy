@@ -82,7 +82,7 @@ describe('StatusBar inline run status', () => {
       }
     })
 
-    expect(html).toContain('lucide-x')
+    expect(html).toContain('status-dot-danger')
     expect(html).toContain('lucide-rotate-cw')
     expect(html).toContain('Command failed')
   })

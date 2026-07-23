@@ -13,7 +13,7 @@ const HINTS_ZH_CN = [
   '渡劫重构 ing', '破境生成 ing', '正在收功',
   '正在备料', '正在翻炒', '正在小火慢炖', '正在调味', '正在腌制', '正在醒面', '正在烘焙', '正在收汁', '正在装盘', '正在出锅',
   '神经脉冲 ing', '量子扰动 ing', '向量穿梭 ing', '矩阵重排 ing', '正在挥霍 token', '模型共振 ing', '意识加载 ing', '稀里糊涂 ing',
-  '掀桌子了', '弄乱了', '改花了', '完蛋了', '删库了', '跑路了', '舞剑中', '耍大刀呢',
+  '掀桌子了', '弄乱了', '改花了', '完蛋了', '跑路了', '舞剑中', '耍大刀呢',
   '鼓捣猫呢', '倒腾狗呢', '琢磨甩锅呢', '推卸责任呢', '想着怎么赖对方呢',
 ]
 
@@ -26,7 +26,7 @@ const HINTS_ZH_TW = [
   '渡劫重構 ing', '破境生成 ing', '正在收功',
   '正在備料', '正在翻炒', '正在小火慢燉', '正在調味', '正在醃漬', '正在醒麵', '正在烘焙', '正在收汁', '正在裝盤', '正在出鍋',
   '神經脈衝 ing', '量子擾動 ing', '向量穿梭 ing', '矩陣重排 ing', '正在揮霍 token', '模型共振 ing', '意識載入 ing', '稀裡糊塗 ing',
-  '掀桌子了', '弄亂了', '改花了', '完蛋了', '刪庫了', '跑路了', '舞劍中', '耍大刀呢',
+  '掀桌子了', '弄亂了', '改花了', '完蛋了', '跑路了', '舞劍中', '耍大刀呢',
   '搗鼓貓呢', '倒騰狗呢', '琢磨甩鍋呢', '推卸責任呢', '想著怎麼賴對方呢',
 ]
 
@@ -39,7 +39,7 @@ const HINTS_EN = [
   'Surviving tribulation refactor', 'Breaking through generation', 'Closing the form',
   'Prepping ingredients', 'Stir-frying', 'Slow simmering', 'Seasoning', 'Marinating', 'Resting the dough', 'Baking', 'Reducing sauce', 'Plating', 'Out of the wok',
   'Neural pulses', 'Quantum jitter', 'Vector hopping', 'Matrix shuffling', 'Burning tokens', 'Model resonance', 'Loading consciousness', 'Slightly confused',
-  'Flipped the table', 'Made a mess', 'Painted it weird', "It's over", 'Dropped the DB', 'Ran away', 'Sword dance', 'Brandishing blades',
+  'Flipped the table', 'Made a mess', 'Painted it weird', "It's over", 'Ran away', 'Sword dance', 'Brandishing blades',
   'Petting the cat', 'Wrangling the dog', 'Plotting blame', 'Dodging responsibility', 'Drafting an excuse',
 ]
 
