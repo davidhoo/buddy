@@ -1,7 +1,7 @@
+packages:
+  - '.'
 allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
   node-pty: true
-overrides:
-  "app-builder-lib>@electron/get": 3.1.0

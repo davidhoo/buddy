@@ -25,9 +25,9 @@ describe('TitleBar compact status', () => {
   it('shows running status when the status bar is hidden', () => {
     const html = renderTitleBar({ taskStatus: 'RUNNING_CODEX', isStatusBarOpen: false })
 
-    expect(html).toContain('status-dot-running')
+    expect(html).toContain('lucide-loader-circle')
+    expect(html).toContain('animate-spin')
     expect(html).toContain('status-text-running')
-    expect(html).toContain('status-dot-pulse')
   })
 
   it('aligns the compact status with the status bar toggle button', () => {
@@ -40,7 +40,7 @@ describe('TitleBar compact status', () => {
   it('hides compact status when the status bar is open', () => {
     const html = renderTitleBar({ taskStatus: 'RUNNING_CODEX', isStatusBarOpen: true })
 
-    expect(html).not.toContain('status-dot-running')
+    expect(html).not.toContain('lucide-loader-circle')
     expect(html).not.toContain('status-text-running')
   })
 
@@ -59,7 +59,7 @@ describe('TitleBar compact status', () => {
   it('shows completed status without an action icon', () => {
     const html = renderTitleBar({ taskStatus: 'DONE' })
 
-    expect(html).toContain('status-dot-done')
+    expect(html).toContain('status-dot-done-ring')
     expect(html).toContain('status-text-done')
     expect(html).not.toContain('lucide-play')
     expect(html).not.toContain('lucide-rotate-cw')

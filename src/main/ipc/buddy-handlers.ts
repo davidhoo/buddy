@@ -33,9 +33,15 @@ export interface BuddyHandlerService {
   updateGlobalSettings(settings: GlobalSettings): Promise<unknown>
   gitStatus(repoRoot: string): Promise<unknown>
   gitStageAll(repoRoot: string): Promise<void>
+  gitStageFiles(repoRoot: string, paths: string[]): Promise<void>
   gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown>
-  gitDiffForCommitMessage(repoRoot: string): Promise<string>
-  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string>
+  gitDiffForCommitMessage(repoRoot: string, paths?: string[]): Promise<string>
+  gitFileDiff(repoRoot: string, filePath: string): Promise<string>
+  gitBranches(repoRoot: string): Promise<string[]>
+  gitCheckout(repoRoot: string, branch: string): Promise<void>
+  gitCreateBranch(repoRoot: string, branch: string): Promise<void>
+  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string>
+  cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
@@ -100,14 +106,32 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:gitStageAll', (_event, repoRoot: string) =>
     service.gitStageAll(repoRoot)
   )
+  ipcMain.handle('buddy:gitStageFiles', (_event, repoRoot: string, paths: string[]) =>
+    service.gitStageFiles(repoRoot, paths)
+  )
   ipcMain.handle('buddy:gitCommitAndPush', (_event, repoRoot: string, message: string, remote: string, push?: boolean) =>
     service.gitCommitAndPush(repoRoot, message, remote, push)
   )
-  ipcMain.handle('buddy:gitDiffForCommitMessage', (_event, repoRoot: string) =>
-    service.gitDiffForCommitMessage(repoRoot)
+  ipcMain.handle('buddy:gitDiffForCommitMessage', (_event, repoRoot: string, paths?: string[]) =>
+    service.gitDiffForCommitMessage(repoRoot, paths)
   )
-  ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string) =>
-    service.generateCommitMessage(repoRoot, actorCommand, lang)
+  ipcMain.handle('buddy:gitFileDiff', (_event, repoRoot: string, filePath: string) =>
+    service.gitFileDiff(repoRoot, filePath)
+  )
+  ipcMain.handle('buddy:gitBranches', (_event, repoRoot: string) =>
+    service.gitBranches(repoRoot)
+  )
+  ipcMain.handle('buddy:gitCheckout', (_event, repoRoot: string, branch: string) =>
+    service.gitCheckout(repoRoot, branch)
+  )
+  ipcMain.handle('buddy:gitCreateBranch', (_event, repoRoot: string, branch: string) =>
+    service.gitCreateBranch(repoRoot, branch)
+  )
+  ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]) =>
+    service.generateCommitMessage(repoRoot, actorCommand, lang, paths)
+  )
+  ipcMain.handle('buddy:cancelGenerateCommitMessage', () =>
+    service.cancelGenerateCommitMessage()
   )
   ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
     service.testLauncher(actor, command, env)

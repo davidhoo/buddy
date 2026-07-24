@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process'
-import { existsSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
 
 export type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
+
+// 进行中的提交信息生成进程(提交弹窗同一时间只有一个,单实例即可)
+let activeGenerateChild: ReturnType<typeof spawn> | null = null
+
+/** 中断正在进行的提交信息生成;没有进行中的生成时为空操作 */
+export function cancelGenerateCommitMessage(): void {
+  activeGenerateChild?.kill('SIGTERM')
+  activeGenerateChild = null
+}
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -189,6 +198,68 @@ export async function gitStageAll(cwd: string): Promise<void> {
   await execGit(['add', '-A'], cwd)
 }
 
+/**
+ * 只暂存指定文件:先清空暂存区,再精确暂存所选路径,
+ * 保证接下来的 commit 恰好包含且仅包含这些文件。
+ */
+export async function gitStageFiles(cwd: string, paths: string[]): Promise<void> {
+  if (!paths.length) throw new Error('No files selected to stage')
+  removeStaleIndexLock(cwd)
+  // 无 HEAD 的新仓库上 reset 会失败,此时本来也没有可清空的暂存内容,忽略
+  await execGit(['reset', '-q'], cwd).catch(() => '')
+  await execGit(['add', '-A', '--', ...paths], cwd)
+}
+
+const MAX_DIFF_BYTES = 200_000
+
+function buildNewFileDiff(filePath: string, content: string): string {
+  const lines = content.split('\n')
+  // A trailing newline produces an empty final segment; drop it
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  const body = lines.map(l => `+${l}`).join('\n')
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    'new file mode 100644',
+    '--- /dev/null',
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    body
+  ].join('\n')
+}
+
+/**
+ * Unified diff for a single file (staged + unstaged vs HEAD).
+ * Falls back to an all-added pseudo diff for untracked files or repos without commits.
+ */
+export async function gitFileDiff(cwd: string, filePath: string): Promise<string> {
+  let diff = ''
+  try {
+    diff = await execGit(['diff', 'HEAD', '--no-renames', '--', filePath], cwd)
+  } catch {
+    // HEAD may not exist yet (no commits); try staged + unstaged separately
+    const [staged, unstaged] = await Promise.all([
+      execGit(['diff', '--cached', '--no-renames', '--', filePath], cwd).catch(() => ''),
+      execGit(['diff', '--no-renames', '--', filePath], cwd).catch(() => '')
+    ])
+    diff = [staged, unstaged].filter(Boolean).join('\n')
+  }
+  if (diff) {
+    return diff.length > MAX_DIFF_BYTES ? `${diff.slice(0, MAX_DIFF_BYTES)}\n… (diff truncated)` : diff
+  }
+  // Untracked file: synthesize an all-added diff from disk content
+  try {
+    const abs = join(cwd, filePath)
+    if (!existsSync(abs) || !statSync(abs).isFile()) return ''
+    const buf = readFileSync(abs)
+    if (buf.includes(0)) return '(binary file)'
+    let content = buf.toString('utf8')
+    if (content.length > MAX_DIFF_BYTES) content = `${content.slice(0, MAX_DIFF_BYTES)}\n… (file truncated)`
+    return buildNewFileDiff(filePath, content)
+  } catch {
+    return ''
+  }
+}
+
 export async function gitCommitAndPush(
   cwd: string,
   message: string,
@@ -204,13 +275,46 @@ export async function gitCommitAndPush(
   return { commitHash }
 }
 
-export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
+/** List local branch names (short form). Returns [] on error. */
+export async function gitBranches(cwd: string): Promise<string[]> {
+  try {
+    const output = await execGit(['branch', '--format=%(refname:short)'], cwd)
+    if (!output) return []
+    return output.split('\n').map(b => b.trim()).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+/** Switch to a local branch. Throws with git's stderr on failure (e.g. dirty tree). */
+export async function gitCheckout(cwd: string, branch: string): Promise<void> {
+  assertValidBranchName(branch)
+  await execGit(['checkout', branch], cwd)
+}
+
+/** Create a new branch from HEAD and switch to it. Throws with git's stderr on failure. */
+export async function gitCreateBranch(cwd: string, branch: string): Promise<void> {
+  assertValidBranchName(branch)
+  await execGit(['checkout', '-b', branch], cwd)
+}
+
+function assertValidBranchName(branch: string): void {
+  if (!/^[^\s~^:?*[\]\\]+$/.test(branch) || branch.startsWith('-')) {
+    throw new Error(`Invalid branch name: ${branch}`)
+  }
+}
+
+export async function gitDiffForCommitMessage(cwd: string, paths?: string[]): Promise<string> {
+  // paths 为 undefined 表示全部变更;空数组表示没有选择任何文件
+  if (paths && paths.length === 0) return ''
+  const pathspec = paths ? ['--', ...paths] : []
   try {
     const [unstaged, staged, statusShort] = await Promise.all([
-      execGit(['diff', '--stat'], cwd).catch(() => ''),
-      execGit(['diff', '--cached', '--stat'], cwd).catch(() => ''),
-      execGit(['status', '--short'], cwd).catch(() => '')
+      execGit(['diff', '--stat', ...pathspec], cwd).catch(() => ''),
+      execGit(['diff', '--cached', '--stat', ...pathspec], cwd).catch(() => ''),
+      execGit(['status', '--short', ...pathspec], cwd).catch(() => '')
     ])
+    if (!unstaged.trim() && !staged.trim() && !statusShort.trim()) return ''
     return [
       '## git status --short',
       statusShort || '(clean)',
@@ -226,8 +330,8 @@ export async function gitDiffForCommitMessage(cwd: string): Promise<string> {
   }
 }
 
-export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string): Promise<string> {
-  const diffSummary = await gitDiffForCommitMessage(cwd)
+export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
+  const diffSummary = await gitDiffForCommitMessage(cwd, paths)
   if (!diffSummary.trim()) return ''
 
   const command = actorCommand?.trim() || 'claude'
@@ -240,6 +344,7 @@ export async function generateCommitMessage(cwd: string, actorCommand?: string, 
 - If the changes are non-trivial, add a blank line then a bullet-point body explaining what and why
 - Be specific: mention file names, function names, or key concepts that changed
 - Do not add Co-Authored-By or other metadata
+- Output only the commit message itself — no explanations, no markdown fences, no tool use
 ${langInstruction}
 
 ${diffSummary}`
@@ -247,7 +352,12 @@ ${diffSummary}`
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(command, ['-p', '--output-format', 'text', '--input-format', 'text'], {
+      // --tools "": disable the agent tool loop so the model answers directly;
+      // --no-session-persistence: don't write session files for one-shot runs.
+      // Together they keep generation at ~5-10s instead of minutes.
+      // NOTE: --bare is deliberately NOT used — it skips keychain reads, which
+      // would break users who authenticated claude via OAuth (no API key env).
+      child = spawn(command, ['-p', '--tools', '', '--no-session-persistence', '--output-format', 'text', '--input-format', 'text'], {
         cwd,
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe']
@@ -255,6 +365,11 @@ ${diffSummary}`
     } catch {
       resolve('')
       return
+    }
+
+    activeGenerateChild = child
+    const clearActive = () => {
+      if (activeGenerateChild === child) activeGenerateChild = null
     }
 
     const chunks: Buffer[] = []
@@ -273,18 +388,28 @@ ${diffSummary}`
 
     once(child, 'exit').then(() => {
       clearTimeout(timeout)
+      clearActive()
       if (timedOut) return
       const raw = Buffer.concat(chunks).toString('utf8').trim()
       const match = raw.match(/```\w*\n?([\s\S]*?)\n?```$/)
-      const text = (match ? match[1] : raw).trim()
+      let text = (match ? match[1] : raw).trim()
+      // 部分后端(经中继的弱模型)即使禁用工具也会先输出解释性前言,
+      // 从首个 conventional commit 行开始截取,丢弃前言
+      const lines = text.split('\n')
+      const start = lines.findIndex((l) =>
+        /^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([^)]*\))?!?:\s/.test(l)
+      )
+      if (start > 0) text = lines.slice(start).join('\n').trim()
       resolve(text || '')
     }).catch(() => {
       clearTimeout(timeout)
+      clearActive()
       resolve('')
     })
 
     child.on('error', () => {
       clearTimeout(timeout)
+      clearActive()
       resolve('')
     })
   })

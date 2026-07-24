@@ -127,6 +127,26 @@ describe('model-detect', () => {
     expect(model).toBe('kimi-latest')
   })
 
+  it('prefers ~/.kimi-code/config.toml over legacy ~/.kimi for kimi', async () => {
+    const codeDir = join(tempHome, '.kimi-code')
+    await mkdir(codeDir, { recursive: true })
+    await writeFile(join(codeDir, 'config.toml'), 'default_model = "kimi-code/k3"\n')
+    const legacyDir = join(tempHome, '.kimi')
+    await mkdir(legacyDir, { recursive: true })
+    await writeFile(join(legacyDir, 'config.toml'), 'default_model = "kimi-latest"\n')
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    const model = await detectModelFromConfig('kimi')
+    expect(model).toBe('kimi-code/k3')
+  })
+
+  it('reads opencode model from -m command argument', async () => {
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('opencode', 'opencode -m agnes/agnes-2.0-flash')).toBe('agnes/agnes-2.0-flash')
+    expect(await detectModelFromConfig('opencode', 'opencode --model provider/kimi-k2.6')).toBe('provider/kimi-k2.6')
+    expect(await detectModelFromConfig('opencode', 'opencode --model=provider/kimi-k2.6')).toBe('provider/kimi-k2.6')
+  })
+
   it('returns undefined for unknown actor', async () => {
     const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
     const model = await detectModelFromConfig('unknown_actor')

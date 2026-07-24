@@ -22,9 +22,15 @@ import { BuddyEventBus } from './events'
 import {
   getGitStatus,
   gitStageAll,
+  gitStageFiles,
   gitCommitAndPush,
   gitDiffForCommitMessage,
-  generateCommitMessage
+  generateCommitMessage,
+  cancelGenerateCommitMessage,
+  gitFileDiff,
+  gitBranches,
+  gitCheckout,
+  gitCreateBranch
 } from './git'
 import type { GitStatusResult } from '../../shared/types'
 import { BuddyRunner } from './runner'
@@ -189,16 +195,40 @@ export class BuddyCoreService {
     return gitStageAll(repoRoot)
   }
 
+  gitStageFiles(repoRoot: string, paths: string[]): Promise<void> {
+    return gitStageFiles(repoRoot, paths)
+  }
+
   gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<{ commitHash: string }> {
     return gitCommitAndPush(repoRoot, message, remote, push)
   }
 
-  gitDiffForCommitMessage(repoRoot: string): Promise<string> {
-    return gitDiffForCommitMessage(repoRoot)
+  gitDiffForCommitMessage(repoRoot: string, paths?: string[]): Promise<string> {
+    return gitDiffForCommitMessage(repoRoot, paths)
   }
 
-  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string): Promise<string> {
-    return generateCommitMessage(repoRoot, actorCommand, lang)
+  gitFileDiff(repoRoot: string, filePath: string): Promise<string> {
+    return gitFileDiff(repoRoot, filePath)
+  }
+
+  gitBranches(repoRoot: string): Promise<string[]> {
+    return gitBranches(repoRoot)
+  }
+
+  gitCheckout(repoRoot: string, branch: string): Promise<void> {
+    return gitCheckout(repoRoot, branch)
+  }
+
+  gitCreateBranch(repoRoot: string, branch: string): Promise<void> {
+    return gitCreateBranch(repoRoot, branch)
+  }
+
+  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
+    return generateCommitMessage(repoRoot, actorCommand, lang, paths)
+  }
+
+  cancelGenerateCommitMessage(): void {
+    cancelGenerateCommitMessage()
   }
 
   async recoverInterruptedRuns(): Promise<void> {

@@ -69,12 +69,24 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitStatus', repoRoot),
     gitStageAll: (repoRoot: string): Promise<void> =>
       ipc.invoke('buddy:gitStageAll', repoRoot) as Promise<void>,
+    gitStageFiles: (repoRoot: string, paths: string[]): Promise<void> =>
+      ipc.invoke('buddy:gitStageFiles', repoRoot, paths) as Promise<void>,
     gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown> =>
       ipc.invoke('buddy:gitCommitAndPush', repoRoot, message, remote, push),
-    gitDiffForCommitMessage: (repoRoot: string): Promise<string> =>
-      ipc.invoke('buddy:gitDiffForCommitMessage', repoRoot) as Promise<string>,
-    generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string): Promise<string> =>
-      ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang) as Promise<string>,
+    gitDiffForCommitMessage: (repoRoot: string, paths?: string[]): Promise<string> =>
+      ipc.invoke('buddy:gitDiffForCommitMessage', repoRoot, paths) as Promise<string>,
+    gitFileDiff: (repoRoot: string, filePath: string): Promise<string> =>
+      ipc.invoke('buddy:gitFileDiff', repoRoot, filePath) as Promise<string>,
+    gitBranches: (repoRoot: string): Promise<string[]> =>
+      ipc.invoke('buddy:gitBranches', repoRoot) as Promise<string[]>,
+    gitCheckout: (repoRoot: string, branch: string): Promise<void> =>
+      ipc.invoke('buddy:gitCheckout', repoRoot, branch) as Promise<void>,
+    gitCreateBranch: (repoRoot: string, branch: string): Promise<void> =>
+      ipc.invoke('buddy:gitCreateBranch', repoRoot, branch) as Promise<void>,
+    generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> =>
+      ipc.invoke('buddy:generateCommitMessage', repoRoot, actorCommand, lang, paths) as Promise<string>,
+    cancelGenerateCommitMessage: (): Promise<void> =>
+      ipc.invoke('buddy:cancelGenerateCommitMessage') as Promise<void>,
     testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>
       ipc.invoke('buddy:testLauncher', actor, command, env) as Promise<TestLauncherResult>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>

@@ -216,17 +216,23 @@ function GeneralSection() {
           title={t('settings.general.language.title')}
           description={t('settings.general.language.desc')}
           right={
-            <select
-              value={pref}
-              onChange={(e) => setPref(e.target.value as LanguagePref)}
-              className="px-2 py-1 text-sm bg-bg border border-border rounded-md focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-            >
-              {LANGUAGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.value === 'auto' ? `${opt.label} (${detectedLabel})` : opt.label}
-                </option>
-              ))}
-            </select>
+            <div className="relative min-w-[220px]">
+              <select
+                value={pref}
+                onChange={(e) => setPref(e.target.value as LanguagePref)}
+                className="w-full appearance-none pl-2 pr-7 py-1 text-sm bg-bg border border-border rounded-md focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              >
+                {LANGUAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.value === 'auto' ? `${opt.label} (${detectedLabel})` : opt.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+              />
+            </div>
           }
         />
 
@@ -811,6 +817,7 @@ function AppearanceSettings() {
               <button
                 key={theme.id}
                 onClick={() => handleSelectTheme(theme.id)}
+                title={theme.name}
                 className={`relative p-2 rounded-lg border text-left transition-colors ${active
                   ? 'border-accent-primary ring-1 ring-accent-primary'
                   : 'border-border hover:border-fg-muted'

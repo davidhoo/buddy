@@ -1,7 +1,29 @@
-import { marked } from 'marked'
+import { marked, Tokenizer } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
+
+// marked's GFM autolink only backpedals trailing ASCII punctuation, so CJK
+// punctuation (，。（） etc.) right after a bare URL gets swallowed into the
+// link. Such characters can never appear unencoded in a URL, so trim the
+// match at the first non-ASCII-printable char, then re-run the default
+// tokenizer on the trimmed text to keep escaping / www. handling intact.
+const defaultUrl = Tokenizer.prototype.url
+const NON_URL_CHAR = /[^\x21-\x7e]/
+
+marked.use({
+  tokenizer: {
+    url(src: string) {
+      const token = defaultUrl.call(this, src)
+      if (!token) return undefined
+      if (!token.href.startsWith('mailto:')) {
+        const cut = token.raw.search(NON_URL_CHAR)
+        if (cut > 0) return defaultUrl.call(this, token.raw.slice(0, cut))
+      }
+      return token
+    },
+  },
+})
 
 export function renderMarkdown(text: string): string {
   try {

@@ -59,12 +59,24 @@ export const api = {
     buddy().gitStatus(repoRoot),
   gitStageAll: (repoRoot: string) =>
     buddy().gitStageAll(repoRoot),
+  gitStageFiles: (repoRoot: string, paths: string[]) =>
+    buddy().gitStageFiles(repoRoot, paths),
   gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean) =>
     buddy().gitCommitAndPush(repoRoot, message, remote, push),
-  gitDiffForCommitMessage: (repoRoot: string) =>
-    buddy().gitDiffForCommitMessage(repoRoot),
-  generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string) =>
-    buddy().generateCommitMessage(repoRoot, actorCommand, lang),
+  gitDiffForCommitMessage: (repoRoot: string, paths?: string[]) =>
+    buddy().gitDiffForCommitMessage(repoRoot, paths),
+  gitFileDiff: (repoRoot: string, filePath: string) =>
+    buddy().gitFileDiff(repoRoot, filePath),
+  gitBranches: (repoRoot: string) =>
+    buddy().gitBranches(repoRoot) as Promise<string[]>,
+  gitCheckout: (repoRoot: string, branch: string) =>
+    buddy().gitCheckout(repoRoot, branch),
+  gitCreateBranch: (repoRoot: string, branch: string) =>
+    buddy().gitCreateBranch(repoRoot, branch),
+  generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]) =>
+    buddy().generateCommitMessage(repoRoot, actorCommand, lang, paths),
+  cancelGenerateCommitMessage: () =>
+    buddy().cancelGenerateCommitMessage(),
   testLauncher: (actor: string, command: string, env?: Record<string, string>) =>
     buddy().testLauncher(actor, command, env) as Promise<TestLauncherResult>,
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>

@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
+import { ChevronDown, FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
+import { ChangesModal } from './components/ChangesModal'
+import { BranchModal } from './components/BranchModal'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
 import { setServerLocale } from './lib/i18n'
@@ -33,6 +35,7 @@ export default function App() {
   // Track just-created task to prevent auto-select from overriding its selection
   const justCreatedTaskId = useRef<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showTaskDoneChanges, setShowTaskDoneChanges] = useState(false)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -65,6 +68,9 @@ export default function App() {
   const { data: bootstrap, isLoading: isLoadingBootstrap, error: bootstrapError } = useBootstrap()
   const { data: tasks = [], isLoading: isLoadingTasks, error: tasksError } = useTasks()
   const { data: taskDetail } = useTaskDetail(selectedTaskId, selectedWorkspaceKey ?? undefined)
+
+  const changesRepoRoot = taskDetail?.state?.repo_root || null
+  const { data: changesGitStatus } = useGitStatus(changesRepoRoot)
 
   // Feed main-process locale to renderer language detection as fallback
   useEffect(() => {
@@ -670,6 +676,7 @@ export default function App() {
                 onCreateTask={handleOpenCreateModal}
                 onRetryHealthCheck={handleRetryHealthCheck}
                 isRetryingHealthCheck={isRetryingHealthCheck}
+                onViewChanges={() => setShowTaskDoneChanges(true)}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}
@@ -696,6 +703,15 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* 任务完成 - 变更文件弹窗 */}
+      {showTaskDoneChanges && changesGitStatus && changesRepoRoot && (
+        <ChangesModal
+          gitStatus={changesGitStatus}
+          repoRoot={changesRepoRoot}
+          onClose={() => setShowTaskDoneChanges(false)}
+        />
+      )}
 
       {/* 创建任务模态框 */}
       {showCreateModal && (
@@ -767,6 +783,7 @@ function CreateTaskModal({
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
   const [executionMode, setExecutionMode] = useState<'immediate' | 'queued'>('immediate')
+  const [showBranchModal, setShowBranchModal] = useState(false)
 
   // --- Attachment helpers (same logic as Composer.tsx) ---
   const removeAttachment = useCallback((id: string) => {
@@ -866,13 +883,14 @@ function CreateTaskModal({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (showBranchModal) return // 分支弹窗自行处理 Escape
         e.preventDefault()
         onClose()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [onClose, showBranchModal])
 
   const TASK_NAME_RE = /^[a-zA-Z0-9一-鿿㐀-䶿""「」【】{}][a-zA-Z0-9一-鿿㐀-䶿 ._\-""「」【】{}]{0,63}$/
   const taskIdError = taskId.trim() && !TASK_NAME_RE.test(taskId.trim())
@@ -937,11 +955,12 @@ function CreateTaskModal({
         handleSubmit()
       }
       if (e.key === 'Escape') {
+        if (showBranchModal) return
         e.preventDefault()
         onClose()
       }
     }}>
-      <div className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-h-[85vh] flex flex-col">
+      <div className="bg-bg-elevated rounded-xl shadow-xl w-[760px] max-h-[calc(100vh-3rem)] flex flex-col">
         {/* 头部 */}
         <div className="px-6 py-4 border-b border-border">
           <div className="flex items-center justify-between">
@@ -956,7 +975,7 @@ function CreateTaskModal({
         </div>
 
         {/* 内容 */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="overflow-y-auto p-6 flex flex-col gap-4">
           {/* 任务名 */}
           <div>
             <label className="block text-xs font-medium text-fg-secondary mb-1">
@@ -988,8 +1007,8 @@ function CreateTaskModal({
               value={taskText}
               onChange={(e) => setTaskText(e.target.value)}
               onPaste={handlePaste}
-              rows={10}
-              className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
+              rows={8}
+              className="w-full h-[160px] px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
             />
             {/* Attachment previews — same layout as Composer */}
             {attachments.length > 0 && (
@@ -1079,11 +1098,16 @@ function CreateTaskModal({
               </button>
             </div>
             {gitBranchName && (
-              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted">
+              <button
+                type="button"
+                onClick={() => setShowBranchModal(true)}
+                title={t('git.switchBranch')}
+                className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted rounded-md px-1 py-0.5 hover:bg-bg-subtle hover:text-fg transition-colors"
+              >
                 <GitBranch size={12} className="flex-shrink-0" />
                 <span className="text-fg-secondary">{t('modal.create.gitBranch')}</span>
                 <span className="font-mono">{gitBranchName}</span>
-              </div>
+              </button>
             )}
           </div>
 
@@ -1091,27 +1115,39 @@ function CreateTaskModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.implementer')}</label>
-              <select
-                value={implementer}
-                onChange={(e) => setImplementer(e.target.value as Actor)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={implementer}
+                  onChange={(e) => setImplementer(e.target.value as Actor)}
+                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {actorOptions.map(a => (
+                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.reviewer')}</label>
-              <select
-                value={reviewer}
-                onChange={(e) => setReviewer(e.target.value as Actor)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {actorOptions.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={reviewer}
+                  onChange={(e) => setReviewer(e.target.value as Actor)}
+                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {actorOptions.map(a => (
+                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
           </div>
 
@@ -1148,7 +1184,7 @@ function CreateTaskModal({
             <label className="block text-xs font-medium text-fg-secondary mb-1">
               {t('modal.create.executionMode')}
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-4">
               {(['immediate', 'queued'] as const).map((mode) => {
                 const active = executionMode === mode
                 return (
@@ -1194,6 +1230,14 @@ function CreateTaskModal({
           </button>
         </div>
       </div>
+
+      {showBranchModal && debouncedRepoRoot && gitBranchName && (
+        <BranchModal
+          repoRoot={debouncedRepoRoot}
+          currentBranch={gitBranchName}
+          onClose={() => setShowBranchModal(false)}
+        />
+      )}
     </div>
   )
 }

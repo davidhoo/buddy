@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
+import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
 import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
@@ -7,6 +7,8 @@ import { useLanguage } from '../hooks/useI18n'
 import { api } from '../lib/api'
 import { formatBinding, loadBindings } from '../lib/keyboard'
 import { useQueryClient } from '@tanstack/react-query'
+import { ChangesModal } from './ChangesModal'
+import { BranchModal } from './BranchModal'
 
 export interface CommitFeedback {
   type: 'success' | 'error'
@@ -18,12 +20,14 @@ interface FileStatusProps {
   gitStatus: GitStatusResult | null | undefined
   isLoading: boolean
   repoRoot: string | null
+  /** 任务执行中(RUNNING_* / PINGING)时禁用提交按钮 */
+  isTaskRunning?: boolean
   onOpenCommit: () => void
   commitFeedback?: CommitFeedback | null
   onDismissFeedback?: () => void
 }
 
-function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunction }) {
+export function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunction }) {
   const config: Record<GitFileStatusCode, { label: string; cls: string }> = {
     M: { label: t('git.statusModified'), cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
     A: { label: t('git.statusAdded'), cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
@@ -37,8 +41,10 @@ function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunctio
   return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${cls}`}>{label}</span>
 }
 
-export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
+export function FileStatus({ gitStatus, isLoading, repoRoot, isTaskRunning, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
   const t = useT()
+  const [showChangesModal, setShowChangesModal] = useState(false)
+  const [showBranchModal, setShowBranchModal] = useState(false)
 
   // Only show feedback for the current project
   const activeFeedback = commitFeedback && commitFeedback.repoRoot === repoRoot ? commitFeedback : null
@@ -82,14 +88,20 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
   const hasChanges = totalFiles > 0
 
   return (
+    <>
     <details open className="border-b border-border">
       <summary className="px-4 py-3 text-sm font-semibold cursor-pointer flex items-center justify-between hover:bg-bg-subtle select-none">
         <span>{t('git.fileStatus')}</span>
         <span className="text-xs font-normal text-fg-secondary">{t('common.collapse')}</span>
       </summary>
-      <div className="px-4 pb-3 space-y-0.5">
-        {/* 变更 */}
-        <div className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 hover:bg-bg-subtle transition-colors">
+      <div className="pb-3 space-y-0.5">
+        {/* 变更(点击查看 diff) */}
+        <button
+          onClick={() => setShowChangesModal(true)}
+          disabled={!hasChanges}
+          title={hasChanges ? t('git.changesTitle') : undefined}
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-60 disabled:cursor-default text-left"
+        >
           <FileDiff size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.changes')}</span>
           <span className="ml-auto flex items-center gap-1.5">
@@ -103,20 +115,25 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
               <span className="text-fg-muted">{t('git.noChanges')}</span>
             )}
           </span>
-        </div>
+        </button>
 
-        {/* 分支 */}
-        <div className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 hover:bg-bg-subtle transition-colors">
+        {/* 分支(点击切换) */}
+        <button
+          onClick={() => setShowBranchModal(true)}
+          title={t('git.switchBranch')}
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors text-left"
+        >
           <GitBranch size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.branch')}</span>
           <span className="ml-auto truncate">{gitStatus.branch}</span>
-        </div>
+        </button>
 
-        {/* 提交 */}
+        {/* 提交(任务执行中禁用) */}
         <button
           onClick={onOpenCommit}
-          disabled={!hasChanges}
-          className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+          disabled={!hasChanges || isTaskRunning}
+          title={isTaskRunning ? t('git.commitDisabledWhileRunning') : undefined}
+          className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
         >
           <GitCommit size={13} className="text-fg-muted flex-shrink-0" />
           <span className="text-fg-secondary flex-shrink-0">{t('git.commit')}</span>
@@ -128,7 +145,7 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         {/* 提交反馈 */}
         {activeFeedback && (
           <div
-            className={`flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 ${
+            className={`flex items-center gap-2 text-xs px-6 py-1.5 ${
               activeFeedback.type === 'success'
                 ? 'text-success-fg bg-success-bg/50'
                 : 'text-danger bg-danger/10'
@@ -149,6 +166,25 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
         )}
       </div>
     </details>
+
+    {/* 变更详情弹窗 */}
+    {showChangesModal && hasChanges && repoRoot && (
+      <ChangesModal
+        gitStatus={gitStatus}
+        repoRoot={repoRoot}
+        onClose={() => setShowChangesModal(false)}
+      />
+    )}
+
+    {/* 分支切换弹窗 */}
+    {showBranchModal && repoRoot && gitStatus.branch && (
+      <BranchModal
+        repoRoot={repoRoot}
+        currentBranch={gitStatus.branch}
+        onClose={() => setShowBranchModal(false)}
+      />
+    )}
+    </>
   )
 }
 
@@ -156,12 +192,14 @@ interface CommitModalProps {
   gitStatus: GitStatusResult | null
   repoRoot: string
   globalSettings: GlobalSettings | null
+  /** 任务执行中时禁用弹窗内的提交按钮(弹窗可能在倒计时期间打开,随后任务进入 RUNNING) */
+  isTaskRunning?: boolean
   onClose: () => void
   onSuccess: (message: string) => void
   onError: (message: string) => void
 }
 
-export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSuccess, onError }: CommitModalProps) {
+export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning, onClose, onSuccess, onError }: CommitModalProps) {
   const t = useT()
   const lang = useLanguage()
   const queryClient = useQueryClient()
@@ -171,6 +209,9 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
   const [generateFailed, setGenerateFailed] = useState(false)
   const [isStaging, setIsStaging] = useState(false)
   const [isCommitting, setIsCommitting] = useState(false)
+  const allFiles = gitStatus?.files ?? []
+  // 默认全选,用户可逐个取消
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set(allFiles.map((f) => f.path)))
   const [selectedRemote, setSelectedRemote] = useState<string>(() => {
     const remoteNames = gitStatus?.remotes.map((r: GitRemote) => r.name) ?? []
     const stored = (() => {
@@ -182,6 +223,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
   const hasRemotes = (gitStatus?.remotes.length ?? 0) > 0
   const [shouldPush, setShouldPush] = useState(hasRemotes)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const generateSeq = useRef(0)
 
   const stageAll = useGitStageAll()
   const commitAndPush = useGitCommitAndPush()
@@ -198,9 +240,9 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const totalInsertions = (gitStatus?.files ?? []).reduce((s, f) => s + f.insertions, 0)
-  const totalDeletions = (gitStatus?.files ?? []).reduce((s, f) => s + f.deletions, 0)
-  const totalFiles = (gitStatus?.files ?? []).length || ((gitStatus?.diff?.filesChanged ?? 0) + (gitStatus?.staged?.filesChanged ?? 0) + (gitStatus?.untracked ?? 0))
+  const selectedFiles = allFiles.filter((f) => selectedPaths.has(f.path))
+  const totalInsertions = selectedFiles.reduce((s, f) => s + f.insertions, 0)
+  const totalDeletions = selectedFiles.reduce((s, f) => s + f.deletions, 0)
   const hasUnstaged = (gitStatus?.diff?.filesChanged ?? 0) > 0 || (gitStatus?.untracked ?? 0) > 0
   const hasStaged = (gitStatus?.staged?.filesChanged ?? 0) > 0
 
@@ -215,30 +257,72 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
     }
   }, [repoRoot, stageAll, onError])
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async (paths: string[]) => {
+    if (!paths.length) {
+      // 没有选择任何文件时不生成
+      setMessage('')
+      setIsGenerating(false)
+      return
+    }
+    const seq = ++generateSeq.current
     setIsGenerating(true)
     setGenerateFailed(false)
     try {
-      const result = await api.generateCommitMessage(repoRoot, undefined, lang)
+      const result = await api.generateCommitMessage(repoRoot, undefined, lang, paths)
+      if (seq !== generateSeq.current) return // 已被打断,丢弃结果
       if (result) {
         setMessage(result)
       } else {
         setGenerateFailed(true)
       }
     } catch {
+      if (seq !== generateSeq.current) return
       setGenerateFailed(true)
     } finally {
-      setIsGenerating(false)
+      if (seq === generateSeq.current) setIsGenerating(false)
     }
   }, [repoRoot, lang])
 
-  // 打开时自动生成
+  // 打断正在进行的生成,恢复为可点击的“生成”按钮
+  const handleCancelGenerate = useCallback(() => {
+    generateSeq.current++
+    api.cancelGenerateCommitMessage()
+    setIsGenerating(false)
+  }, [])
+
+  // 打断当前生成并基于新的文件选择重新生成
+  const restartGenerate = useCallback((paths: string[]) => {
+    generateSeq.current++
+    api.cancelGenerateCommitMessage()
+    void handleGenerate(paths)
+  }, [handleGenerate])
+
+  const handleTogglePath = useCallback((path: string) => {
+    const next = new Set(selectedPaths)
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    setSelectedPaths(next)
+    // 生成中动了选择:打断并基于新选择重新生成
+    if (isGenerating) restartGenerate([...next])
+  }, [selectedPaths, isGenerating, restartGenerate])
+
+  const handleToggleAll = useCallback(() => {
+    const next = selectedPaths.size === allFiles.length
+      ? new Set<string>()
+      : new Set(allFiles.map((f) => f.path))
+    setSelectedPaths(next)
+    if (isGenerating) restartGenerate([...next])
+  }, [selectedPaths, allFiles, isGenerating, restartGenerate])
+
+  // 打开时自动生成(基于初始全选)
   useEffect(() => {
     if (!autoGenerate) {
       setIsGenerating(false)
       return
     }
-    handleGenerate()
+    void handleGenerate(allFiles.map((f) => f.path))
+    // 仅在打开时触发一次;allFiles 来自打开时的快照
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleGenerate, autoGenerate])
 
   useEffect(() => {
@@ -248,13 +332,12 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
   }, [isGenerating])
 
   const handleCommit = useCallback(async () => {
-    if (!message.trim()) return
+    if (!message.trim() || selectedPaths.size === 0 || isTaskRunning) return
     setIsCommitting(true)
     try {
       await queryClient.cancelQueries({ queryKey: ['gitStatus'] })
-      if (hasUnstaged) {
-        await stageAll.mutateAsync(repoRoot)
-      }
+      // 只暂存所选文件,保证提交恰好包含勾选的内容
+      await api.gitStageFiles(repoRoot, [...selectedPaths])
       const result = await commitAndPush.mutateAsync({
         repoRoot,
         message: message.trim(),
@@ -270,7 +353,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
     } finally {
       setIsCommitting(false)
     }
-  }, [message, repoRoot, selectedRemote, shouldPush, hasUnstaged, stageAll, commitAndPush, onSuccess, onError, t, queryClient])
+  }, [message, repoRoot, selectedRemote, shouldPush, selectedPaths, isTaskRunning, commitAndPush, onSuccess, onError, t, queryClient])
 
   // Persist last-used remote for this repo
   useEffect(() => {
@@ -317,10 +400,10 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
 
         {/* 内容 */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* 变更摘要 */}
+          {/* 变更摘要(统计所选文件) */}
           <div className="flex items-center gap-3 text-xs">
             <FileText size={14} className="text-fg-muted" />
-            <span>{t('git.filesChanged', { n: totalFiles })}</span>
+            <span>{t('git.selectedFiles', { selected: selectedFiles.length, total: allFiles.length })}</span>
             {totalInsertions > 0 && (
               <span className="text-success-fg flex items-center gap-0.5">
                 <Plus size={12} />{totalInsertions}
@@ -345,25 +428,49 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
             )}
           </div>
 
-          {/* 文件列表 */}
-          {gitStatus && gitStatus.files && gitStatus.files.length > 0 && (
+          {/* 文件列表(勾选要提交的文件) */}
+          {allFiles.length > 0 && (
             <div className="border border-border rounded-lg overflow-hidden">
               <div className="max-h-52 overflow-y-auto">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0">
                     <tr className="bg-bg-subtle text-fg-secondary">
-                      <th className="px-3 py-1.5 text-left font-medium w-20">{t('git.statusColumn')}</th>
+                      <th className="pl-3 pr-1 py-1.5 w-8 text-left">
+                        <input
+                          type="checkbox"
+                          checked={selectedPaths.size === allFiles.length && allFiles.length > 0}
+                          onChange={handleToggleAll}
+                          disabled={isCommitting}
+                          title={t('git.toggleAll')}
+                          className="accent-accent-primary align-middle"
+                        />
+                      </th>
+                      <th className="px-2 py-1.5 text-left font-medium w-20">{t('git.statusColumn')}</th>
                       <th className="px-3 py-1.5 text-left font-medium">{t('git.fileColumn')}</th>
                       <th className="px-2 py-1.5 text-center font-medium" colSpan={2}>+/-</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {gitStatus.files.map((f) => (
-                      <tr key={f.path} className="border-t border-border hover:bg-bg-subtle transition-colors">
-                        <td className="px-3 py-1.5">
+                    {allFiles.map((f) => (
+                      <tr
+                        key={f.path}
+                        onClick={() => !isCommitting && handleTogglePath(f.path)}
+                        className={`border-t border-border hover:bg-bg-subtle transition-colors cursor-pointer ${isCommitting ? 'opacity-60' : ''}`}
+                      >
+                        <td className="pl-3 pr-1 py-1.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedPaths.has(f.path)}
+                            onChange={() => handleTogglePath(f.path)}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={isCommitting}
+                            className="accent-accent-primary align-middle"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
                           <FileStatusBadge status={f.status} t={t} />
                         </td>
-                        <td className="px-3 py-1.5 font-mono text-fg-secondary truncate max-w-[320px]" title={f.path}>
+                        <td className="px-3 py-1.5 font-mono text-fg-secondary truncate max-w-[300px]" title={f.path}>
                           {f.path}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-success-fg whitespace-nowrap">
@@ -384,15 +491,21 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
           {gitStatus && gitStatus.remotes.length > 1 && (
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('git.remote')}</label>
-              <select
-                value={selectedRemote}
-                onChange={(e) => setSelectedRemote(e.target.value)}
-                className="w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-              >
-                {gitStatus.remotes.map((r: GitRemote) => (
-                  <option key={r.name} value={r.name}>{r.name} ({r.url})</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={selectedRemote}
+                  onChange={(e) => setSelectedRemote(e.target.value)}
+                  className="w-full appearance-none px-3 pr-9 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+                >
+                  {gitStatus.remotes.map((r: GitRemote) => (
+                    <option key={r.name} value={r.name}>{r.name} ({r.url})</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
             </div>
           )}
 
@@ -401,8 +514,9 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-fg-secondary">{t('git.commitMessage')}</label>
               <button
-                onClick={handleGenerate}
-                disabled={isBusy}
+                onClick={isGenerating ? handleCancelGenerate : () => void handleGenerate([...selectedPaths])}
+                disabled={isStaging || isCommitting || selectedPaths.size === 0}
+                title={isGenerating ? t('git.cancelGenerate') : undefined}
                 className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50"
               >
                 {isGenerating ? (
@@ -410,7 +524,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
                 ) : (
                   <Sparkles size={12} />
                 )}
-                {t('git.generateMessage')}
+                {isGenerating ? t('git.generatingButton') : t('git.generateMessage')}
               </button>
             </div>
             <textarea
@@ -464,7 +578,8 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, onClose, onSu
             </button>
           <button
             onClick={handleCommit}
-            disabled={!message.trim() || isBusy}
+            disabled={!message.trim() || isBusy || selectedPaths.size === 0 || isTaskRunning}
+            title={isTaskRunning ? t('git.commitDisabledWhileRunning') : undefined}
             className="px-4 py-1.5 text-xs bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {isCommitting && <Loader2 size={12} className="animate-spin" />}
