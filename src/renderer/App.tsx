@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { ChangesModal } from './components/ChangesModal'
+import { BranchModal } from './components/BranchModal'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
 import { setServerLocale } from './lib/i18n'
@@ -782,6 +783,7 @@ function CreateTaskModal({
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
   const [executionMode, setExecutionMode] = useState<'immediate' | 'queued'>('immediate')
+  const [showBranchModal, setShowBranchModal] = useState(false)
 
   // --- Attachment helpers (same logic as Composer.tsx) ---
   const removeAttachment = useCallback((id: string) => {
@@ -881,13 +883,14 @@ function CreateTaskModal({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (showBranchModal) return // 分支弹窗自行处理 Escape
         e.preventDefault()
         onClose()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [onClose, showBranchModal])
 
   const TASK_NAME_RE = /^[a-zA-Z0-9一-鿿㐀-䶿""「」【】{}][a-zA-Z0-9一-鿿㐀-䶿 ._\-""「」【】{}]{0,63}$/
   const taskIdError = taskId.trim() && !TASK_NAME_RE.test(taskId.trim())
@@ -952,6 +955,7 @@ function CreateTaskModal({
         handleSubmit()
       }
       if (e.key === 'Escape') {
+        if (showBranchModal) return
         e.preventDefault()
         onClose()
       }
@@ -1094,11 +1098,16 @@ function CreateTaskModal({
               </button>
             </div>
             {gitBranchName && (
-              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted">
+              <button
+                type="button"
+                onClick={() => setShowBranchModal(true)}
+                title={t('git.switchBranch')}
+                className="flex items-center gap-1.5 mt-1.5 text-xs text-fg-muted rounded-md px-1 py-0.5 hover:bg-bg-subtle hover:text-fg transition-colors"
+              >
                 <GitBranch size={12} className="flex-shrink-0" />
                 <span className="text-fg-secondary">{t('modal.create.gitBranch')}</span>
                 <span className="font-mono">{gitBranchName}</span>
-              </div>
+              </button>
             )}
           </div>
 
@@ -1175,7 +1184,7 @@ function CreateTaskModal({
             <label className="block text-xs font-medium text-fg-secondary mb-1">
               {t('modal.create.executionMode')}
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-4">
               {(['immediate', 'queued'] as const).map((mode) => {
                 const active = executionMode === mode
                 return (
@@ -1221,6 +1230,14 @@ function CreateTaskModal({
           </button>
         </div>
       </div>
+
+      {showBranchModal && debouncedRepoRoot && gitBranchName && (
+        <BranchModal
+          repoRoot={debouncedRepoRoot}
+          currentBranch={gitBranchName}
+          onClose={() => setShowBranchModal(false)}
+        />
+      )}
     </div>
   )
 }

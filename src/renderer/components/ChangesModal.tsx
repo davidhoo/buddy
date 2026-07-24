@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, FileDiff, Loader2, Minus, Plus } from 'lucide-react'
 import type { GitFileStatus, GitStatusResult } from '../../shared/types'
@@ -83,6 +83,27 @@ function FileDrawer({
   onToggle: () => void
 }) {
   const t = useT()
+  const [wasExpanded, setWasExpanded] = useState(expanded)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [contentHeight, setContentHeight] = useState(0)
+
+  // Keep content mounted once expanded (for smooth collapse animation)
+  useEffect(() => {
+    if (expanded) setWasExpanded(true)
+  }, [expanded])
+
+  // Measure actual content height so max-height transitions smoothly
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || !wasExpanded) return
+    const ro = new ResizeObserver(() => {
+      setContentHeight(el.scrollHeight)
+    })
+    ro.observe(el)
+    setContentHeight(el.scrollHeight)
+    return () => ro.disconnect()
+  }, [wasExpanded])
+
   return (
     <div className="border-b border-border last:border-b-0">
       <button
@@ -102,14 +123,21 @@ function FileDrawer({
           {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
         </span>
       </button>
-      {expanded && <FileDiffView repoRoot={repoRoot} filePath={file.path} />}
+      <div
+        className="transition-[max-height] duration-300 ease-in-out overflow-hidden"
+        style={{ maxHeight: expanded ? contentHeight || 400 : 0 }}
+      >
+        <div ref={contentRef}>
+          {wasExpanded && <FileDiffView repoRoot={repoRoot} filePath={file.path} />}
+        </div>
+      </div>
     </div>
   )
 }
 
 export function ChangesModal({ gitStatus, repoRoot, onClose }: ChangesModalProps) {
   const t = useT()
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const [expandedFile, setExpandedFile] = useState<string | null>(null)
 
   const files = gitStatus.files ?? []
   const totalInsertions = files.reduce((s, f) => s + f.insertions, 0)
@@ -129,12 +157,7 @@ export function ChangesModal({ gitStatus, repoRoot, onClose }: ChangesModalProps
   }, [onClose])
 
   const toggle = (path: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
+    setExpandedFile((prev) => (prev === path ? null : path))
   }
 
   return (
@@ -187,7 +210,7 @@ export function ChangesModal({ gitStatus, repoRoot, onClose }: ChangesModalProps
                 key={f.path}
                 file={f}
                 repoRoot={repoRoot}
-                expanded={expandedPaths.has(f.path)}
+                expanded={expandedFile === f.path}
                 onToggle={() => toggle(f.path)}
               />
             ))

@@ -817,6 +817,7 @@ function AppearanceSettings() {
               <button
                 key={theme.id}
                 onClick={() => handleSelectTheme(theme.id)}
+                title={theme.name}
                 className={`relative p-2 rounded-lg border text-left transition-colors ${active
                   ? 'border-accent-primary ring-1 ring-accent-primary'
                   : 'border-border hover:border-fg-muted'
