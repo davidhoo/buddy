@@ -201,4 +201,40 @@ describe('model-detect', () => {
     const model = await detectModelFromConfig('claude')
     expect(model).toBeUndefined()
   })
+
+  it('reads the selected Claude model from ~/.claude/settings.json', async () => {
+    const claudeDir = join(tempHome, '.claude')
+    await mkdir(claudeDir, { recursive: true })
+    await writeFile(join(claudeDir, 'settings.json'), JSON.stringify({
+      model: 'sonnet[1m]'
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('claude', 'claude')).toBe('sonnet[1m]')
+  })
+
+  it('prefers an explicit Claude --model launcher override', async () => {
+    const claudeDir = join(tempHome, '.claude')
+    await mkdir(claudeDir, { recursive: true })
+    await writeFile(join(claudeDir, 'settings.json'), JSON.stringify({
+      model: 'sonnet[1m]'
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('claude', 'claude --model opus')).toBe('opus')
+  })
+
+  it('prefers Claude env.ANTHROPIC_MODEL over the model tier alias', async () => {
+    // Real-world wecode/proxy setup: model field is a tier alias while
+    // env.ANTHROPIC_MODEL is the actual model the SDK invokes.
+    const claudeDir = join(tempHome, '.claude')
+    await mkdir(claudeDir, { recursive: true })
+    await writeFile(join(claudeDir, 'settings.json'), JSON.stringify({
+      model: 'sonnet[1m]',
+      env: { ANTHROPIC_MODEL: 'weibo-glm-5.2' }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('claude', 'claude')).toBe('weibo-glm-5.2')
+  })
 })

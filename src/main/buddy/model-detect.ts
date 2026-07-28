@@ -22,7 +22,9 @@ import { commandKindFor } from './launchers'
  *      (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
  *    - kimi:     ~/.kimi-code/config.toml → TOML "default_model" field
  *      (~/.kimi/config.toml is checked as a legacy fallback)
- *    - claude:   not needed (model reliably emitted in stream-json output)
+ *    - claude:   ~/.claude/settings.json → env.ANTHROPIC_MODEL, else "model" field
+ *      (the "model" field is a tier alias like "sonnet[1m]"; ANTHROPIC_MODEL is the
+ *       real model the SDK invokes, so it takes precedence to match what runs)
  *
  * @param actor  Actor name (codex, opencode, kimi, claude)
  * @param command  Optional launcher command string. Used both to extract an
@@ -61,7 +63,10 @@ export async function detectModelFromConfig(
       if (primary) return primary
       return await readTomlModel(join(home, '.kimi', 'config.toml'), 'default_model')
     }
-    // native_claude / contract: model not knowable before a run.
+    if (kind === 'native_claude') {
+      return await readClaudeModel(join(home, '.claude', 'settings.json'))
+    }
+    // contract: model is not knowable before a run.
   } catch {
     // Config file may not exist or be unreadable — that's fine
   }
@@ -115,6 +120,26 @@ async function readWecodeCodexModel(home: string): Promise<string | undefined> {
     if (typeof model === 'string' && model) return model
   }
   return undefined
+}
+
+/**
+ * Read the effective Claude model from ~/.claude/settings.json.
+ *
+ * Claude Code's `model` field is a tier alias (e.g. "sonnet[1m]", "opus").
+ * The actual model the SDK invokes is `env.ANTHROPIC_MODEL` when set — it
+ * overrides the tier at the SDK level. Prefer it so the displayed model
+ * matches what the runner really invokes; fall back to the `model` alias.
+ */
+async function readClaudeModel(filePath: string): Promise<string | undefined> {
+  const raw = await readFile(filePath, 'utf8')
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  const env = obj.env
+  if (env && typeof env === 'object') {
+    const override = (env as Record<string, unknown>).ANTHROPIC_MODEL
+    if (typeof override === 'string' && override) return override
+  }
+  const model = obj.model
+  return typeof model === 'string' && model ? model : undefined
 }
 
 /**
