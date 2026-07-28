@@ -147,6 +147,30 @@ describe('model-detect', () => {
     expect(await detectModelFromConfig('opencode', 'opencode --model=provider/kimi-k2.6')).toBe('provider/kimi-k2.6')
   })
 
+  it('detects model from -m override regardless of actor name (kimi via opencode launcher)', async () => {
+    // actor is "kimi" but the launcher actually runs opencode with -m;
+    // the runner invokes opencode with this model, so detection must match.
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('kimi', 'opencode -m provider/kimi-k2.6')).toBe('provider/kimi-k2.6')
+    // Without -m, a kimi actor on the opencode CLI reads opencode's config.
+    const configDir = join(tempHome, '.config', 'opencode')
+    await mkdir(configDir, { recursive: true })
+    await writeFile(join(configDir, 'opencode.json'), JSON.stringify({ model: 'wecode/ali-deepseek-v4-pro' }))
+    expect(await detectModelFromConfig('kimi', 'opencode')).toBe('wecode/ali-deepseek-v4-pro')
+  })
+
+  it('detects model from codex -m command override', async () => {
+    // Stale config.toml must NOT win over an explicit -m on the command line.
+    const codexDir = join(tempHome, '.codex')
+    await mkdir(codexDir, { recursive: true })
+    await writeFile(join(codexDir, 'config.toml'), 'model = "gpt-5.5"\n')
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('codex', 'codex -m gpt-5.6-luna')).toBe('gpt-5.6-luna')
+    expect(await detectModelFromConfig('codex', 'codex --model gpt-5.6-luna')).toBe('gpt-5.6-luna')
+    expect(await detectModelFromConfig('codex', 'codex --model=gpt-5.6-luna')).toBe('gpt-5.6-luna')
+  })
+
   it('returns undefined for unknown actor', async () => {
     const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
     const model = await detectModelFromConfig('unknown_actor')

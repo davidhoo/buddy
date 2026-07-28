@@ -41,6 +41,8 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty } from './launchers'
+import { detectModelFromConfig } from './model-detect'
+import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings } from '../../shared/defaults'
 import { buildPingPrompt } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
@@ -257,6 +259,27 @@ export class BuddyCoreService {
     // A previously-running queued task is now PAUSED and blocks its queue — no auto-start.
     // Unblocked workspaces with waiting tasks will start their queue head.
     await this.coordinator?.rebuildAndReconcileAll()
+  }
+
+  /**
+   * Detect the currently configured model for every actor, reading each
+   * actor's launcher command from global settings so the result matches what
+   * the runner will actually invoke. Used by the new-task modal to annotate
+   * each agent option with its model (e.g. "Codex (gpt-5.6-luna)").
+   *
+   * Returns a map of actor → model string. Actors whose model cannot be
+   * determined before a run (e.g. claude, whose model is only emitted in
+   * stream-json output) resolve to undefined.
+   */
+  async detectActorModels(): Promise<Record<string, string | undefined>> {
+    const settings = await this.store.readGlobalSettings()
+    const launchers = normalizeGlobalSettings(settings).launchers ?? {}
+    const result: Record<string, string | undefined> = {}
+    for (const actor of DEFAULT_LAUNCHER_ORDER) {
+      const command = launchers[actor]?.command
+      result[actor] = await detectModelFromConfig(actor, command).catch(() => undefined)
+    }
+    return result
   }
 
   async testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> {

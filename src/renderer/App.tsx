@@ -869,6 +869,27 @@ function CreateTaskModal({
 
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
 
+  // Detect each actor's currently configured model so the dropdowns can show
+  // it beside the agent name (e.g. "Codex (gpt-5.6-luna)"). Refetch when the
+  // launcher commands change, since the model may be derived from the command.
+  const launcherCommandsKey = (['claude', 'codex', 'opencode', 'kimi'] as const)
+    .map(a => normalizedGlobalSettings.launchers?.[a]?.command ?? '')
+    .join('|')
+  const [actorModels, setActorModels] = useState<Record<string, string | undefined>>({})
+  useEffect(() => {
+    let cancelled = false
+    window.buddy?.detectActorModels()
+      .then(models => { if (!cancelled) setActorModels(models ?? {}) })
+      .catch(() => { /* model is best-effort annotation; ignore failures */ })
+    return () => { cancelled = true }
+  }, [launcherCommandsKey])
+
+  const actorLabel = (a: Actor): string => {
+    const name = t(ACTOR_LABEL_KEY[a])
+    const model = actorModels[a]
+    return model ? `${name} (${model})` : name
+  }
+
   // Debounced git branch query — avoids firing on every keystroke in the path input
   const [debouncedRepoRoot, setDebouncedRepoRoot] = useState(repoRoot.trim())
   useEffect(() => {
@@ -1122,7 +1143,7 @@ function CreateTaskModal({
                   className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
                 >
                   {actorOptions.map(a => (
-                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                    <option key={a} value={a}>{actorLabel(a)}</option>
                   ))}
                 </select>
                 <ChevronDown
@@ -1140,7 +1161,7 @@ function CreateTaskModal({
                   className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
                 >
                   {actorOptions.map(a => (
-                    <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                    <option key={a} value={a}>{actorLabel(a)}</option>
                   ))}
                 </select>
                 <ChevronDown

@@ -79,6 +79,8 @@ export const api = {
     buddy().cancelGenerateCommitMessage(),
   testLauncher: (actor: string, command: string, env?: Record<string, string>) =>
     buddy().testLauncher(actor, command, env) as Promise<TestLauncherResult>,
+  detectActorModels: () =>
+    buddy().detectActorModels() as Promise<Record<string, string | undefined>>,
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
     buddy().onTaskEvent(callback)
 }

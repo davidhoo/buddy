@@ -36,6 +36,7 @@ describe('registerBuddyHandlers', () => {
       generateCommitMessage: vi.fn(),
       cancelGenerateCommitMessage: vi.fn(),
       testLauncher: vi.fn(),
+      detectActorModels: vi.fn(),
       updateTaskText: vi.fn(),
       onTaskEvent: vi.fn()
     }
@@ -50,6 +51,7 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitCreateBranch', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(32)
+    expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledTimes(33)
   })
 })

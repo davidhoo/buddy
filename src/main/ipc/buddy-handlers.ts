@@ -43,6 +43,7 @@ export interface BuddyHandlerService {
   generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string>
   cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
+  detectActorModels(): Promise<Record<string, string | undefined>>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
 
@@ -135,6 +136,9 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
     service.testLauncher(actor, command, env)
+  )
+  ipcMain.handle('buddy:detectActorModels', () =>
+    service.detectActorModels()
   )
   ipcMain.handle('buddy:updateTaskText', (_event, taskId: string, workspaceKey: string, taskText: string) =>
     service.updateTaskText(taskId, workspaceKey, taskText)

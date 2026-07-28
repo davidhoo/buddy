@@ -89,6 +89,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:cancelGenerateCommitMessage') as Promise<void>,
     testLauncher: (actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> =>
       ipc.invoke('buddy:testLauncher', actor, command, env) as Promise<TestLauncherResult>,
+    detectActorModels: (): Promise<Record<string, string | undefined>> =>
+      ipc.invoke('buddy:detectActorModels') as Promise<Record<string, string | undefined>>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
       ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {
