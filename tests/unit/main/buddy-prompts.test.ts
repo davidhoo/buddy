@@ -153,3 +153,50 @@ describe('buildActorPrompt', () => {
     expect(lastLine).toContain('自然语言')
   })
 })
+
+describe('custom_prompt', () => {
+  const baseSettings = {
+    role_mode: 'claude_implements',
+    flow_policy: 'claude_then_codex',
+    launchers: {}
+  }
+
+  const build = (globalSettings?: Record<string, unknown>) =>
+    buildActorPrompt({
+      actor: 'claude',
+      round: 1,
+      repoRoot: '/tmp/repo',
+      taskText: 'Build feature',
+      contextText: '',
+      transcript: [],
+      settings: baseSettings,
+      state: { round: 0, rounds_in_window: 0 },
+      globalSettings
+    } as any)
+
+  it('does not add a custom instructions section when unset', () => {
+    const prompt = build()
+    expect(prompt).not.toContain('## Custom instructions')
+  })
+
+  it('appends the custom prompt as the final section after the system prompt', () => {
+    const prompt = build({ custom_prompt: 'Always run pnpm test before reporting done.' })
+
+    expect(prompt).toContain('## Custom instructions')
+    expect(prompt).toContain('Always run pnpm test before reporting done.')
+
+    // Custom instructions come after the built-in implementer instruction.
+    const instructionIdx = prompt.indexOf('Continue the implementation work')
+    const customIdx = prompt.indexOf('Always run pnpm test before reporting done.')
+    expect(customIdx).toBeGreaterThan(instructionIdx)
+
+    // And it is the last section of the assembled prompt.
+    const lastLine = prompt.trim().split('\n').at(-1)
+    expect(lastLine).toBe('Always run pnpm test before reporting done.')
+  })
+
+  it('treats whitespace-only custom_prompt as unset', () => {
+    const prompt = build({ custom_prompt: '   ' })
+    expect(prompt).not.toContain('## Custom instructions')
+  })
+})

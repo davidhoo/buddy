@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseEventLine, parseTaskState } from '../../../src/main/buddy/schemas'
+import { parseEventLine, parseTaskState, parseGlobalSettings } from '../../../src/main/buddy/schemas'
 
 describe('buddy schemas', () => {
   it('parses task state with optional fields', () => {
@@ -121,5 +121,13 @@ describe('buddy schemas', () => {
 
   it('rejects malformed event json lines', () => {
     expect(() => parseEventLine('{bad')).toThrow()
+  })
+
+  it('normalizes empty custom_prompt to undefined (global settings)', () => {
+    const settings = parseGlobalSettings({ custom_prompt: '   ' })
+    expect(settings.custom_prompt).toBeUndefined()
+
+    const populated = parseGlobalSettings({ custom_prompt: 'Always run tests.' })
+    expect(populated.custom_prompt).toBe('Always run tests.')
   })
 })

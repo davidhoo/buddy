@@ -30,12 +30,20 @@ function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
 
 function execGit(args: string[], cwd: string, retries = 1): Promise<string> {
   return new Promise((resolve, reject) => {
+    let settled = false
     const child = spawn('git', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
     const chunks: Buffer[] = []
     const errChunks: Buffer[] = []
     child.stdout.on('data', (c: Buffer) => chunks.push(c))
     child.stderr.on('data', (c: Buffer) => errChunks.push(c))
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
     once(child, 'exit').then((exitArgs: unknown[]) => {
+      if (settled) return
+      settled = true
       const code = exitArgs[0] as number | null
       const stdout = Buffer.concat(chunks).toString('utf8').trim()
       if (code !== 0) {
@@ -52,7 +60,11 @@ function execGit(args: string[], cwd: string, retries = 1): Promise<string> {
       } else {
         resolve(stdout)
       }
-    }).catch(reject)
+    }).catch((err) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
   })
 }
 
