@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.8] - 2026-07-31
+
+### Added
+- Git 变更弹窗：支持查看每行 diff、按文件勾选暂存后只提交所选文件，并可在生成提交信息时随时打断生成过程
+- 分支切换/创建弹窗：列出本地分支并切换，或从当前 HEAD 创建新分支
+- Kimi Code 与 OpenCode 用量与模型读取：Kimi 的 token 用量和模型从其会话 `wire.jsonl` 按轮次时间窗归集，OpenCode 的模型从会话存储（SQLite 或旧版 JSON）读取，运行详情与轮次事件不再缺失模型名
+- 模型检测增强：命令行 `-m`/`--model` 参数优先识别；新增对 Claude（`~/.claude/settings.json` 的 `env.ANTHROPIC_MODEL`）与 Kimi Code（`~/.kimi-code/config.toml`）的检测，并按实际 CLI 类型而非 Actor 名判断
+- 通用确认弹窗组件与文件状态列表展示
+
+### Changed
+- 提交信息生成改用 `--tools ''` + `--no-session-persistence`：禁用 Agent 工具循环与会话持久化，生成耗时由数分钟降至约 5-10 秒，并自动剔除弱模型输出的解释性前言
+- 重构任务状态图标为独立组件，统一图标与主题派生的类型判定
+- 优化变更弹窗交互与设置项联动，diff 弹窗内边距与抽屉对齐
+
+### Fixed
+- 修正分支状态解析与变更弹窗图标渲染
+
+---
+
 ## [1.2.7] - 2026-07-31
 
 ### Added
@@ -385,6 +404,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目结构初始化
 
 [1.2.7]: https://github.com/davidhoo/buddy/releases/tag/v1.2.7
+[1.2.8]: https://github.com/davidhoo/buddy/releases/tag/v1.2.8
 [1.2.2]: https://github.com/davidhoo/buddy/releases/tag/v1.2.2
 [1.0.18]: https://github.com/davidhoo/buddy/releases/tag/v1.0.18
 [1.0.17]: https://github.com/davidhoo/buddy/releases/tag/v1.0.17
