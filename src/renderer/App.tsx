@@ -949,6 +949,7 @@ function CreateTaskModal({
       launchers: {
         claude: launcherFor('claude'),
         codex: launcherFor('codex'),
+        cursor: launcherFor('cursor'),
         opencode: launcherFor('opencode'),
         kimi: launcherFor('kimi')
       },
@@ -967,7 +968,7 @@ function CreateTaskModal({
     }
   }
 
-  const actorOptions: Actor[] = ['claude', 'codex', 'opencode', 'kimi']
+  const actorOptions: Actor[] = ['claude', 'codex', 'cursor', 'opencode', 'kimi']
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-buddy-modal onKeyDown={(e) => {

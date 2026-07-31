@@ -31,6 +31,7 @@ describe('BuddyStore read model', () => {
     expect(detail.state.context_sent).toEqual({
       claude: false,
       codex: false,
+      cursor: false,
       opencode: false,
       kimi: false
     })

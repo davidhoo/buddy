@@ -40,7 +40,7 @@ interface TaskMeta {
   context_text?: string
 }
 
-const ACTORS = ['claude', 'codex', 'opencode', 'kimi'] as const
+const ACTORS = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
 
 export class BuddyStore {
   constructor(public readonly dataRoot: string) {}
@@ -559,7 +559,7 @@ export class BuddyStore {
     // Collect run_ids grouped by actor, and track elapsed_ms per run
     const actorRuns = new Map<string, { runId: string; elapsedMs: number; endTs: number | undefined }[]>()
 
-    const ACTOR_ROLES = new Set(['claude', 'codex', 'opencode', 'kimi'])
+    const ACTOR_ROLES = new Set(['claude', 'codex', 'cursor', 'opencode', 'kimi'])
     for (const entry of transcript) {
       if (!ACTOR_ROLES.has(entry.role)) continue
       const meta = entry.meta as Record<string, unknown> | undefined
@@ -750,6 +750,7 @@ const TRANSCRIPT_ROLES = new Set<TranscriptEntry['role']>([
   'human',
   'claude',
   'codex',
+  'cursor',
   'opencode',
   'kimi',
   'system'
@@ -863,6 +864,7 @@ function defaultTaskSettings(
     launchers,
     seed_claude_session_id: normalizedGlobal.seed_claude_session_id ?? '',
     seed_codex_thread_id: normalizedGlobal.seed_codex_thread_id ?? '',
+    seed_cursor_session_id: normalizedGlobal.seed_cursor_session_id ?? '',
     seed_opencode_session_id: '',
     seed_kimi_session_id: '',
     ...restOverrides
@@ -932,6 +934,7 @@ function defaultTaskState(
     next_actor: initialActor,
     claude_session_id: null,
     codex_thread_id: null,
+    cursor_session_id: null,
     opencode_session_id: null,
     kimi_session_id: null,
     context_hash: sha256Hex(contextText),

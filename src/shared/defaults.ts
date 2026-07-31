@@ -1,12 +1,13 @@
 import type { GlobalSettings, Launcher } from './types'
 
-export const DEFAULT_LAUNCHER_ORDER = ['claude', 'codex', 'opencode', 'kimi'] as const
+export const DEFAULT_LAUNCHER_ORDER = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
 
 export const DEFAULT_LAUNCHER_TIMEOUT_SECONDS = 7200
 
 const DEFAULT_LAUNCHER_COMMANDS: Record<string, string> = {
   claude: 'claude',
   codex: 'codex',
+  cursor: 'cursor-agent',
   opencode: 'opencode',
   kimi: 'kimi'
 }
@@ -58,6 +59,7 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     launchers: normalizeLaunchers(settings?.launchers),
     seed_claude_session_id: settings?.seed_claude_session_id ?? '',
     seed_codex_thread_id: settings?.seed_codex_thread_id ?? '',
+    seed_cursor_session_id: settings?.seed_cursor_session_id ?? '',
     seed_opencode_session_id: settings?.seed_opencode_session_id ?? '',
     seed_kimi_session_id: settings?.seed_kimi_session_id ?? '',
     max_compact_retries: settings?.max_compact_retries ?? 3,

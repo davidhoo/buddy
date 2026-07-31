@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { StatusBar } from '../../../src/renderer/components/StatusBar'
-import type { TaskSettings, TaskState } from '../../../src/shared/types'
+import type { Event, TaskSettings, TaskState } from '../../../src/shared/types'
+import { eventTypeLabel } from '../../../src/renderer/lib/format'
+import type { Language } from '../../../src/renderer/lib/i18n'
 
 vi.mock('../../../src/renderer/hooks/useBuddy', () => ({
   useGitStatus: () => ({ data: null, isLoading: false })
@@ -36,6 +38,16 @@ function runningTaskState(status: TaskState['status'] = 'RUNNING_CODEX'): TaskSt
     repo_root: '/tmp/repo',
     pending_break: null
   }
+}
+
+function makeEvent(seq: number, type: string, payload: Record<string, unknown> = {}): Event {
+  return {
+    seq,
+    ts: '2026-05-26T07:06:50.471Z',
+    task_id: 'demo',
+    type,
+    payload
+  } as Event
 }
 
 function renderStatusBar(overrides: Partial<StatusBarProps> = {}) {
@@ -99,5 +111,51 @@ describe('StatusBar inline run status', () => {
     expect(html).toContain(longSessionId)
     expect(html).not.toContain('claude-s...tening')
     expect(html).toContain('class="min-w-0 truncate"')
+  })
+})
+
+describe('StatusBar event log queue event filtering', () => {
+  // The event log only renders the last 10 events unless expanded, so feed a single event of
+  // each type to assert presence/absence deterministically.
+  const lang: Language = 'en'
+
+  it('hides historical queue.reconciled events but still shows queue.blocked', () => {
+    const html = renderStatusBar({
+      events: [
+        makeEvent(1, 'queue.reconciled', { outcome: 'idle', waiting_count: 0 }),
+        makeEvent(2, 'queue.blocked', { reason: 'active_queued_task', blocked_task_id: 'a' }),
+        makeEvent(3, 'queue.activated', { activation_source: 'automatic' })
+      ]
+    })
+
+    // queue.reconciled must not surface in the UI.
+    expect(html).not.toContain(eventTypeLabel('queue.reconciled', lang))
+    // queue.blocked and queue.activated are meaningful and must still render.
+    expect(html).toContain(eventTypeLabel('queue.blocked', lang))
+    expect(html).toContain(eventTypeLabel('queue.activated', lang))
+  })
+
+  it('still shows other lifecycle events when queue.reconciled is present', () => {
+    const html = renderStatusBar({
+      events: [
+        makeEvent(1, 'queue.reconciled', { outcome: 'blocked' }),
+        makeEvent(2, 'actor.started', {}),
+        makeEvent(3, 'task.done', {})
+      ]
+    })
+
+    expect(html).not.toContain(eventTypeLabel('queue.reconciled', lang))
+    expect(html).toContain(eventTypeLabel('actor.started', lang))
+    expect(html).toContain(eventTypeLabel('task.done', lang))
+  })
+
+  it('renders the empty state when only hidden events remain', () => {
+    const html = renderStatusBar({
+      events: [makeEvent(1, 'queue.reconciled', { outcome: 'idle' })]
+    })
+
+    expect(html).not.toContain(eventTypeLabel('queue.reconciled', lang))
+    // With only hidden events, the EventLog renders its empty-state message.
+    expect(html).toContain('No events.')
   })
 })

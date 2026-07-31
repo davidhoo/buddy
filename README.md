@@ -9,7 +9,7 @@
 ## 特性
 
 - **双 Actor 协作**：执行方实现代码，审查方检查修正，循环推进直到双方确认完成
-- **4 种 AI Actor**：Claude Code、Codex、OpenCode、Kimi Code
+- **5 种 AI Actor**：Claude Code、Codex、Cursor CLI、OpenCode、Kimi Code
 - **双确认结束**：双方均发出 `type=break` 才结束任务，单方 break 不终止
 - **指令队列**：在 Actor 运行期间排队发送指令，轮次结束后自动执行
 - **Git 集成**：本地化 conventional commit 消息生成、变更查看、提交与推送
@@ -29,7 +29,7 @@ Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包
 ## 系统要求
 
 - macOS 12+ (Monterey)
-- 至少一个已安装的 AI CLI 工具：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、[OpenCode](https://github.com/opencode-ai/opencode)、[Kimi Code](https://github.com/MoonshotAI/kimi-cli)
+- 至少一个已安装的 AI CLI 工具：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、[Cursor CLI](https://docs.cursor.com/en/cli/overview)、[OpenCode](https://github.com/opencode-ai/opencode)、[Kimi Code](https://github.com/MoonshotAI/kimi-cli)
 
 ## 安装
 
@@ -71,7 +71,7 @@ pnpm release:signed   # 构建 + 签名 + 公证（需 CSC_NAME 环境变量）
 │  ├── BuddyRunner   (状态机 + 子进程调度)       │
 │  └── BuddyEventBus (事件发布/订阅)            │
 │                                               │
-│  Launchers → Claude / Codex / OpenCode / Kimi │
+│  Launchers → Claude / Codex / Cursor / OpenCode / Kimi │
 │  Git Integration → diff / status / commit     │
 └──────────────────┬───────────────────────────┘
                    │ IPC (buddy:* channels)
@@ -135,6 +135,7 @@ buddy/
 |-------|---------|-------------|
 | Claude | `{cmd} -p --output-format stream-json --input-format text [--resume SID]` | `--resume` |
 | Codex | `{cmd} exec --json -C REPO -o OUTPUT [resume SID]` | `exec resume` |
+| Cursor | `{cmd} --print --force --output-format stream-json --stream-partial-output [--resume SID] PROMPT` | `--resume` |
 | OpenCode | `{cmd} run --format json [--session SID]` | `--session` |
 | Kimi | `{cmd} --print --output-format stream-json --input-format text [--session SID]` | `--session` |
 

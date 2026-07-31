@@ -47,6 +47,10 @@ body {
   border-left-color: var(--actor-codex);
   background: color-mix(in srgb, var(--actor-codex) 5%, var(--bg-elevated));
 }
+.msg-cursor {
+  border-left-color: var(--actor-cursor);
+  background: color-mix(in srgb, var(--actor-cursor) 5%, var(--bg-elevated));
+}
 .msg-opencode {
   border-left-color: var(--actor-opencode);
   background: color-mix(in srgb, var(--actor-opencode) 5%, var(--bg-elevated));
@@ -114,6 +118,7 @@ body {
 .message .role { font-weight: 700; }
 .msg-claude .role { color: var(--actor-claude); }
 .msg-codex .role { color: var(--actor-codex); }
+.msg-cursor .role { color: var(--actor-cursor); }
 .msg-opencode .role { color: var(--actor-opencode); }
 .msg-kimi .role { color: var(--actor-kimi); }
 .msg-human .role { color: var(--fg); }

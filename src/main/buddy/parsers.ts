@@ -63,6 +63,28 @@ export function parseCodexJsonLine(line: string): ParsedActorLine {
   }
 }
 
+/** Parse Cursor Agent CLI's --output-format stream-json events. */
+export function parseCursorStreamLine(line: string): ParsedActorLine {
+  const json = JSON.parse(line)
+  const message = objectValue(json.message)
+  const content = message?.content
+  let text: string | undefined
+
+  if (Array.isArray(content)) {
+    text = content.map(textFromContentPart).filter(Boolean).join('') || undefined
+  }
+
+  if (!text && json.type === 'result') {
+    text = textValue(json.result)
+  }
+
+  return {
+    text,
+    sessionId: cursorSessionIdFromEvent(json),
+    rawType: textValue(json.type)
+  }
+}
+
 function codexToolDetail(toolName: string, input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined
   const obj = input as Record<string, unknown>
@@ -214,6 +236,7 @@ function kimiToolDetail(toolName: string, args: unknown): string | undefined {
 export function parseActorLine(actor: string, line: string): ParsedActorLine {
   if (actor === 'claude') return parseClaudeStreamLine(line)
   if (actor === 'codex') return parseCodexJsonLine(line)
+  if (actor === 'cursor') return parseCursorStreamLine(line)
   if (actor === 'opencode') return parseOpenCodeJsonLine(line)
   if (actor === 'kimi') return parseKimiJSONLine(line)
   return parseCodexJsonLine(line)
@@ -232,6 +255,7 @@ export function parseActorEvents(actor: string, rawEvents: string): ParsedActorL
 
 export function extractActorOutput(actor: string, rawEvents: string): string {
   if (actor === 'claude') return extractClaudeOutput(rawEvents)
+  if (actor === 'cursor') return extractCursorOutput(rawEvents)
   if (actor === 'opencode') return extractOpenCodeOutput(rawEvents)
   if (actor === 'kimi') return extractKimiOutput(rawEvents)
   return extractGenericJsonOutput(rawEvents)
@@ -408,6 +432,23 @@ function extractClaudeOutput(rawEvents: string): string {
   return (result || chunks.join('\n')).trim()
 }
 
+function extractCursorOutput(rawEvents: string): string {
+  let result = ''
+  const chunks: string[] = []
+  for (const event of parseJsonEvents(rawEvents)) {
+    if (event.type === 'result') {
+      const finalText = textValue(event.result)
+      if (finalText) result = finalText
+    }
+    const message = objectValue(event.message)
+    const content = message?.content
+    if (Array.isArray(content)) {
+      chunks.push(...content.map(textFromContentPart).filter(Boolean))
+    }
+  }
+  return (result || chunks.join('')).trim()
+}
+
 const BUDDY_JSON_PATTERN = /\{\s*"type"\s*:\s*"(chat|break)"/
 
 function extractOpenCodeOutput(rawEvents: string): string {
@@ -543,6 +584,11 @@ function claudeSessionIdFromEvent(event: Record<string, unknown>): string | unde
   if (eventType === 'result' || eventType === 'assistant' || eventType === 'user') return sessionId
   if (eventType !== 'system') return sessionId
   return undefined
+}
+
+function cursorSessionIdFromEvent(event: Record<string, unknown>): string | undefined {
+  const sessionId = textValue(event.session_id)
+  return sessionId || undefined
 }
 
 function stableSessionIdFromEvent(actor: string, event: Record<string, unknown>): string | undefined {

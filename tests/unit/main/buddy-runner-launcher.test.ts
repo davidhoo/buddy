@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { BuddyRunner } from '../../../src/main/buddy/runner'
 import { BuddyStore } from '../../../src/main/buddy/store'
 
@@ -242,6 +242,42 @@ describe('BuddyRunner with fake launcher', () => {
     ]))
   })
 
+  it('persists Cursor CLI session IDs from stream-json output', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-cursor-'))
+    const fake = join(root, 'cursor-agent')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      "printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"cursor-chat-123\",\"model\":\"GPT-5\"}'",
+      "printf '%s\\n' '{\"type\":\"assistant\",\"session_id\":\"cursor-chat-123\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"type\\\":\\\"chat\\\",\\\"content\\\":\\\"cursor final\\\"}\"}]}}'",
+      "printf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"cursor-chat-123\",\"result\":\"{\\\"type\\\":\\\"chat\\\",\\\"content\\\":\\\"cursor final\\\"}\"}'"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          cursor: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'cursor'
+    })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.cursor_session_id).toBe('cursor-chat-123')
+    expect(detail.transcript).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'cursor', content: 'cursor final' })
+    ]))
+  })
+
   it('records dual break confirmations in structured transcript', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dual-break-'))
     const fake = join(root, 'contract-break.js')
@@ -296,5 +332,96 @@ describe('BuddyRunner with fake launcher', () => {
         meta: expect.objectContaining({ kind: 'round_notice', round: 2 })
       })
     ])
+  })
+})
+
+describe('BuddyRunner queue terminal notifications', () => {
+  // A fake actor that emits a plain chat message so the round auto-advances to the next actor.
+  function chatActorScript(): string {
+    return [
+      "const fs = require('fs')",
+      "const actor = process.env.BUDDY_ACTOR",
+      "fs.writeFileSync(process.env.BUDDY_OUTPUT_FILE, JSON.stringify({ type: 'chat', content: `${actor} chat` }))"
+    ].join('\n')
+  }
+
+  // A fake actor that always signals break, used to drive a task to DONE via dual-break.
+  function breakActorScript(): string {
+    return [
+      "const fs = require('fs')",
+      "const actor = process.env.BUDDY_ACTOR",
+      "fs.writeFileSync(process.env.BUDDY_OUTPUT_FILE, JSON.stringify({ type: 'break', content: `${actor} done` }))"
+    ].join('\n')
+  }
+
+  // A fake actor that always fails (non-zero exit), driving the task to FAILED.
+  function failingActorScript(): string {
+    return "process.stderr.write('boom\\n'); process.exit(3)"
+  }
+
+  async function makeRunner(root: string, script: string) {
+    const fake = join(root, 'actor.js')
+    await writeFile(fake, script)
+    const store = new BuddyStore(root)
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          claude: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 },
+          codex: { command: `${process.execPath} ${fake}`, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const terminal = vi.fn<(ws: string) => void>()
+    const runner = new BuddyRunner(store)
+    runner.onTaskTerminal = terminal
+    return { store, created, runner, terminal }
+  }
+
+  it('does not notify the coordinator while auto-advancing through rounds', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-no-notify-advance-'))
+    const { created, runner, terminal } = await makeRunner(root, chatActorScript())
+    // Cap rounds so the run terminates (pauses at the window). Across multiple auto-advancing
+    // rounds the coordinator is notified at most once (the final round-window PAUSED), never
+    // once per intermediate round.
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 3 })
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'claude' })
+    expect(terminal.mock.calls.length).toBeLessThanOrEqual(1)
+    // The task actually advanced several rounds before pausing.
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.round).toBeGreaterThanOrEqual(2)
+  }, 30000)
+
+  it('notifies only once when a multi-round task reaches DONE', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-notify-done-once-'))
+    const { created, runner, terminal } = await makeRunner(root, breakActorScript())
+    // codex signals break → claude auto-started → claude signals break → DONE.
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'codex' })
+    expect(terminal).toHaveBeenCalledTimes(1)
+    expect(terminal.mock.calls[0][0]).toBe(created.workspace_key)
+  })
+
+  it('notifies only once when a task fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-notify-failed-once-'))
+    // Allow retries so failure_threshold isn't hit (we want FAILED, not PAUSED) — but a single
+    // failure still notifies once.
+    const { created, runner, terminal } = await makeRunner(root, failingActorScript())
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_consecutive_failures: 100 })
+    await expect(
+      runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'claude' })
+    ).rejects.toThrow()
+    expect(terminal).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not notify again when the auto-advance call stack unwinds', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-no-double-notify-'))
+    const { created, runner, terminal } = await makeRunner(root, breakActorScript())
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'codex' })
+    // After the whole startTask promise resolves (all stack frames unwound), DONE was notified
+    // exactly once — the previous bug notified once per frame.
+    expect(terminal).toHaveBeenCalledTimes(1)
   })
 })

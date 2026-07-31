@@ -16,7 +16,8 @@ describe('BuddyStore settings and delete', () => {
       max_consecutive_failures: 10,
       launchers: {
         claude: { command: 'claude', env: {}, timeout_seconds: 7200 },
-        codex: { command: 'codex', env: {}, timeout_seconds: 7200 }
+        codex: { command: 'codex', env: {}, timeout_seconds: 7200 },
+        cursor: { command: 'cursor-agent', env: {}, timeout_seconds: 7200 }
       },
       seed_claude_session_id: '',
       seed_codex_thread_id: ''

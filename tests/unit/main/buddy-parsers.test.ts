@@ -5,6 +5,7 @@ import {
   parseBuddyMessage,
   parseClaudeStreamLine,
   parseCodexJsonLine,
+  parseCursorStreamLine,
   parseJsonlBuffer
 } from '../../../src/main/buddy/parsers'
 
@@ -50,6 +51,32 @@ describe('buddy actor parsers', () => {
     expect(event).toMatchObject({
       text: '{"type":"chat","content":"review complete"}'
     })
+  })
+
+  it('extracts Cursor stream-json text and preserves its session ID', () => {
+    const event = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      session_id: 'cursor-chat',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '{"type":"chat","content":"done"}' }]
+      }
+    }))
+
+    expect(event).toMatchObject({
+      text: '{"type":"chat","content":"done"}',
+      sessionId: 'cursor-chat'
+    })
+  })
+
+  it('uses Cursor result events as the final output instead of concatenated deltas', () => {
+    const output = extractActorOutput('cursor', [
+      JSON.stringify({ type: 'assistant', session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'partial ' }] } }),
+      JSON.stringify({ type: 'assistant', session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'output' }] } }),
+      JSON.stringify({ type: 'result', subtype: 'success', session_id: 'cursor-chat', result: '{"type":"chat","content":"final output"}' })
+    ].join('\n'))
+
+    expect(output).toBe('{"type":"chat","content":"final output"}')
   })
 
   it('extracts OpenCode session IDs and text chunks while ignoring reasoning', () => {

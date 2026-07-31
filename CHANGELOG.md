@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.7] - 2026-07-31
+
+### Added
+- 支持 Cursor CLI（cursor-agent）作为协作 Actor：新增 `cursor` 启动器，自动识别 `cursor-agent`/`agent` 可执行文件，使用 `--print --force --output-format stream-json --stream-partial-output` 流式输出并支持 `--resume` 续接会话。Cursor 与 Claude/Codex/OpenCode/Kimi 一致，支持会话 ID 持久化、seed 会话、状态机与转义解析，可加入双 Actor 协作循环
+
+### Fixed
+- 抑制 reconcile 风暴并对队列阻塞事件去重：per-workspace 串行锁改为合并式 reconcile（runReconcileChain），新增 BlockSignature 对 queue.blocked 去重，区分显式 immediate 任务与遗留任务的阻塞行为
+
 ## [1.2.6] - 2026-07-21
 
 ### Added
@@ -376,6 +384,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.7]: https://github.com/davidhoo/buddy/releases/tag/v1.2.7
 [1.2.2]: https://github.com/davidhoo/buddy/releases/tag/v1.2.2
 [1.0.18]: https://github.com/davidhoo/buddy/releases/tag/v1.0.18
 [1.0.17]: https://github.com/davidhoo/buddy/releases/tag/v1.0.17

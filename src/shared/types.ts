@@ -16,6 +16,7 @@ export type TaskStatus =
   | 'READY'
   | 'RUNNING_CLAUDE'
   | 'RUNNING_CODEX'
+  | 'RUNNING_CURSOR'
   | 'RUNNING_OPENCODE'
   | 'RUNNING_KIMI'
   | 'PINGING'
@@ -72,6 +73,7 @@ export interface TaskState {
   instruction_queue?: InstructionQueueItem[]
   claude_session_id?: string | null
   codex_thread_id?: string | null
+  cursor_session_id?: string | null
   opencode_session_id?: string | null
   kimi_session_id?: string | null
   context_hash?: string
@@ -119,6 +121,7 @@ export interface TaskSettings {
   max_consecutive_failures?: number
   seed_claude_session_id?: string
   seed_codex_thread_id?: string
+  seed_cursor_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
 }
@@ -130,7 +133,7 @@ export interface Launcher {
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'opencode' | 'kimi' | 'system'
+  role: 'human' | 'claude' | 'codex' | 'cursor' | 'opencode' | 'kimi' | 'system'
   content: string
   ts: string
   round?: number
@@ -183,6 +186,7 @@ export interface GlobalSettings {
   launchers?: Record<string, Launcher>
   seed_claude_session_id?: string
   seed_codex_thread_id?: string
+  seed_cursor_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
   max_compact_retries?: number

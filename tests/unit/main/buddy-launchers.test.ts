@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLauncherCommand } from '../../../src/main/buddy/launchers'
+import { buildLauncherCommand, commandKindFor } from '../../../src/main/buddy/launchers'
 
 describe('launcher command builder', () => {
   it('builds Claude non-interactive stream-json command', () => {
@@ -79,6 +79,36 @@ describe('launcher command builder', () => {
       kind: 'native_codex',
       stdinText: 'hello'
     })
+  })
+
+  it('builds Cursor CLI stream-json command with force and session resume', () => {
+    expect(buildLauncherCommand({
+      actor: 'cursor',
+      command: 'cursor-agent --model gpt-5',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt',
+      sessionId: 'cursor-chat'
+    })).toEqual({
+      command: 'cursor-agent',
+      args: [
+        '--model',
+        'gpt-5',
+        '--print',
+        '--force',
+        '--output-format',
+        'stream-json',
+        '--stream-partial-output',
+        '--resume',
+        'cursor-chat',
+        'hello from prompt'
+      ],
+      kind: 'native_cursor'
+    })
+  })
+
+  it('recognizes both Cursor CLI executable names', () => {
+    expect(commandKindFor('cursor', 'cursor-agent')).toBe('native_cursor')
+    expect(commandKindFor('cursor', 'agent')).toBe('native_cursor')
   })
 
   it('builds OpenCode json run command with prompt as a positional argument', () => {

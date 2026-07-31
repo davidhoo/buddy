@@ -20,6 +20,7 @@ const roleClasses: Record<string, string> = {
   human: 'msg-human',
   claude: 'msg-claude',
   codex: 'msg-codex',
+  cursor: 'msg-cursor',
   opencode: 'msg-opencode',
   kimi: 'msg-kimi',
   system: 'msg-system'

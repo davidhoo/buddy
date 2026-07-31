@@ -42,6 +42,7 @@ export interface DerivedTokens {
   '--scrollbar-thumb-hover': string
   '--actor-claude': string
   '--actor-codex': string
+  '--actor-cursor': string
   '--actor-opencode': string
   '--actor-kimi': string
 }
@@ -120,6 +121,7 @@ export function deriveTokens(theme: BuddyTheme): DerivedTokens {
     '--scrollbar-thumb-hover': scrollbarThumbHover,
     '--actor-claude': '#8b6dba',
     '--actor-codex': '#4a9bb5',
+    '--actor-cursor': '#4f8f5f',
     '--actor-opencode': '#d97706',
     '--actor-kimi': '#2e7d32',
   }

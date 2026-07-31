@@ -3,6 +3,7 @@ import type { GlobalSettings, TaskSettings, TaskState, TranscriptEntry } from '.
 
 const ACTOR_CLAUDE = 'claude'
 const ACTOR_CODEX = 'codex'
+const ACTOR_CURSOR = 'cursor'
 const ACTOR_OPENCODE = 'opencode'
 const ACTOR_KIMI = 'kimi'
 const ROLE_MODE_CODEX_IMPL = 'codex_implements'
@@ -200,7 +201,7 @@ export function selectRecentTranscript(transcript: TranscriptEntry[], window = 6
   const recentKeys = new Set(recent.map(rowKey))
   const earlier = transcript.slice(0, -window)
 
-  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_OPENCODE, ACTOR_KIMI]) {
+  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_CURSOR, ACTOR_OPENCODE, ACTOR_KIMI]) {
     if (recent.some((item) => item.role === role)) continue
     const last = [...earlier].reverse().find((item) => item.role === role)
     if (last && !recentKeys.has(rowKey(last))) {
@@ -251,6 +252,7 @@ export function actorDisplayName(actor: unknown): string {
   if (actor === ACTOR_OPENCODE) return 'OpenCode'
   if (actor === ACTOR_KIMI) return 'Kimi Code'
   if (actor === ACTOR_CODEX) return 'Codex'
+  if (actor === ACTOR_CURSOR) return 'Cursor'
   return typeof actor === 'string' && actor ? actor : 'Codex'
 }
 

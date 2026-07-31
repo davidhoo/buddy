@@ -6,6 +6,7 @@ import { installHintFor } from './shell-path'
 export type LauncherCommandKind =
   | 'native_claude'
   | 'native_codex'
+  | 'native_cursor'
   | 'native_opencode'
   | 'native_kimi'
   | 'contract'
@@ -47,6 +48,7 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
   if (kind === 'native_kimi') return 'kimi'
   if (kind === 'native_claude') return 'claude'
   if (kind === 'native_codex') return 'codex'
+  if (kind === 'native_cursor') return 'cursor'
   return actor
 }
 
@@ -173,6 +175,24 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     }
   }
 
+  if (kind === 'native_cursor') {
+    const promptText = input.promptText?.trim() ?? ''
+    return {
+      command,
+      args: [
+        ...prefixArgs,
+        '--print',
+        '--force',
+        '--output-format',
+        'stream-json',
+        '--stream-partial-output',
+        ...(input.sessionId ? ['--resume', input.sessionId] : []),
+        promptText
+      ],
+      kind
+    }
+  }
+
   if (kind === 'native_opencode') {
     const args = [
       ...prefixArgs,
@@ -262,12 +282,14 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   // to be correctly identified as native_opencode.
   if (executable === 'claude' || (executable === 'wecode' && baseCmd[1] !== 'codex')) return 'native_claude'
   if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
+  if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'
   if (executable === 'opencode') return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
   // Fallback: when no command is specified, infer from actor name
   if (executable === '' || executable === 'wecode') {
     if (actor === 'claude') return 'native_claude'
     if (actor === 'codex') return 'native_codex'
+    if (actor === 'cursor') return 'native_cursor'
     if (actor === 'opencode') return 'native_opencode'
     if (actor === 'kimi') return 'native_kimi'
   }

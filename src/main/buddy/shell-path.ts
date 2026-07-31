@@ -6,6 +6,8 @@ const INSTALL_HINTS: Record<string, string> = {
   kimi: 'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash',
   claude: 'npm install -g @anthropic-ai/claude-code',
   codex: 'npm install -g @openai/codex',
+  'cursor-agent': 'curl -fsS https://cursor.com/install | bash',
+  agent: 'curl -fsS https://cursor.com/install | bash',
   opencode: 'go install github.com/sst/opencode@latest'
 }
 

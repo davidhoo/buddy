@@ -53,6 +53,8 @@ test('settings keeps CLI launcher configuration visible', async ({ page }) => {
 
   await expect(page.getByText('CLI 配置')).toBeVisible()
   await expect(page.getByText('Claude 配置')).toBeVisible()
+  await expect(page.getByText('Cursor 配置')).toBeVisible()
   await expect(page.locator('input').nth(0)).toHaveValue('claude')
   await expect(page.locator('input').nth(1)).toHaveValue('codex')
+  await expect(page.locator('input').nth(2)).toHaveValue('cursor-agent')
 })

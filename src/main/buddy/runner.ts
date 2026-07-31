@@ -24,6 +24,7 @@ import type { TaskNotifier } from './notifications'
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
   codex: 'RUNNING_CODEX',
+  cursor: 'RUNNING_CURSOR',
   opencode: 'RUNNING_OPENCODE',
   kimi: 'RUNNING_KIMI'
 }
@@ -590,6 +591,7 @@ export class BuddyRunner {
         const tid = settled.value.threadId
         if (actor === 'claude' && sid) sessionUpdates.claude_session_id = sid
         if (actor === 'codex' && (tid ?? sid)) sessionUpdates.codex_thread_id = tid ?? sid
+        if (actor === 'cursor' && sid) sessionUpdates.cursor_session_id = sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
         const displayId = actor === 'codex' ? (tid ?? sid) : sid
@@ -636,8 +638,9 @@ export class BuddyRunner {
           const sid = a === 'codex'
             ? (sessionUpdates.codex_thread_id)
             : (a === 'claude' ? sessionUpdates.claude_session_id
-              : a === 'opencode' ? sessionUpdates.opencode_session_id
-                : sessionUpdates.kimi_session_id)
+              : a === 'cursor' ? sessionUpdates.cursor_session_id
+                : a === 'opencode' ? sessionUpdates.opencode_session_id
+                  : sessionUpdates.kimi_session_id)
           return { actor: a, session_id: (sid as string | undefined) ?? null }
         }) }
       )
@@ -997,6 +1000,7 @@ export class BuddyRunner {
       }
       if (actor === 'claude' && sessionId) next.claude_session_id = sessionId
       if (actor === 'codex' && threadId) next.codex_thread_id = threadId
+      if (actor === 'cursor' && sessionId) next.cursor_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
 
@@ -1150,10 +1154,11 @@ export class BuddyRunner {
         // Auto-start of next actor failed; task is already in READY state
       }
     }
-    // After a round completes (or the auto-advance left the task in a terminal-ish state),
-    // let the queue coordinator re-evaluate the workspace. completeActor may have transitioned
-    // to DONE/PAUSED; either way the coordinator will no-op if nothing changed.
-    this.onTaskTerminal?.(workspaceKey)
+    // NOTE: no onTaskTerminal here. A normal round that auto-advances to the next actor has not
+    // reached a queue-relevant terminal state — the task is still mid-flight in the same queue
+    // slot. Only true terminal transitions (DONE, blocking PAUSED/FAILED, round-window pause)
+    // notify the coordinator, and those return early above. Notifying on every round unwind is
+    // what caused the 40× reconcile burst on a 39-round task.
   }
 
   private async markFailed(taskId: string, workspaceKey: string, actor: string, message: string, runId?: string): Promise<void> {
@@ -1275,6 +1280,7 @@ export class BuddyRunner {
   ): Promise<void> {
     const sessionKey = actor === 'claude' ? 'claude_session_id'
       : actor === 'codex' ? 'codex_thread_id'
+      : actor === 'cursor' ? 'cursor_session_id'
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'kimi' ? 'kimi_session_id'
       : null
@@ -1642,6 +1648,7 @@ export function needsHealthCheck(state: TaskState, settings: TaskSettings): bool
 function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<TaskSettings>): string | undefined {
   if (actor === 'claude') return state.claude_session_id ?? stringSetting(settings, 'seed_claude_session_id')
   if (actor === 'codex') return state.codex_thread_id ?? stringSetting(settings, 'seed_codex_thread_id')
+  if (actor === 'cursor') return state.cursor_session_id ?? stringSetting(settings, 'seed_cursor_session_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
   if (actor === 'kimi') return state.kimi_session_id ?? stringSetting(settings, 'seed_kimi_session_id')
   return undefined
@@ -1653,7 +1660,7 @@ function stringSetting(settings: Partial<TaskSettings> | undefined, key: keyof T
 }
 
 function normalizeActorRole(actor: string): TranscriptEntry['role'] {
-  if (actor === 'claude' || actor === 'codex' || actor === 'opencode' || actor === 'kimi') return actor
+  if (actor === 'claude' || actor === 'codex' || actor === 'cursor' || actor === 'opencode' || actor === 'kimi') return actor
   return 'system'
 }
 
@@ -1727,7 +1734,7 @@ export async function collectOutputText(
   outputFile: string,
   stdoutText: string
 ): Promise<string> {
-  if (kind === 'native_claude' || kind === 'native_opencode' || kind === 'native_kimi') {
+  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_opencode' || kind === 'native_kimi') {
     const parserActor = parserActorForKind(actor, kind)
     let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
