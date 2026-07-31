@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   workspaceKey?: string
   onRetryHealthCheck?: () => void
   isRetryingHealthCheck?: boolean
+  onViewChanges?: () => void
 }
 
 const roleClasses: Record<string, string> = {
@@ -200,7 +201,7 @@ function renderHealthCheckText(entry: TranscriptEntry, lang: ReturnType<typeof u
   return null
 }
 
-export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck, isRetryingHealthCheck }: MessageBubbleProps) {
+export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck, isRetryingHealthCheck, onViewChanges }: MessageBubbleProps) {
   const t = useT()
   const lang = useLanguage()
   const isSystem = entry.role === 'system'
@@ -254,10 +255,22 @@ export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck,
         {displayAttachments && displayAttachments.length > 0 && (
           <AttachmentPreviews attachments={displayAttachments} />
         )}
-        <div
-          className="message-body"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <div className="message-body">
+          <div className={isTaskDone && onViewChanges ? '[&>div]:inline [&_p]:inline' : ''}>
+            <div dangerouslySetInnerHTML={{ __html: html }} />
+            {isTaskDone && onViewChanges ? (
+              <span className="whitespace-nowrap">
+                <span className="text-fg-muted">{t('git.changesCheckPrompt')} </span>
+                <button
+                  onClick={onViewChanges}
+                  className="text-accent-primary hover:underline inline align-baseline"
+                >
+                  {t('git.changesTitle')}
+                </button>
+              </span>
+            ) : null}
+          </div>
+        </div>
         {isHealthCheckFailed && onRetryHealthCheck && (
           <div className="mt-2">
             <button

@@ -3,6 +3,7 @@ import { Copy, Play, RotateCw } from 'lucide-react'
 import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
+import { TaskStatusIcon } from './TaskStatusIcon'
 import { useGitStatus, type GitStatusResult } from '../hooks/useBuddy'
 import {
   ACTOR_DISPLAY_NAME,
@@ -89,13 +90,20 @@ export function StatusBar({
   const { data: gitStatus, isLoading: isGitLoading } = useGitStatus(repoRoot)
   const [showCommitModal, setShowCommitModal] = useState(false)
   const [commitFeedback, setCommitFeedback] = useState<CommitFeedback | null>(null)
+  // 任务执行中(RUNNING_* / PINGING)时禁止提交,COUNTDOWN 是人工介入窗口,允许提交
+  const status = taskState?.status
+  const isTaskRunning = !!status && (status.startsWith('RUNNING_') || status === 'PINGING')
 
   // Listen for ⌘M shortcut: open commit modal on user request
   useEffect(() => {
-    const handler = () => { setCommitFeedback(null); setShowCommitModal(true) }
+    const handler = () => {
+      if (isTaskRunning) return
+      setCommitFeedback(null)
+      setShowCommitModal(true)
+    }
     window.addEventListener('buddy:commit', handler)
     return () => window.removeEventListener('buddy:commit', handler)
-  }, [])
+  }, [isTaskRunning])
 
   if (!isOpen) return null
 
@@ -178,6 +186,7 @@ export function StatusBar({
           gitStatus={gitStatus}
           isLoading={isGitLoading}
           repoRoot={repoRoot}
+          isTaskRunning={isTaskRunning}
           onOpenCommit={() => { setCommitFeedback(null); setShowCommitModal(true) }}
           commitFeedback={commitFeedback}
           onDismissFeedback={() => setCommitFeedback(null)}
@@ -199,6 +208,7 @@ export function StatusBar({
           gitStatus={gitStatus}
           repoRoot={repoRoot}
           globalSettings={globalSettings}
+          isTaskRunning={isTaskRunning}
           onClose={() => {
             setShowCommitModal(false)
             requestAnimationFrame(() => {
@@ -233,10 +243,10 @@ function InlineStatus({
   t: TFunction
 }) {
   const info = compactStatusInfo(status)
-  if (!info) return null
+  if (!info || !status) return null
   return (
     <div className="h-5 flex flex-shrink-0 items-center gap-1.5">
-      <span className={`status-dot status-dot-${info.cls} ${info.pulse ? 'status-dot-pulse' : ''}`} />
+      <TaskStatusIcon status={status} />
       <span className={`text-xs font-medium status-text-${info.cls}`}>{t(info.labelKey)}</span>
       {status === 'PAUSED' && (
         <button

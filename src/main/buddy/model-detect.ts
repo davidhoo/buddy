@@ -1,33 +1,54 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { commandKindFor } from './launchers'
 
 /**
  * Detect the current model for an actor by reading its configuration file.
  * This serves as a fallback when the model cannot be determined from
  * streaming output events.
  *
- * Config file locations:
- * - opencode: ~/.config/opencode/opencode.json  → JSON "model" field
- * - codex:    ~/.codex/config.toml              → TOML "model" field
- *   (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
- * - kimi:     ~/.kimi/config.toml               → TOML "default_model" field
- * - claude:   not needed (model reliably emitted in stream-json output)
+ * Detection is driven by the launcher command's *kind* (the actual CLI being
+ * invoked), not the actor name — so e.g. an actor named "kimi" whose launcher
+ * is `opencode -m provider/kimi-k2.6` is detected as opencode, matching what
+ * the runner will actually invoke.
+ *
+ * Precedence:
+ * 1. `-m` / `--model` passed on the command line (always wins — it is exactly
+ *    what the runner invokes, for any CLI).
+ * 2. CLI-specific config file:
+ *    - opencode: ~/.config/opencode/opencode.json → JSON "model" field
+ *    - codex:    ~/.codex/config.toml → TOML "model" field
+ *      (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
+ *    - kimi:     ~/.kimi-code/config.toml → TOML "default_model" field
+ *      (~/.kimi/config.toml is checked as a legacy fallback)
+ *    - claude:   ~/.claude/settings.json → env.ANTHROPIC_MODEL, else "model" field
+ *      (the "model" field is a tier alias like "sonnet[1m]"; ANTHROPIC_MODEL is the
+ *       real model the SDK invokes, so it takes precedence to match what runs)
  *
  * @param actor  Actor name (codex, opencode, kimi, claude)
- * @param command  Optional launcher command string. Used to distinguish
- *                 `wecode codex` from plain `codex`.
+ * @param command  Optional launcher command string. Used both to extract an
+ *                 explicit `-m`/`--model` override and to determine the CLI
+ *                 kind (e.g. distinguishing `wecode codex` from plain `codex`,
+ *                 or `opencode` invoked under a kimi/codex actor).
  */
 export async function detectModelFromConfig(
   actor: string,
   command?: string
 ): Promise<string | undefined> {
   try {
+    // 1. An explicit -m / --model on the command line always wins, for any CLI.
+    const fromCommand = modelFromCommandArgs(command)
+    if (fromCommand) return fromCommand
+
+    // 2. Otherwise branch on the actual CLI kind, not the actor name.
+    const kind = commandKindFor(actor, command ?? '')
     const home = homedir()
-    if (actor === 'opencode') {
+
+    if (kind === 'native_opencode') {
       return await readJsonModel(join(home, '.config', 'opencode', 'opencode.json'), 'model')
     }
-    if (actor === 'codex') {
+    if (kind === 'native_codex') {
       // When codex is launched via `wecode codex`, the effective model is
       // in ~/.wecode-cli/config.json (codex.model), NOT ~/.codex/config.toml
       // — wecode does not write back to config.toml.
@@ -36,11 +57,40 @@ export async function detectModelFromConfig(
       }
       return await readTomlModel(join(home, '.codex', 'config.toml'), 'model')
     }
-    if (actor === 'kimi') {
+    if (kind === 'native_kimi') {
+      // Kimi Code CLI reads ~/.kimi-code/config.toml; ~/.kimi is the legacy path
+      const primary = await readTomlModel(join(home, '.kimi-code', 'config.toml'), 'default_model').catch(() => undefined)
+      if (primary) return primary
       return await readTomlModel(join(home, '.kimi', 'config.toml'), 'default_model')
     }
+    if (kind === 'native_claude') {
+      return await readClaudeModel(join(home, '.claude', 'settings.json'))
+    }
+    // contract: model is not knowable before a run.
   } catch {
     // Config file may not exist or be unreadable — that's fine
+  }
+  return undefined
+}
+
+/**
+ * Extract the model from a launcher command's `-m` / `--model` argument,
+ * e.g. `opencode -m agnes/agnes-2.0-flash` → `agnes/agnes-2.0-flash`,
+ * or `codex -m gpt-5.6-luna` → `gpt-5.6-luna`. Applies to any CLI kind —
+ * a command-line override is always what the runner actually invokes.
+ */
+function modelFromCommandArgs(command?: string): string | undefined {
+  if (!command) return undefined
+  const parts = command.match(/(?:[^\s"]+|"[^"]*")+/g)
+  if (!parts) return undefined
+  const clean = parts.map((p) => p.replace(/^"|"$/g, ''))
+  for (let i = 0; i < clean.length; i++) {
+    if (clean[i].startsWith('--model=')) {
+      return clean[i].slice('--model='.length) || undefined
+    }
+    if ((clean[i] === '-m' || clean[i] === '--model') && i + 1 < clean.length) {
+      return clean[i + 1] || undefined
+    }
   }
   return undefined
 }
@@ -70,6 +120,26 @@ async function readWecodeCodexModel(home: string): Promise<string | undefined> {
     if (typeof model === 'string' && model) return model
   }
   return undefined
+}
+
+/**
+ * Read the effective Claude model from ~/.claude/settings.json.
+ *
+ * Claude Code's `model` field is a tier alias (e.g. "sonnet[1m]", "opus").
+ * The actual model the SDK invokes is `env.ANTHROPIC_MODEL` when set — it
+ * overrides the tier at the SDK level. Prefer it so the displayed model
+ * matches what the runner really invokes; fall back to the `model` alias.
+ */
+async function readClaudeModel(filePath: string): Promise<string | undefined> {
+  const raw = await readFile(filePath, 'utf8')
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  const env = obj.env
+  if (env && typeof env === 'object') {
+    const override = (env as Record<string, unknown>).ANTHROPIC_MODEL
+    if (typeof override === 'string' && override) return override
+  }
+  const model = obj.model
+  return typeof model === 'string' && model ? model : undefined
 }
 
 /**

@@ -16,7 +16,8 @@ import {
   Upload,
   RotateCw
 } from 'lucide-react'
-import { Task, TaskStatus } from '../../shared/types'
+import { Task } from '../../shared/types'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
@@ -26,16 +27,7 @@ import { projectNameForTask, readStringArraySetting, writeStringArraySetting, is
 import logo from '../assets/logo.png'
 
 import type { SettingsTab } from './SettingsContent'
-
-function statusClass(status: TaskStatus): string {
-  if (status === 'READY') return 'ready'
-  if (status === 'QUEUED') return 'queued'
-  if (status.startsWith('RUNNING_')) return 'running'
-  if (status === 'FAILED') return 'danger'
-  if (status === 'PAUSED') return 'paused'
-  if (status === 'DONE') return 'done'
-  return 'neutral'
-}
+import { TaskStatusIcon } from './TaskStatusIcon'
 
 interface SidebarProps {
   isOpen: boolean
@@ -284,6 +276,7 @@ function ChatSidebar({
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>(() => readStringArraySetting('buddy.pinnedTaskIds'))
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<string[]>(() => readStringArraySetting('buddy.collapsedProjectKeys'))
   const [expandedTaskProjects, setExpandedTaskProjects] = useState<Set<string>>(new Set())
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
 
   const togglePin = useCallback((taskId: string) => {
     setPinnedTaskIds(prev => {
@@ -435,7 +428,6 @@ function ChatSidebar({
                 <div className="px-2 pt-2 pb-1 text-xs text-fg-muted font-medium">{t('sidebar.pinned')}</div>
                 {pinnedTasks.map((task) => {
                   const isSelected = selectedTaskId === task.task_id
-                  const isRunning = statusClass(task.status) === 'running'
                   const unread = isTaskUnread(task, selectedTaskId)
                   const proj = projectNameForTask(task, projectNames)
                   const isTaskMenuOpen = openMenuTaskId === task.task_id
@@ -452,7 +444,7 @@ function ChatSidebar({
                       } ${task.status === 'DONE' ? 'task-done' : ''}`}
                     >
                       <div className="flex h-full items-center gap-2">
-                        <span className={`status-dot status-dot-${statusClass(task.status)} ${unread ? 'status-dot-unread' : 'status-dot-read'} ${isRunning ? 'status-dot-pulse' : ''}`} />
+                        <TaskStatusIcon status={task.status} dimmed={!unread} />
                         <span className={`text-xs truncate flex-1 ${
                             isSelected ? 'text-fg' : 'text-fg-secondary'
                         }`}>
@@ -497,8 +489,11 @@ function ChatSidebar({
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setOpenMenuTaskId(null)
-                                  const ok = window.confirm(t('sidebar.confirmDeleteTask', { id: task.task_id }))
-                                  if (ok) onDeleteTask(task.task_id, task.workspace_key)
+                                  setConfirmState({
+                                    title: t('sidebar.deleteTaskTitle'),
+                                    message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
+                                    onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
+                                  })
                                 }}
                                 className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                               >
@@ -581,8 +576,11 @@ function ChatSidebar({
                             onClick={(e) => {
                               e.stopPropagation()
                               setOpenMenuRepoRoot(null)
-                              const ok = window.confirm(t('sidebar.confirmRemoveProject', { name: projectKey }))
-                              if (ok) onRemoveProject(repoRoot)
+                              setConfirmState({
+                                title: t('sidebar.removeProjectTitle'),
+                                message: t('sidebar.confirmRemoveProject', { name: projectKey }),
+                                onConfirm: () => onRemoveProject(repoRoot)
+                              })
                             }}
                             className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                           >
@@ -607,7 +605,6 @@ function ChatSidebar({
                     <div className="pt-0.5">
                       {(expandedTaskProjects.has(projectKey) ? workspaceTasks : workspaceTasks.slice(0, 10)).map((task) => {
                       const isSelected = selectedTaskId === task.task_id
-                      const isRunning = statusClass(task.status) === 'running'
                       const unread = isTaskUnread(task, selectedTaskId)
                       const isTaskMenuOpen = openMenuTaskId === task.task_id
                       const displayName = displayNameForTask(task, taskNames)
@@ -624,7 +621,7 @@ function ChatSidebar({
                           } ${task.status === 'DONE' ? 'task-done' : ''}`}
                         >
                           <div className="flex h-full items-center gap-2">
-                            <span className={`status-dot status-dot-${statusClass(task.status)} ${unread ? 'status-dot-unread' : 'status-dot-read'} ${isRunning ? 'status-dot-pulse' : ''}`} />
+                            <TaskStatusIcon status={task.status} dimmed={!unread} />
                             <span className={`text-xs truncate flex-1 ${
                           isSelected ? 'text-fg' : 'text-fg-secondary'
                             }`}>
@@ -668,8 +665,11 @@ function ChatSidebar({
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       setOpenMenuTaskId(null)
-                                      const ok = window.confirm(t('sidebar.confirmDeleteTask', { id: task.task_id }))
-                                      if (ok) onDeleteTask(task.task_id, task.workspace_key)
+                                      setConfirmState({
+                                        title: t('sidebar.deleteTaskTitle'),
+                                        message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
+                                        onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
+                                      })
                                     }}
                                     className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
                                   >
@@ -742,6 +742,15 @@ function ChatSidebar({
           {t('sidebar.settings')}
         </button>
       </div>
+
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
     </>
   )
 }

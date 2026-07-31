@@ -26,10 +26,17 @@ describe('registerBuddyHandlers', () => {
       updateGlobalSettings: vi.fn(),
       gitStatus: vi.fn(),
       gitStageAll: vi.fn(),
+      gitStageFiles: vi.fn(),
       gitCommitAndPush: vi.fn(),
       gitDiffForCommitMessage: vi.fn(),
+      gitFileDiff: vi.fn(),
+      gitBranches: vi.fn(),
+      gitCheckout: vi.fn(),
+      gitCreateBranch: vi.fn(),
       generateCommitMessage: vi.fn(),
+      cancelGenerateCommitMessage: vi.fn(),
       testLauncher: vi.fn(),
+      detectActorModels: vi.fn(),
       updateTaskText: vi.fn(),
       onTaskEvent: vi.fn()
     }
@@ -38,6 +45,13 @@ describe('registerBuddyHandlers', () => {
 
     expect(handle).toHaveBeenCalledWith('buddy:bootstrap', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:startTask', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(26)
+    expect(handle).toHaveBeenCalledWith('buddy:gitFileDiff', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitBranches', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitCheckout', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitCreateBranch', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledTimes(33)
   })
 })

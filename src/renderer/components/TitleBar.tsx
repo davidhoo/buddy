@@ -3,6 +3,7 @@ import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
 import type { TaskStatus } from '../../shared/types'
+import { TaskStatusIcon } from './TaskStatusIcon'
 
 interface TitleBarProps {
   taskName: string
@@ -117,7 +118,7 @@ function CompactStatus({
 }) {
   return (
     <div className="h-5 flex items-center gap-1.5 mr-2 mt-[4px] no-drag">
-      <span className={`status-dot status-dot-${info.cls} ${info.pulse ? 'status-dot-pulse' : ''}`} />
+      {status && <TaskStatusIcon status={status} />}
       <span className={`text-xs font-medium status-text-${info.cls}`}>{t(info.labelKey)}</span>
       {status === 'PAUSED' && onResume && (
         <button
