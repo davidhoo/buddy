@@ -237,4 +237,141 @@ describe('model-detect', () => {
     const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
     expect(await detectModelFromConfig('claude', 'claude')).toBe('weibo-glm-5.2')
   })
+
+  describe('WeCode Claude detection', () => {
+    async function writeWecodeConfig(model: string) {
+      const wecodeDir = join(tempHome, '.wecode-cli')
+      await mkdir(wecodeDir, { recursive: true })
+      await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({
+        env: { ANTHROPIC_MODEL: model }
+      }))
+    }
+
+    async function writeClaudeConfig(model: string) {
+      const claudeDir = join(tempHome, '.claude')
+      await mkdir(claudeDir, { recursive: true })
+      await writeFile(join(claudeDir, 'settings.json'), JSON.stringify({
+        model,
+        env: { ANTHROPIC_MODEL: model }
+      }))
+    }
+
+    it('1. reads model from wecode config when command is bare `wecode`', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode')).toBe('weibo-glm-5.2[1m]')
+    })
+
+    it('2. ignores --dangerously-skip-permissions when detecting wecode', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode --dangerously-skip-permissions')).toBe('weibo-glm-5.2[1m]')
+    })
+
+    it('3. wecode config wins over stale claude config', async () => {
+      await writeClaudeConfig('stale-claude-model')
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      const model = await detectModelFromConfig('claude', 'wecode')
+      expect(model).toBe('weibo-glm-5.2[1m]')
+      expect(model).not.toBe('stale-claude-model')
+    })
+
+    it('4. returns undefined when wecode config is missing (no fallback to claude)', async () => {
+      // Stale claude config exists, but no wecode config — must NOT fall back.
+      await writeClaudeConfig('stale-claude-model')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode')).toBeUndefined()
+    })
+
+    it('5. detects wecode via absolute path', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', '/usr/local/bin/wecode')).toBe('weibo-glm-5.2[1m]')
+    })
+
+    it('5b. detects wecode via a quoted path with spaces', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', '"/path with spaces/wecode" --dangerously-skip-permissions')).toBe('weibo-glm-5.2[1m]')
+    })
+
+    it('6. command-line --model override wins over wecode config', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode --model explicit-model')).toBe('explicit-model')
+    })
+
+    it('6b. command-line -m override wins over wecode config', async () => {
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode -m explicit-model')).toBe('explicit-model')
+    })
+
+    it('7. plain claude still reads ~/.claude/settings.json', async () => {
+      await writeClaudeConfig('sonnet[1m]')
+      // No wecode config — plain claude must keep working.
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'claude')).toBe('sonnet[1m]')
+    })
+
+    it('7b. plain claude with absolute path still reads ~/.claude/settings.json', async () => {
+      await writeClaudeConfig('sonnet[1m]')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', '/usr/local/bin/claude')).toBe('sonnet[1m]')
+    })
+
+    it('8. wecode codex does not enter the claude branch', async () => {
+      // Set up both configs to prove the codex branch is taken, not claude's.
+      await writeWecodeConfig('weibo-glm-5.2[1m]')
+      const wecodeDir = join(tempHome, '.wecode-cli')
+      await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({
+        env: { ANTHROPIC_MODEL: 'weibo-glm-5.2[1m]' },
+        codex: { model: 'thudm-glm-5.2', forceModel: false }
+      }))
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('codex', 'wecode codex')).toBe('thudm-glm-5.2')
+    })
+
+    it('returns undefined when wecode config has no env.ANTHROPIC_MODEL', async () => {
+      const wecodeDir = join(tempHome, '.wecode-cli')
+      await mkdir(wecodeDir, { recursive: true })
+      await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({ codex: { model: 'x' } }))
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode')).toBeUndefined()
+    })
+
+    it('returns undefined when wecode config is malformed JSON', async () => {
+      const wecodeDir = join(tempHome, '.wecode-cli')
+      await mkdir(wecodeDir, { recursive: true })
+      await writeFile(join(wecodeDir, 'config.json'), '{ not valid json')
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode')).toBeUndefined()
+    })
+
+    it('returns undefined when ANTHROPIC_MODEL is empty string', async () => {
+      const wecodeDir = join(tempHome, '.wecode-cli')
+      await mkdir(wecodeDir, { recursive: true })
+      await writeFile(join(wecodeDir, 'config.json'), JSON.stringify({
+        env: { ANTHROPIC_MODEL: '' }
+      }))
+
+      const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+      expect(await detectModelFromConfig('claude', 'wecode')).toBeUndefined()
+    })
+  })
 })

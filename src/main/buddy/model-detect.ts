@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { commandKindFor } from './launchers'
+import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand } from './launchers'
 
 /**
  * Detect the current model for an actor by reading its configuration file.
@@ -25,6 +25,9 @@ import { commandKindFor } from './launchers'
  *    - claude:   ~/.claude/settings.json → env.ANTHROPIC_MODEL, else "model" field
  *      (the "model" field is a tier alias like "sonnet[1m]"; ANTHROPIC_MODEL is the
  *       real model the SDK invokes, so it takes precedence to match what runs)
+ *      (when launched via WeCode — `wecode` without a leading `codex` token —
+ *       reads ~/.wecode-cli/config.json → env.ANTHROPIC_MODEL instead, and does
+ *       NOT fall back to ~/.claude/settings.json)
  *
  * @param actor  Actor name (codex, opencode, kimi, claude)
  * @param command  Optional launcher command string. Used both to extract an
@@ -52,7 +55,7 @@ export async function detectModelFromConfig(
       // When codex is launched via `wecode codex`, the effective model is
       // in ~/.wecode-cli/config.json (codex.model), NOT ~/.codex/config.toml
       // — wecode does not write back to config.toml.
-      if (isWecodeCodexCommand(command)) {
+      if (isWecodeCodexCommand(command ?? '')) {
         return await readWecodeCodexModel(home)
       }
       return await readTomlModel(join(home, '.codex', 'config.toml'), 'model')
@@ -64,6 +67,14 @@ export async function detectModelFromConfig(
       return await readTomlModel(join(home, '.kimi', 'config.toml'), 'default_model')
     }
     if (kind === 'native_claude') {
+      // WeCode Claude (`wecode`, optionally with flags like
+      // --dangerously-skip-permissions) reads its own config and must NOT
+      // fall back to ~/.claude/settings.json — otherwise a stale Claude model
+      // would be displayed. Detection is by executable basename, not by any
+      // permission flag, mirroring commandKindFor.
+      if (isWecodeClaudeCommand(command ?? '')) {
+        return await readWecodeClaudeModel(join(home, '.wecode-cli', 'config.json'))
+      }
       return await readClaudeModel(join(home, '.claude', 'settings.json'))
     }
     // contract: model is not knowable before a run.
@@ -96,18 +107,6 @@ function modelFromCommandArgs(command?: string): string | undefined {
 }
 
 /**
- * Check whether a command string represents `wecode codex`.
- * Mirrors the detection in launchers.ts commandKindFor.
- */
-function isWecodeCodexCommand(command?: string): boolean {
-  if (!command) return false
-  const parts = command.match(/(?:[^\s"]+|"[^"]*")+/g)
-  if (!parts) return false
-  const clean = parts.map((p) => p.replace(/^"|"$/g, ''))
-  return clean[0] === 'wecode' && clean[1] === 'codex'
-}
-
-/**
  * Read the codex model from ~/.wecode-cli/config.json.
  * Structure: { codex: { model: "thudm-glm-5.2", forceModel: false } }
  */
@@ -118,6 +117,26 @@ async function readWecodeCodexModel(home: string): Promise<string | undefined> {
   if (codex && typeof codex === 'object') {
     const model = (codex as Record<string, unknown>).model
     if (typeof model === 'string' && model) return model
+  }
+  return undefined
+}
+
+/**
+ * Read the effective WeCode Claude model from ~/.wecode-cli/config.json.
+ * Structure: { env: { ANTHROPIC_MODEL: "weibo-glm-5.2[1m]" } }
+ *
+ * WeCode does not write back to ~/.claude/settings.json, so when the launcher
+ * is `wecode` this is the only source of truth. Any failure (missing file,
+ * unreadable, malformed JSON, absent/non-string/empty ANTHROPIC_MODEL) yields
+ * undefined — no fallback to the plain-Claude config.
+ */
+async function readWecodeClaudeModel(filePath: string): Promise<string | undefined> {
+  const raw = await readFile(filePath, 'utf8')
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  const env = obj.env
+  if (env && typeof env === 'object') {
+    const override = (env as Record<string, unknown>).ANTHROPIC_MODEL
+    if (typeof override === 'string' && override) return override
   }
   return undefined
 }

@@ -280,7 +280,10 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   // Detect native CLI by executable name first, regardless of actor name.
   // This allows e.g. actor='kimi' with command='opencode -m provider/kimi-k2.6'
   // to be correctly identified as native_opencode.
-  if (executable === 'claude' || (executable === 'wecode' && baseCmd[1] !== 'codex')) return 'native_claude'
+  //
+  // WeCode wraps both claude and codex: `wecode` (or `wecode ...` without a
+  // leading `codex` token) runs claude; `wecode codex ...` runs codex.
+  if (executable === 'claude' || isWecodeClaudeCommand(baseCmd)) return 'native_claude'
   if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
   if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'
   if (executable === 'opencode') return 'native_opencode'
@@ -370,9 +373,39 @@ function commandNotFoundError(command: string, cause: unknown): Error {
   return err
 }
 
-function splitCommand(command: string): string[] {
+export function splitCommand(command: string): string[] {
   const matches = command.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [command]
   return matches.map((part) => part.replace(/^"|"$/g, ''))
+}
+
+/**
+ * Whether a command invokes WeCode (the `wecode` executable), regardless of
+ * path or arguments. Detection mirrors commandKindFor: split the command,
+ * take basename of the first token, compare to `wecode`. Does NOT depend on
+ * any permission flag.
+ */
+export function isWecodeCommand(command: string | string[]): boolean {
+  const baseCmd = Array.isArray(command) ? command : splitCommand(command)
+  return basename(baseCmd[0] ?? '') === 'wecode'
+}
+
+/**
+ * Whether a command invokes WeCode Claude (i.e. `wecode` whose second token
+ * is NOT `codex`). Mirrors the WeCode-Claude branch of commandKindFor.
+ */
+export function isWecodeClaudeCommand(command: string | string[]): boolean {
+  const baseCmd = Array.isArray(command) ? command : splitCommand(command)
+  if (basename(baseCmd[0] ?? '') !== 'wecode') return false
+  return baseCmd[1] !== 'codex'
+}
+
+/**
+ * Whether a command invokes WeCode Codex (i.e. `wecode codex ...`).
+ * Mirrors the WeCode-Codex branch of commandKindFor.
+ */
+export function isWecodeCodexCommand(command: string | string[]): boolean {
+  const baseCmd = Array.isArray(command) ? command : splitCommand(command)
+  return basename(baseCmd[0] ?? '') === 'wecode' && baseCmd[1] === 'codex'
 }
 
 function cleanCodexBaseCommand(baseCmd: string[]): string[] {
