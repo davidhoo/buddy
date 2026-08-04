@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.9] - 2026-08-04
+
+### Fixed
+- 修复通过 WeCode 启动 Claude actor 时模型名显示错误：现在从 `~/.wecode-cli/config.json` 读取实际生效模型，不再错误回退到 `~/.claude/settings.json` 导致显示过期的 Claude 模型
+
+### Changed
+- 重构 WeCode 命令识别为共享工具函数（`isWecodeCommand`/`isWecodeClaudeCommand`/`isWecodeCodexCommand`），启动器类型判定与模型检测共用同一套规则，消除重复实现（内部改进，无行为变化）
+
+---
+
 ## [1.2.8] - 2026-07-31
 
 ### Added
@@ -403,6 +413,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.9]: https://github.com/davidhoo/buddy/releases/tag/v1.2.9
 [1.2.7]: https://github.com/davidhoo/buddy/releases/tag/v1.2.7
 [1.2.8]: https://github.com/davidhoo/buddy/releases/tag/v1.2.8
 [1.2.2]: https://github.com/davidhoo/buddy/releases/tag/v1.2.2
