@@ -14,7 +14,8 @@
     "clean:release": "rm -rf release",
     "dist": "pnpm build && pnpm clean:release && CUSTOM_DMGBUILD_PATH=\"$(sh scripts/prepare-dmgbuild.sh)\" CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never -c.mac.notarize=false",
     "verify:dist": "sh scripts/verify-dist.sh",
-    "release:signed": "pnpm typecheck && pnpm test && pnpm build && pnpm clean:release && CUSTOM_DMGBUILD_PATH=\"$(sh scripts/prepare-dmgbuild.sh)\" CSC_NAME=\"${CSC_NAME:-Developer ID Application}\" electron-builder --mac --publish never -c.mac.forceCodeSigning=true",
+    "build:release:signed": "pnpm typecheck && pnpm test && pnpm build && pnpm clean:release && CUSTOM_DMGBUILD_PATH=\"$(sh scripts/prepare-dmgbuild.sh)\" CSC_IDENTITY_AUTO_DISCOVERY=false CSC_NAME=\"${CSC_NAME:?Set CSC_NAME to Apple Development identity}\" electron-builder --mac --publish never -c.mac.forceCodeSigning=true -c.mac.notarize=false",
+    "release:signed": "pnpm build:release:signed && bash scripts/verify-release-signing.sh \"$(node -e \"console.log(require('./package.json').version)\")\"",
     "package": "pnpm dist",
     "package:dir": "pnpm build && pnpm clean:release && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir -c.mac.notarize=false"
   },

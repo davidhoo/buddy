@@ -10,9 +10,10 @@ set -euo pipefail
 # Prerequisites:
 #   - gh CLI authenticated (brew install gh && gh auth login)
 #   - Rosetta installed for x64 cross-build (softwareupdate --install-rosetta)
+#   - CSC_NAME set to an Apple Development signing identity
 #
 # Flow:
-#   bump version → build → verify → commit+tag+push → create GitHub Release → upload assets
+#   pre-check → bump version → build (forced signing) → verify signing → commit+tag+push → create GitHub Release → upload assets
 # =============================================================================
 
 VERSION="${1:?Usage: release.sh <version>  e.g. release.sh v1.2.0}"
@@ -25,6 +26,17 @@ cd "$PROJECT_ROOT"
 # --- Prerequisites ---
 command -v gh >/dev/null \
   || { echo "gh not found. Install: brew install gh && gh auth login" >&2; exit 1; }
+
+# --- Signing pre-check ---
+: "${CSC_NAME:?Set CSC_NAME to the Apple Development signing identity}"
+case "$CSC_NAME" in
+  Apple\ Development:*) ;;
+  *) echo "CSC_NAME must be an Apple Development identity (got: $CSC_NAME)" >&2; exit 1 ;;
+esac
+
+security find-identity -v -p codesigning \
+  | grep -F -- "\"${CSC_NAME}\"" >/dev/null \
+  || { echo "Signing identity not found or invalid: ${CSC_NAME}" >&2; exit 1; }
 
 # --- Config ---
 PACKAGE_NAME="buddy"
@@ -58,24 +70,27 @@ echo ""
 
 # --- 1. Bump version in package.json ---
 echo ">> Bumping version to ${PACKAGE_VERSION}..."
-CURRENT_VERSION="$(node -e "console.log(require('./package.json').version)")"
-if [ "$CURRENT_VERSION" = "$PACKAGE_VERSION" ]; then
-  echo "   Version already ${PACKAGE_VERSION} ✓"
-else
-  node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${PACKAGE_VERSION}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
-  echo "   ${CURRENT_VERSION} → ${PACKAGE_VERSION} ✓"
-fi
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${PACKAGE_VERSION}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+echo "   Version set to ${PACKAGE_VERSION} ✓"
 
-# --- 2. Build ---
-echo ">> Building..."
+# --- 2. Build (forced signing, no notarization) ---
+echo ">> Building with forced code signing..."
 pnpm build
 pnpm clean:release
 CUSTOM_DMGBUILD_PATH="$(sh scripts/prepare-dmgbuild.sh)" \
   CSC_IDENTITY_AUTO_DISCOVERY=false \
-  pnpm exec electron-builder --mac --publish never -c.mac.notarize=false
+  CSC_NAME="$CSC_NAME" \
+  pnpm exec electron-builder --mac --publish never \
+    -c.mac.forceCodeSigning=true \
+    -c.mac.notarize=false
 echo "   Build complete ✓"
 
-# --- 3. Verify artifacts ---
+# --- 3. Verify release signing ---
+echo ">> Verifying release signing..."
+bash scripts/verify-release-signing.sh "$PACKAGE_VERSION"
+echo "   Signing verified ✓"
+
+# --- 4. Verify artifacts present ---
 echo ">> Verifying artifacts..."
 EXPECTED_FILES=(
   "release/Buddy-${PACKAGE_VERSION}-arm64.dmg"
@@ -87,14 +102,7 @@ EXPECTED_FILES=(
 for f in "${EXPECTED_FILES[@]}"; do
   [ -f "$f" ] || { echo "Missing: ${f}" >&2; exit 1; }
 done
-app_count="$(find release -maxdepth 2 -type d -name '*.app' | wc -l | tr -d ' ')"
-[ "$app_count" -gt 0 ] || { echo "No .app bundle found under release/" >&2; exit 1; }
 echo "   All artifacts present ✓"
-
-# --- 4. Verify DMGs ---
-echo ">> Verifying DMGs..."
-find release -maxdepth 1 -name '*.dmg' -exec hdiutil verify {} \;
-echo "   DMGs verified ✓"
 
 # --- 5. Create source archives ---
 echo ">> Creating source archives..."
@@ -131,11 +139,10 @@ else
   gh release create "$VERSION" \
     --repo "$GITHUB_REPO" \
     --title "Buddy ${VERSION}" \
-    --notes "Release ${VERSION}" \
-    || echo "   Release creation issue, continuing ✓"
+    --notes "Release ${VERSION}"
 fi
 
-# Upload all assets
+# Upload all assets — fail on any required asset failure
 UPLOAD_FILES=(
   "release/Buddy-${PACKAGE_VERSION}-arm64.dmg"
   "release/Buddy-${PACKAGE_VERSION}.dmg"
@@ -152,8 +159,7 @@ for f in "${UPLOAD_FILES[@]}"; do
     echo "   Uploading $(basename "$f")..."
     gh release upload "$VERSION" "$f" \
       --repo "$GITHUB_REPO" \
-      --clobber \
-      || { echo "   WARNING: Failed to upload $(basename "$f")" >&2; true; }
+      --clobber
   fi
 done
 echo "   Upload complete ✓"
