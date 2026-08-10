@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.11] - 2026-08-10
+
+### Added
+- 提交信息生成支持多 Actor 选择：弹窗新增 Actor 下拉框（Claude/Codex/Cursor/OpenCode/Kimi），默认跟随任务执行者，localStorage 记忆最后选择
+- 新增 `commit-message.ts` 模块：独立会话生成提交信息，复用现有 launcher 能力，120s 专用超时，支持 AbortController 取消，临时文件自动清理
+- 提交信息生成改用所选文件的真实 staged+unstaged diff（含未跟踪新增/删除/二进制），200KB 截断并保留完整文件清单
+- 新增 `buildCommitMessagePrompt` 与 `parseCommitMessageOutput`：JSON commit_message 优先，纯文本 Conventional Commit 回退，过滤 think/tool_call/代码围栏等噪声
+- `runLauncher`/`runLauncherWithPty` 增加可选 AbortSignal，支持取消与切换 Actor
+- 新增 `buddy-commit-message.test.ts`、`buddy-git.test.ts`，更新 launchers 与 file-status 测试
+
+---
+
 ## [1.2.10] - 2026-08-10
 
 ### Fixed
