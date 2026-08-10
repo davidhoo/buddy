@@ -79,8 +79,8 @@ verify_app_version() {
   local info_plist="${app_path}/Contents/Info.plist"
   local short_version bundle_version
 
-  short_version="$(defaults read "${info_plist}" CFBundleShortVersionString 2>/dev/null || true)"
-  bundle_version="$(defaults read "${info_plist}" CFBundleVersion 2>/dev/null || true)"
+  short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}" 2>/dev/null || true)"
+  bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info_plist}" 2>/dev/null || true)"
 
   if [ "$short_version" != "$VERSION" ]; then
     err "${label}: CFBundleShortVersionString=${short_version}, expected ${VERSION}"
@@ -172,7 +172,8 @@ verify_latest_mac_yml() {
     [ -f "$zip_path" ] || { err "File not found: ${zip_path}"; continue; }
 
     local actual_sha512 actual_size
-    actual_sha512="$(shasum -a 512 "$zip_path" | awk '{print $1}')"
+    # shasum outputs hex; latest-mac.yml stores base64. Convert hex to base64 for comparison.
+    actual_sha512="$(shasum -a 512 "$zip_path" | awk '{print $1}' | xxd -r -p | base64)"
     actual_size="$(stat -f%z "$zip_path" 2>/dev/null || stat -c%s "$zip_path" 2>/dev/null)"
 
     # Extract sha512 from yml (comes after the filename line in the files block)
