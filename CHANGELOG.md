@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.12] - 2026-08-11
+
+### Changed
+- 内部发行签名改为 Apple Development（Team ID: XLDSS978CT），不再使用 adhoc 签名
+- 发布链强制签名：release.sh 前置检查 CSC_NAME 必须为 Apple Development 身份，构建时 forceCodeSigning=true
+- 新增 verify-release-signing.sh：验证最终产物（App/ZIP/DMG）签名非 adhoc、Authority=Apple Development、TeamID、bundle ID、版本号、latest-mac.yml sha512/size
+- 上传循环 fail-closed：缺失必需文件或上传失败立即中止发布
+
+### Fixed
+- 自动更新错误不再降级为 not-available：updater 保留真实错误消息并发送到 Renderer
+- updater 新增 installing 和 error 状态：安装中显示进度，失败显示错误摘要和重试按钮
+- updater phase 追踪：autoDownload 路径的下载阶段错误正确标记为 download 而非 install
+- updater 错误消息经 redact 脱敏：token/cookie/Bearer/私钥块不泄露到 UI
+- UpdateNotification 和 Sidebar 支持 installing/error 状态展示
+
+### Important
+- 现有 adhoc 用户（v1.2.9/v1.2.11）必须手动安装 v1.2.12 一次，无法通过自动更新跨签名链迁移
+- 不覆盖 v1.2.11 的 GitHub Release、tag 和资产
+- v1.2.13 将用于验证 v1.2.12 到 v1.2.13 同签名链自动更新闭环
+
+---
+
 ## [1.2.11] - 2026-08-10
 
 ### Added
