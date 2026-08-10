@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Play, RotateCw } from 'lucide-react'
+import { Check, Copy, Play, RotateCw } from 'lucide-react'
 import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
@@ -319,18 +319,26 @@ function ActorCard({
   running: boolean
   t: TFunction
 }) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const taskId = taskState?.task_id ?? ''
   const sessionField = SESSION_FIELD[actor]
   const session = (taskState?.[sessionField] as string | undefined) || ''
+  const currentKey = `${taskId}\0${session}`
+
+  const handleCopy = () => {
+    if (!session) return
+    navigator.clipboard.writeText(session).then(
+      () => setCopiedKey(currentKey),
+      () => {}
+    )
+  }
+
+  const isCopied = copiedKey !== null && copiedKey === currentKey
   const { impl, rev } = taskActors(taskSettings)
   const roleKey: TranslationKey | null =
     actor === impl ? 'statusBar.summary.implementer'
     : actor === rev ? 'statusBar.summary.reviewer'
     : null
-
-  const handleCopy = () => {
-    if (!session) return
-    navigator.clipboard.writeText(session).catch(() => {})
-  }
 
   return (
     <div className={`rounded-lg border p-3 bg-bg-elevated ${running ? '' : 'border-border-subtle'}`} style={running ? { borderColor: `var(--actor-${actor})` } : undefined}>
@@ -343,10 +351,11 @@ function ActorCard({
         {session && (
           <button
             onClick={handleCopy}
-            title={t('statusBar.actor.copy')}
+            title={isCopied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
+            aria-label={isCopied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
             className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted"
           >
-            <Copy size={12} strokeWidth={2} />
+            {isCopied ? <Check size={12} strokeWidth={2} /> : <Copy size={12} strokeWidth={2} />}
           </button>
         )}
       </div>

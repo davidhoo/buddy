@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
+import '@testing-library/jest-dom/vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StatusBar } from '../../../src/renderer/components/StatusBar'
 import type { Event, TaskSettings, TaskState } from '../../../src/shared/types'
 import { eventTypeLabel } from '../../../src/renderer/lib/format'
@@ -58,10 +62,10 @@ function renderStatusBar(overrides: Partial<StatusBarProps> = {}) {
     taskSettings,
     events: [],
     latestFailure: null,
-    onSkipCountdown: () => {},
-    onPauseCountdown: () => {},
     onInterrupt: () => {},
     onRetry: () => {},
+    onRetryHealthCheck: () => {},
+    isRetryingHealthCheck: false,
     onResume: () => {},
     onResize: () => {},
     ...overrides
@@ -69,6 +73,313 @@ function renderStatusBar(overrides: Partial<StatusBarProps> = {}) {
 
   return renderToStaticMarkup(<StatusBar {...props} />)
 }
+
+function makeTaskState(overrides: Partial<TaskState> = {}): TaskState {
+  return {
+    ...runningTaskState(),
+    task_id: 'demo',
+    ...overrides
+  }
+}
+
+function renderStatusBarInteractive(overrides: Partial<StatusBarProps> = {}) {
+  const props: StatusBarProps = {
+    isOpen: true,
+    width: 280,
+    taskState: makeTaskState(),
+    taskSettings,
+    events: [],
+    latestFailure: null,
+    onInterrupt: () => {},
+    onRetry: () => {},
+    onRetryHealthCheck: () => {},
+    isRetryingHealthCheck: false,
+    onResume: () => {},
+    onResize: () => {},
+    ...overrides
+  }
+
+  return render(<StatusBar {...props} />)
+}
+
+describe('StatusBar session ID copy feedback', () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('shows copy icon initially when session ID exists', () => {
+    renderStatusBarInteractive({
+      taskState: makeTaskState({ claude_session_id: 'sess-123' })
+    })
+
+    const copyBtn = screen.getByTitle('Copy session ID')
+    expect(copyBtn).toBeInTheDocument()
+    expect(copyBtn.querySelector('.lucide-copy')).toBeInTheDocument()
+    expect(copyBtn.querySelector('.lucide-check')).not.toBeInTheDocument()
+  })
+
+  it('does not show copy button when there is no session ID', () => {
+    renderStatusBarInteractive()
+
+    expect(screen.queryByTitle('Copy session ID')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+
+  it('writes the full session ID to clipboard on click', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    renderStatusBarInteractive({
+      taskState: makeTaskState({ claude_session_id: 'full-session-id-abc' })
+    })
+
+    const copyBtn = screen.getByTitle('Copy session ID')
+    fireEvent.click(copyBtn)
+
+    expect(writeText).toHaveBeenCalledWith('full-session-id-abc')
+  })
+
+  it('switches to check icon only for the clicked actor after successful copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    renderStatusBarInteractive({
+      taskState: makeTaskState({
+        claude_session_id: 'claude-sess',
+        codex_thread_id: 'codex-sess'
+      })
+    })
+
+    const buttons = screen.getAllByTitle('Copy session ID')
+    // Click the first copy button (Claude/implementer)
+    fireEvent.click(buttons[0])
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Session ID copied')).toBeInTheDocument()
+    })
+
+    // The other actor's button should still show copy icon
+    const remainingCopyBtn = screen.getByTitle('Copy session ID')
+    expect(remainingCopyBtn.querySelector('.lucide-copy')).toBeInTheDocument()
+  })
+
+  it('keeps copy icon when clipboard write fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    renderStatusBarInteractive({
+      taskState: makeTaskState({ claude_session_id: 'sess-fail' })
+    })
+
+    const copyBtn = screen.getByTitle('Copy session ID')
+    fireEvent.click(copyBtn)
+
+    // Wait for the rejected promise to settle
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('sess-fail')
+    })
+
+    // Should still show copy icon, not check
+    expect(screen.getByTitle('Copy session ID')).toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+
+  it('keeps implementer and reviewer copy states independent', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    renderStatusBarInteractive({
+      taskState: makeTaskState({
+        claude_session_id: 'claude-sess',
+        codex_thread_id: 'codex-sess'
+      })
+    })
+
+    const buttons = screen.getAllByTitle('Copy session ID')
+    // Click codex (reviewer) button - it's the second one
+    fireEvent.click(buttons[1])
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Session ID copied')).toBeInTheDocument()
+    })
+
+    // Claude (implementer) button should still show copy icon
+    const remainingCopyBtn = screen.getByTitle('Copy session ID')
+    expect(remainingCopyBtn).toBeInTheDocument()
+    expect(screen.getAllByTitle('Session ID copied')).toHaveLength(1)
+  })
+
+  it('restores copy icon when session ID changes', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    const { rerender } = renderStatusBarInteractive({
+      taskState: makeTaskState({ claude_session_id: 'sess-original' })
+    })
+
+    const copyBtn = screen.getByTitle('Copy session ID')
+    fireEvent.click(copyBtn)
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Session ID copied')).toBeInTheDocument()
+    })
+
+    // Rerender with a different session ID
+    rerender(
+      <StatusBar
+        isOpen={true}
+        width={280}
+        taskState={makeTaskState({ claude_session_id: 'sess-new' })}
+        taskSettings={taskSettings}
+        events={[]}
+        latestFailure={null}
+        onInterrupt={() => {}}
+        onRetry={() => {}}
+        onRetryHealthCheck={() => {}}
+        isRetryingHealthCheck={false}
+        onResume={() => {}}
+        onResize={() => {}}
+      />
+    )
+
+    // Should reset back to copy icon
+    expect(screen.getByTitle('Copy session ID')).toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+
+  it('restores copy icon when task ID changes', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    const { rerender } = renderStatusBarInteractive({
+      taskState: makeTaskState({ task_id: 'task-1', claude_session_id: 'sess-a' })
+    })
+
+    const copyBtn = screen.getByTitle('Copy session ID')
+    fireEvent.click(copyBtn)
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Session ID copied')).toBeInTheDocument()
+    })
+
+    // Rerender with a different task ID but same session
+    rerender(
+      <StatusBar
+        isOpen={true}
+        width={280}
+        taskState={makeTaskState({ task_id: 'task-2', claude_session_id: 'sess-a' })}
+        taskSettings={taskSettings}
+        events={[]}
+        latestFailure={null}
+        onInterrupt={() => {}}
+        onRetry={() => {}}
+        onRetryHealthCheck={() => {}}
+        isRetryingHealthCheck={false}
+        onResume={() => {}}
+        onResize={() => {}}
+      />
+    )
+
+    expect(screen.getByTitle('Copy session ID')).toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+
+  it('restores copy icon when status bar is reopened', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    const { rerender } = renderStatusBarInteractive({
+      taskState: makeTaskState({ claude_session_id: 'sess-reopen' })
+    })
+
+    fireEvent.click(screen.getByTitle('Copy session ID'))
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Session ID copied')).toBeInTheDocument()
+    })
+
+    // Close and reopen the status bar
+    rerender(
+      <StatusBar
+        isOpen={false}
+        width={280}
+        taskState={makeTaskState({ claude_session_id: 'sess-reopen' })}
+        taskSettings={taskSettings}
+        events={[]}
+        latestFailure={null}
+        onInterrupt={() => {}}
+        onRetry={() => {}}
+        onRetryHealthCheck={() => {}}
+        isRetryingHealthCheck={false}
+        onResume={() => {}}
+        onResize={() => {}}
+      />
+    )
+
+    // Reopen
+    rerender(
+      <StatusBar
+        isOpen={true}
+        width={280}
+        taskState={makeTaskState({ claude_session_id: 'sess-reopen' })}
+        taskSettings={taskSettings}
+        events={[]}
+        latestFailure={null}
+        onInterrupt={() => {}}
+        onRetry={() => {}}
+        onRetryHealthCheck={() => {}}
+        isRetryingHealthCheck={false}
+        onResume={() => {}}
+        onResize={() => {}}
+      />
+    )
+
+    expect(screen.getByTitle('Copy session ID')).toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+
+  it('does not mark copied when task changes but session ID is the same (race condition)', async () => {
+    let resolveCopy: () => void = () => {}
+    const writeText = vi.fn(() => new Promise<void>((resolve) => { resolveCopy = resolve }))
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    const { rerender } = renderStatusBarInteractive({
+      taskState: makeTaskState({ task_id: 'task-1', claude_session_id: 'same-sess' })
+    })
+
+    fireEvent.click(screen.getByTitle('Copy session ID'))
+
+    // Switch to a different task with the same session ID before Promise resolves
+    rerender(
+      <StatusBar
+        isOpen={true}
+        width={280}
+        taskState={makeTaskState({ task_id: 'task-2', claude_session_id: 'same-sess' })}
+        taskSettings={taskSettings}
+        events={[]}
+        latestFailure={null}
+        onInterrupt={() => {}}
+        onRetry={() => {}}
+        onRetryHealthCheck={() => {}}
+        isRetryingHealthCheck={false}
+        onResume={() => {}}
+        onResize={() => {}}
+      />
+    )
+
+    // Now resolve the stale Promise from task-1
+    resolveCopy()
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('same-sess')
+    })
+
+    // task-2 must NOT show check icon despite same session string
+    expect(screen.getByTitle('Copy session ID')).toBeInTheDocument()
+    expect(screen.queryByTitle('Session ID copied')).not.toBeInTheDocument()
+  })
+})
 
 describe('StatusBar inline run status', () => {
   it('places the compact status in the run status header and keeps it right aligned', () => {
