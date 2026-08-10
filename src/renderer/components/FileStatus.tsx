@@ -368,7 +368,6 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       data-buddy-modal
-      onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && message.trim() && !isBusy) {
           e.preventDefault()
@@ -384,7 +383,6 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
     >
       <div
         className="bg-bg-elevated rounded-xl shadow-xl w-[640px] max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
         tabIndex={-1}
       >
         {/* 头部 */}
