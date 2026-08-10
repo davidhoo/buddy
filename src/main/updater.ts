@@ -1,6 +1,7 @@
 import { autoUpdater } from 'electron-updater'
 import type { BrowserWindow } from 'electron'
 import type { UpdateInfo as ElectronUpdateInfo } from 'electron-updater'
+import { redactSensitiveText } from './buddy/redact'
 
 export interface UpdateInfo {
   version: string
@@ -36,6 +37,17 @@ let mainWindow: BrowserWindow | null = null
 let initialized = false
 let checkInterval: ReturnType<typeof setInterval> | null = null
 
+// Tracks the current updater phase so the generic error handler can report
+// which operation failed. autoDownload=true means download-phase errors arrive
+// through the generic handler, not through the downloadUpdate() wrapper.
+let currentPhase: UpdaterPhase = 'check'
+
+function sendError(phase: UpdaterPhase, err: unknown): void {
+  const raw = err instanceof Error ? err.message : String(err)
+  const message = redactSensitiveText(raw) || 'Unknown update error'
+  sendToRenderer({ type: 'error', phase, message })
+}
+
 function sendToRenderer(event: UpdaterEvent): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('updater:event', event)
@@ -48,10 +60,13 @@ export function initUpdater(window: BrowserWindow): void {
   mainWindow = window
 
   autoUpdater.on('checking-for-update', () => {
+    currentPhase = 'check'
     sendToRenderer({ type: 'checking' })
   })
 
   autoUpdater.on('update-available', (info: ElectronUpdateInfo) => {
+    // autoDownload=true: electron-updater will start downloading immediately
+    currentPhase = 'download'
     sendToRenderer({
       type: 'available',
       info: {
@@ -67,6 +82,7 @@ export function initUpdater(window: BrowserWindow): void {
   })
 
   autoUpdater.on('download-progress', (progress: { bytesPerSecond: number; percent: number; transferred: number; total: number }) => {
+    currentPhase = 'download'
     sendToRenderer({
       type: 'progress',
       progress: {
@@ -79,6 +95,7 @@ export function initUpdater(window: BrowserWindow): void {
   })
 
   autoUpdater.on('update-downloaded', (info: ElectronUpdateInfo) => {
+    currentPhase = 'install'
     sendToRenderer({
       type: 'downloaded',
       info: {
@@ -89,17 +106,18 @@ export function initUpdater(window: BrowserWindow): void {
   })
 
   autoUpdater.on('error', (err: Error | null) => {
-    const message = err?.message || String(err) || 'Unknown update error'
-    sendToRenderer({ type: 'error', phase: 'install', message })
+    sendError(currentPhase, err)
   })
 
   // Delay first check to avoid impacting startup
   setTimeout(() => {
+    currentPhase = 'check'
     autoUpdater.checkForUpdates().catch(() => {})
   }, 5000)
 
   // Periodic re-check every 30 minutes
   checkInterval = setInterval(() => {
+    currentPhase = 'check'
     autoUpdater.checkForUpdates().catch(() => {})
   }, 30 * 60 * 1000)
 }
@@ -109,28 +127,28 @@ export function setUpdaterWindow(window: BrowserWindow): void {
 }
 
 export function checkForUpdates(): Promise<void> {
+  currentPhase = 'check'
   return autoUpdater.checkForUpdates().then(() => undefined).catch((err) => {
-    const message = err instanceof Error ? err.message : String(err)
-    sendToRenderer({ type: 'error', phase: 'check', message })
+    sendError('check', err)
     throw err
   })
 }
 
 export function downloadUpdate(): Promise<void> {
+  currentPhase = 'download'
   return autoUpdater.downloadUpdate().then(() => undefined).catch((err) => {
-    const message = err instanceof Error ? err.message : String(err)
-    sendToRenderer({ type: 'error', phase: 'download', message })
+    sendError('download', err)
     throw err
   })
 }
 
 export function quitAndInstall(): void {
+  currentPhase = 'install'
   try {
     const version = autoUpdater.currentVersion?.version || ''
     sendToRenderer({ type: 'installing', version })
     autoUpdater.quitAndInstall()
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    sendToRenderer({ type: 'error', phase: 'install', message })
+    sendError('install', err)
   }
 }

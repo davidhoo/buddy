@@ -155,12 +155,11 @@ UPLOAD_FILES=(
 
 echo ">> Uploading assets to GitHub Release..."
 for f in "${UPLOAD_FILES[@]}"; do
-  if [ -f "$f" ]; then
-    echo "   Uploading $(basename "$f")..."
-    gh release upload "$VERSION" "$f" \
-      --repo "$GITHUB_REPO" \
-      --clobber
-  fi
+  [ -f "$f" ] || { echo "   Missing required upload file: ${f}" >&2; exit 1; }
+  echo "   Uploading $(basename "$f")..."
+  gh release upload "$VERSION" "$f" \
+    --repo "$GITHUB_REPO" \
+    --clobber
 done
 echo "   Upload complete ✓"
 
