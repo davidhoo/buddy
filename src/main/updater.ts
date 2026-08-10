@@ -15,12 +15,16 @@ export interface DownloadProgress {
   total: number
 }
 
+export type UpdaterPhase = 'check' | 'download' | 'install'
+
 export type UpdaterEvent =
   | { type: 'checking' }
   | { type: 'available'; info: UpdateInfo }
   | { type: 'not-available' }
   | { type: 'progress'; progress: DownloadProgress }
   | { type: 'downloaded'; info: UpdateInfo }
+  | { type: 'installing'; version: string }
+  | { type: 'error'; phase: UpdaterPhase; message: string }
 
 // ELECTRON_UPDATER_ALLOW_HTTP is set in src/main/index.ts before this module is imported.
 
@@ -84,8 +88,9 @@ export function initUpdater(window: BrowserWindow): void {
     })
   })
 
-  autoUpdater.on('error', (_err: Error | null) => {
-    sendToRenderer({ type: 'not-available' })
+  autoUpdater.on('error', (err: Error | null) => {
+    const message = err?.message || String(err) || 'Unknown update error'
+    sendToRenderer({ type: 'error', phase: 'install', message })
   })
 
   // Delay first check to avoid impacting startup
@@ -103,14 +108,29 @@ export function setUpdaterWindow(window: BrowserWindow): void {
   mainWindow = window
 }
 
-export function checkForUpdates(): void {
-  autoUpdater.checkForUpdates().catch(() => {})
+export function checkForUpdates(): Promise<void> {
+  return autoUpdater.checkForUpdates().then(() => {}).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err)
+    sendToRenderer({ type: 'error', phase: 'check', message })
+    throw err
+  })
 }
 
-export function downloadUpdate(): void {
-  autoUpdater.downloadUpdate().catch(() => {})
+export function downloadUpdate(): Promise<void> {
+  return autoUpdater.downloadUpdate().catch((err) => {
+    const message = err instanceof Error ? err.message : String(err)
+    sendToRenderer({ type: 'error', phase: 'download', message })
+    throw err
+  })
 }
 
 export function quitAndInstall(): void {
-  autoUpdater.quitAndInstall()
+  try {
+    const version = autoUpdater.currentVersion?.version || ''
+    sendToRenderer({ type: 'installing', version })
+    autoUpdater.quitAndInstall()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    sendToRenderer({ type: 'error', phase: 'install', message })
+  }
 }

@@ -48,16 +48,28 @@ app.whenReady().then(async () => {
     initUpdater(mainWindow)
   }
 
-  ipcMain.handle('updater:check', () => {
-    checkForUpdates()
+  ipcMain.handle('updater:check', async () => {
+    try {
+      await checkForUpdates()
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
-  ipcMain.handle('updater:download', () => {
-    downloadUpdate()
+  ipcMain.handle('updater:download', async () => {
+    try {
+      await downloadUpdate()
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
-  ipcMain.handle('updater:install', () => {
-    quitAndInstall()
+  ipcMain.handle('updater:install', async () => {
+    try {
+      await quitAndInstall()
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('dialog:selectDirectory', async (_event, defaultPath?: string) => {

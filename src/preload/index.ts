@@ -29,14 +29,14 @@ const api = {
     ipcRenderer.invoke('attachment:saveBuffer', taskId, workspaceKey, name, bufferBase64),
   readFileAsDataURL: (filePath: string, mimeType: string): Promise<string> =>
     ipcRenderer.invoke('attachment:readFileAsDataURL', filePath, mimeType),
-  checkForUpdates: (): void => {
-    ipcRenderer.invoke('updater:check')
+  checkForUpdates: (): Promise<{ error?: string } | void> => {
+    return ipcRenderer.invoke('updater:check')
   },
-  downloadUpdate: (): void => {
-    ipcRenderer.invoke('updater:download')
+  downloadUpdate: (): Promise<{ error?: string } | void> => {
+    return ipcRenderer.invoke('updater:download')
   },
-  installUpdate: (): void => {
-    ipcRenderer.invoke('updater:install')
+  installUpdate: (): Promise<{ error?: string } | void> => {
+    return ipcRenderer.invoke('updater:install')
   },
   onUpdaterEvent: (callback: (event: unknown) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
