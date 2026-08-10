@@ -618,7 +618,13 @@ export default function App() {
         settingsTab={settingsTab}
         updateStatus={updater.status}
         updateVersion={updater.version}
-        onUpdateClick={updater.status === 'downloaded' ? updater.installUpdate : updater.checkForUpdates}
+        onUpdateClick={
+          updater.status === 'downloaded'
+            ? updater.installUpdate
+            : updater.status === 'error'
+              ? updater.retryUpdate
+              : updater.checkForUpdates
+        }
         onSelectTask={handleSelectTask}
         onCreateTask={handleOpenCreateModal}
         onDeleteTask={handleDeleteTask}
@@ -751,7 +757,9 @@ export default function App() {
         progress={updater.progress}
         dismissed={updater.dismissed}
         onInstall={updater.installUpdate}
+        onRetry={updater.retryUpdate}
         onDismiss={updater.dismissNotification}
+        errorMessage={updater.errorMessage}
       />
     </div>
   )

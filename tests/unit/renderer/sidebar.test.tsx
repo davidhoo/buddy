@@ -63,6 +63,10 @@ describe('Sidebar', () => {
       onOpenInFinder: vi.fn(),
       onRemoveProject: vi.fn(),
       projectNames: {},
+      updateStatus: 'idle' as const,
+      updateVersion: '',
+      onUpdateClick: vi.fn(),
+      taskNames: {},
       ...overrides
     }
 
@@ -245,5 +249,47 @@ describe('Sidebar', () => {
       expect(content).toHaveClass('h-full')
       expect(content).toHaveClass('items-center')
     }
+  })
+  it('shows installing label when updateStatus is installing', () => {
+    renderSidebar([], {
+      updateStatus: 'installing',
+      updateVersion: '1.2.13',
+      onUpdateClick: vi.fn()
+    })
+    expect(screen.getByText('Installing…')).toBeTruthy()
+  })
+
+  it('disables update button when installing', () => {
+    const onUpdateClick = vi.fn()
+    renderSidebar([], {
+      updateStatus: 'installing',
+      updateVersion: '1.2.13',
+      onUpdateClick
+    })
+    const btn = screen.getByText('Installing…').closest('button')
+    expect(btn).toHaveAttribute('disabled')
+    fireEvent.click(btn!)
+    expect(onUpdateClick).not.toHaveBeenCalled()
+  })
+
+  it('shows failed label when updateStatus is error', () => {
+    const onUpdateClick = vi.fn()
+    renderSidebar([], {
+      updateStatus: 'error',
+      updateVersion: '1.2.13',
+      onUpdateClick
+    })
+    expect(screen.getByText('Update failed')).toBeTruthy()
+  })
+
+  it('clicking failed button calls onUpdateClick (retry)', () => {
+    const onUpdateClick = vi.fn()
+    renderSidebar([], {
+      updateStatus: 'error',
+      updateVersion: '1.2.13',
+      onUpdateClick
+    })
+    fireEvent.click(screen.getByText('Update failed'))
+    expect(onUpdateClick).toHaveBeenCalledTimes(1)
   })
 })

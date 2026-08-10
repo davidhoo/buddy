@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import {
+  AlertCircle,
   ChevronLeft,
   Ellipsis,
   Folder,
@@ -365,26 +366,36 @@ function ChatSidebar({
             <img src={logo} alt="Buddy" className="w-7 h-7 shrink-0" draggable={false} />
             {t('app.brand')}
           </div>
-          {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded') && (
+          {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded' || updateStatus === 'installing' || updateStatus === 'error') && (
             <button
               onClick={onUpdateClick}
+              disabled={updateStatus === 'downloading' || updateStatus === 'installing'}
               className={`px-2 py-0.5 text-[10px] font-medium rounded-full flex items-center gap-1 ${
-                updateStatus === 'downloading'
+                updateStatus === 'downloading' || updateStatus === 'installing'
                   ? 'bg-accent-soft text-fg-secondary cursor-default'
                   : updateStatus === 'downloaded'
                     ? 'bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover'
-                    : 'bg-accent-soft text-accent-primary hover:bg-accent-soft-hover'
+                    : updateStatus === 'error'
+                      ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                      : 'bg-accent-soft text-accent-primary hover:bg-accent-soft-hover'
               }`}
-              disabled={updateStatus === 'downloading'}
             >
               {updateStatus === 'downloaded'
                 ? <RotateCw size={10} strokeWidth={2.5} />
-                : <Upload size={10} strokeWidth={2.5} />}
+                : updateStatus === 'installing'
+                  ? <RotateCw size={10} strokeWidth={2.5} className="animate-spin" />
+                  : updateStatus === 'error'
+                    ? <AlertCircle size={10} strokeWidth={2.5} />
+                    : <Upload size={10} strokeWidth={2.5} />}
               {updateStatus === 'downloading'
                 ? t('updater.sidebarDownloading')
-                : updateStatus === 'downloaded'
-                  ? t('updater.sidebarReady', { version: updateVersion })
-                  : t('updater.sidebarUpdate', { version: updateVersion })}
+                : updateStatus === 'installing'
+                  ? t('updater.sidebarInstalling')
+                  : updateStatus === 'error'
+                    ? t('updater.sidebarFailed')
+                    : updateStatus === 'downloaded'
+                      ? t('updater.sidebarReady', { version: updateVersion })
+                      : t('updater.sidebarUpdate', { version: updateVersion })}
             </button>
           )}
         </div>

@@ -109,7 +109,7 @@ export function setUpdaterWindow(window: BrowserWindow): void {
 }
 
 export function checkForUpdates(): Promise<void> {
-  return autoUpdater.checkForUpdates().then(() => {}).catch((err) => {
+  return autoUpdater.checkForUpdates().then(() => undefined).catch((err) => {
     const message = err instanceof Error ? err.message : String(err)
     sendToRenderer({ type: 'error', phase: 'check', message })
     throw err
@@ -117,7 +117,7 @@ export function checkForUpdates(): Promise<void> {
 }
 
 export function downloadUpdate(): Promise<void> {
-  return autoUpdater.downloadUpdate().catch((err) => {
+  return autoUpdater.downloadUpdate().then(() => undefined).catch((err) => {
     const message = err instanceof Error ? err.message : String(err)
     sendToRenderer({ type: 'error', phase: 'download', message })
     throw err
