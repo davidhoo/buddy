@@ -73,8 +73,8 @@ export const api = {
     buddy().gitCheckout(repoRoot, branch),
   gitCreateBranch: (repoRoot: string, branch: string) =>
     buddy().gitCreateBranch(repoRoot, branch),
-  generateCommitMessage: (repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]) =>
-    buddy().generateCommitMessage(repoRoot, actorCommand, lang, paths),
+  generateCommitMessage: (input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: import('../../shared/types').TaskSettings | null }) =>
+    buddy().generateCommitMessage(input),
   cancelGenerateCommitMessage: () =>
     buddy().cancelGenerateCommitMessage(),
   testLauncher: (actor: string, command: string, env?: Record<string, string>) =>

@@ -20,7 +20,7 @@ vi.mock('../../../src/renderer/hooks/useBuddy', () => ({
 
 vi.mock('../../../src/renderer/lib/api', () => ({
   api: {
-    generateCommitMessage: vi.fn(),
+    generateCommitMessage: vi.fn().mockResolvedValue({ message: '' }),
     cancelGenerateCommitMessage: vi.fn(),
     gitStageFiles: vi.fn(),
   },
@@ -38,6 +38,7 @@ vi.mock('../../../src/renderer/components/BranchModal', () => ({
 }))
 
 import { CommitModal } from '../../../src/renderer/components/FileStatus'
+import { api } from '../../../src/renderer/lib/api'
 
 function makeGitStatus(): GitStatusResult {
   return {
@@ -62,6 +63,7 @@ function renderModal(overrides: Record<string, unknown> = {}) {
     gitStatus: makeGitStatus(),
     repoRoot: '/tmp/repo',
     globalSettings: makeSettings(false),
+    taskSettings: null,
     isTaskRunning: false,
     onClose,
     onSuccess: vi.fn(),
@@ -138,5 +140,144 @@ describe('CommitModal close behavior', () => {
     fireEvent.click(overlay)
     expect(onClose).not.toHaveBeenCalled()
     expect(textarea.value).toBe('my commit message')
+  })
+})
+
+describe('CommitModal actor selection', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('defaults to task implementer when no stored actor', () => {
+    const { props } = renderModal({ taskSettings: { implementer_actor: 'codex' } })
+    const select = screen.getByDisplayValue('Codex') as HTMLSelectElement
+    expect(select.value).toBe('codex')
+  })
+
+  it('uses stored actor from localStorage when valid', () => {
+    localStorage.setItem('buddy.lastCommitMessageActor', 'cursor')
+    renderModal({ taskSettings: { implementer_actor: 'codex' } })
+    const select = screen.getByDisplayValue('Cursor') as HTMLSelectElement
+    expect(select.value).toBe('cursor')
+  })
+
+  it('falls back to task implementer when stored actor is invalid', () => {
+    localStorage.setItem('buddy.lastCommitMessageActor', 'invalid_actor')
+    renderModal({ taskSettings: { implementer_actor: 'kimi' } })
+    const select = screen.getByDisplayValue('Kimi') as HTMLSelectElement
+    expect(select.value).toBe('kimi')
+  })
+
+  it('falls back to claude when both stored and implementer are invalid', () => {
+    localStorage.setItem('buddy.lastCommitMessageActor', 'invalid')
+    renderModal({ taskSettings: null })
+    const select = screen.getByDisplayValue('Claude') as HTMLSelectElement
+    expect(select.value).toBe('claude')
+  })
+
+  it('generates commit message with correct actor', async () => {
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    mockGenerate.mockResolvedValue({ message: 'feat: test message' })
+
+    renderModal({ taskSettings: { implementer_actor: 'codex' } })
+
+    // Find and click the generate button
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    await vi.waitFor(() => {
+      expect(mockGenerate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: 'codex',
+          repoRoot: '/tmp/repo',
+          lang: 'zh-CN',
+          paths: expect.any(Array),
+          taskSettings: expect.objectContaining({ implementer_actor: 'codex' })
+        })
+      )
+    })
+  })
+
+  it('cancels old generation when switching actor', () => {
+    const mockCancel = vi.mocked(api.cancelGenerateCommitMessage)
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    mockGenerate.mockReturnValue(new Promise(() => {})) // never resolves
+
+    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+
+    // Start generation
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    // Switch actor while generating
+    const select = screen.getByDisplayValue('Codex') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'claude' } })
+
+    expect(mockCancel).toHaveBeenCalled()
+  })
+
+  it('cancels generation on close via Escape', () => {
+    const mockCancel = vi.mocked(api.cancelGenerateCommitMessage)
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    mockGenerate.mockReturnValue(new Promise(() => {}))
+
+    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(mockCancel).toHaveBeenCalled()
+  })
+
+  it('displays multi-line commit message in textarea', async () => {
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    const multiLineMessage = 'docs: 新增安装渠道\n\n- README 新增小节\n  提供安装命令\n\n对应 Tap 仓库。'
+    mockGenerate.mockResolvedValue({ message: multiLineMessage })
+
+    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    await vi.waitFor(() => {
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+      expect(textarea.value).toContain('docs: 新增安装渠道')
+      expect(textarea.value).toContain('- README 新增小节')
+      expect(textarea.value).toContain('  提供安装命令')
+      expect(textarea.value).toContain('对应 Tap 仓库。')
+    })
+  })
+
+  it('preserves bullets, blank lines, and indentation in textarea', async () => {
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    const message = 'feat: test\n\n- item 1\n  continued\n- item 2\n\nparagraph'
+    mockGenerate.mockResolvedValue({ message })
+
+    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    await vi.waitFor(() => {
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+      expect(textarea.value).toBe(message)
+    })
   })
 })

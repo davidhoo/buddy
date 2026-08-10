@@ -2,18 +2,10 @@ import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
+import { gitDiffForSelectedFiles } from './commit-message'
 import type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
 
 export type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
-
-// 进行中的提交信息生成进程(提交弹窗同一时间只有一个,单实例即可)
-let activeGenerateChild: ReturnType<typeof spawn> | null = null
-
-/** 中断正在进行的提交信息生成;没有进行中的生成时为空操作 */
-export function cancelGenerateCommitMessage(): void {
-  activeGenerateChild?.kill('SIGTERM')
-  activeGenerateChild = null
-}
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -317,112 +309,14 @@ function assertValidBranchName(branch: string): void {
 }
 
 export async function gitDiffForCommitMessage(cwd: string, paths?: string[]): Promise<string> {
-  // paths 为 undefined 表示全部变更;空数组表示没有选择任何文件
   if (paths && paths.length === 0) return ''
-  const pathspec = paths ? ['--', ...paths] : []
-  try {
-    const [unstaged, staged, statusShort] = await Promise.all([
-      execGit(['diff', '--stat', ...pathspec], cwd).catch(() => ''),
-      execGit(['diff', '--cached', '--stat', ...pathspec], cwd).catch(() => ''),
-      execGit(['status', '--short', ...pathspec], cwd).catch(() => '')
-    ])
-    if (!unstaged.trim() && !staged.trim() && !statusShort.trim()) return ''
-    return [
-      '## git status --short',
-      statusShort || '(clean)',
-      '',
-      '## unstaged diff stat',
-      unstaged || '(none)',
-      '',
-      '## staged diff stat',
-      staged || '(none)'
-    ].join('\n')
-  } catch {
-    return ''
+  let selectedPaths: string[]
+  if (paths && paths.length > 0) {
+    selectedPaths = paths
+  } else {
+    const statuses = await getGitFileStatuses(cwd)
+    selectedPaths = statuses.map(f => f.path)
   }
-}
-
-export async function generateCommitMessage(cwd: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
-  const diffSummary = await gitDiffForCommitMessage(cwd, paths)
-  if (!diffSummary.trim()) return ''
-
-  const command = actorCommand?.trim() || 'claude'
-  const langInstruction = lang && lang !== 'en'
-    ? `Write the commit message in ${lang === 'zh-CN' ? 'Simplified Chinese' : lang === 'zh-TW' ? 'Traditional Chinese' : 'English'}.`
-    : ''
-  const prompt = `Generate a git commit message for the following changes. Rules:
-- Use the conventional commits format: type(scope): description
-- First line is a concise summary (imperative mood, under 72 chars)
-- If the changes are non-trivial, add a blank line then a bullet-point body explaining what and why
-- Be specific: mention file names, function names, or key concepts that changed
-- Do not add Co-Authored-By or other metadata
-- Output only the commit message itself — no explanations, no markdown fences, no tool use
-${langInstruction}
-
-${diffSummary}`
-
-  return new Promise((resolve) => {
-    let child: ReturnType<typeof spawn>
-    try {
-      // --tools "": disable the agent tool loop so the model answers directly;
-      // --no-session-persistence: don't write session files for one-shot runs.
-      // Together they keep generation at ~5-10s instead of minutes.
-      // NOTE: --bare is deliberately NOT used — it skips keychain reads, which
-      // would break users who authenticated claude via OAuth (no API key env).
-      child = spawn(command, ['-p', '--tools', '', '--no-session-persistence', '--output-format', 'text', '--input-format', 'text'], {
-        cwd,
-        env: { ...process.env },
-        stdio: ['pipe', 'pipe', 'pipe']
-      })
-    } catch {
-      resolve('')
-      return
-    }
-
-    activeGenerateChild = child
-    const clearActive = () => {
-      if (activeGenerateChild === child) activeGenerateChild = null
-    }
-
-    const chunks: Buffer[] = []
-    const errChunks: Buffer[] = []
-    child.stdout!.on('data', (c: Buffer) => chunks.push(c))
-    child.stderr!.on('data', (c: Buffer) => errChunks.push(c))
-    child.stdin!.end(prompt)
-
-    const GENERATE_COMMIT_TIMEOUT_MS = 120_000
-    let timedOut = false
-    const timeout = setTimeout(() => {
-      timedOut = true
-      child.kill('SIGTERM')
-      resolve('')
-    }, GENERATE_COMMIT_TIMEOUT_MS)
-
-    once(child, 'exit').then(() => {
-      clearTimeout(timeout)
-      clearActive()
-      if (timedOut) return
-      const raw = Buffer.concat(chunks).toString('utf8').trim()
-      const match = raw.match(/```\w*\n?([\s\S]*?)\n?```$/)
-      let text = (match ? match[1] : raw).trim()
-      // 部分后端(经中继的弱模型)即使禁用工具也会先输出解释性前言,
-      // 从首个 conventional commit 行开始截取,丢弃前言
-      const lines = text.split('\n')
-      const start = lines.findIndex((l) =>
-        /^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([^)]*\))?!?:\s/.test(l)
-      )
-      if (start > 0) text = lines.slice(start).join('\n').trim()
-      resolve(text || '')
-    }).catch(() => {
-      clearTimeout(timeout)
-      clearActive()
-      resolve('')
-    })
-
-    child.on('error', () => {
-      clearTimeout(timeout)
-      clearActive()
-      resolve('')
-    })
-  })
+  const result = await gitDiffForSelectedFiles(cwd, selectedPaths)
+  return result.diff
 }

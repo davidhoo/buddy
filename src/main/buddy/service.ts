@@ -25,14 +25,18 @@ import {
   gitStageFiles,
   gitCommitAndPush,
   gitDiffForCommitMessage,
-  generateCommitMessage,
-  cancelGenerateCommitMessage,
   gitFileDiff,
   gitBranches,
   gitCheckout,
   gitCreateBranch
 } from './git'
-import type { GitStatusResult } from '../../shared/types'
+import type { GitStatusResult, TaskSettings } from '../../shared/types'
+import {
+  generateCommitMessageWithActor,
+  cancelGenerateCommitMessage as cancelCommitMessage,
+  resolveLauncher,
+  isSupportedActor
+} from './commit-message' 
 import { BuddyRunner } from './runner'
 import { BuddyStore } from './store'
 import { QueueCoordinator } from './queue-coordinator'
@@ -232,12 +236,28 @@ export class BuddyCoreService {
     return gitCreateBranch(repoRoot, branch)
   }
 
-  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string> {
-    return generateCommitMessage(repoRoot, actorCommand, lang, paths)
+  async generateCommitMessage(input: {
+    repoRoot: string
+    actor: string
+    lang?: string
+    paths: string[]
+    taskSettings?: TaskSettings | null
+  }): Promise<{ message: string }> {
+    const actor = isSupportedActor(input.actor) ? input.actor : 'claude'
+    const globalSettings = await this.store.readGlobalSettings()
+    const launcher = resolveLauncher(actor, input.taskSettings, globalSettings)
+    const result = await generateCommitMessageWithActor({
+      repoRoot: input.repoRoot,
+      actor,
+      lang: input.lang,
+      paths: input.paths,
+      launcher
+    })
+    return { message: result.message }
   }
 
   cancelGenerateCommitMessage(): void {
-    cancelGenerateCommitMessage()
+    cancelCommitMessage()
   }
 
   async recoverInterruptedRuns(): Promise<void> {

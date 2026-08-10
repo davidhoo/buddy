@@ -40,7 +40,7 @@ export interface BuddyHandlerService {
   gitBranches(repoRoot: string): Promise<string[]>
   gitCheckout(repoRoot: string, branch: string): Promise<void>
   gitCreateBranch(repoRoot: string, branch: string): Promise<void>
-  generateCommitMessage(repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]): Promise<string>
+  generateCommitMessage(input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: unknown }): Promise<{ message: string }>
   cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
   detectActorModels(): Promise<Record<string, string | undefined>>
@@ -128,8 +128,8 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:gitCreateBranch', (_event, repoRoot: string, branch: string) =>
     service.gitCreateBranch(repoRoot, branch)
   )
-  ipcMain.handle('buddy:generateCommitMessage', (_event, repoRoot: string, actorCommand?: string, lang?: string, paths?: string[]) =>
-    service.generateCommitMessage(repoRoot, actorCommand, lang, paths)
+  ipcMain.handle('buddy:generateCommitMessage', (_event, input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: unknown }) =>
+    service.generateCommitMessage(input as { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: import('../../shared/types').TaskSettings | null })
   )
   ipcMain.handle('buddy:cancelGenerateCommitMessage', () =>
     service.cancelGenerateCommitMessage()

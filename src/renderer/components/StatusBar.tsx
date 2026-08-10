@@ -210,6 +210,7 @@ export function StatusBar({
           gitStatus={gitStatus}
           repoRoot={repoRoot}
           globalSettings={globalSettings}
+          taskSettings={taskSettings}
           isTaskRunning={isTaskRunning}
           onClose={() => {
             setShowCommitModal(false)

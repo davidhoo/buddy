@@ -234,4 +234,48 @@ describe('launcher command builder', () => {
       kind: 'contract'
     })
   })
+
+  it('does not include resume/session flags when no sessionId is provided (commit message generation)', () => {
+    // Verify all five actors: no session ID means no resume flag
+    const actors = [
+      { actor: 'claude', command: 'claude' },
+      { actor: 'codex', command: 'codex' },
+      { actor: 'cursor', command: 'cursor-agent' },
+      { actor: 'opencode', command: 'opencode' },
+      { actor: 'kimi', command: 'kimi' }
+    ]
+
+    for (const { actor, command } of actors) {
+      const cmd = buildLauncherCommand({
+        actor,
+        command,
+        promptFile: '/tmp/prompt.md',
+        promptText: 'test',
+        repoRoot: '/tmp/repo',
+        outputFile: '/tmp/output.md'
+      })
+      // No args should contain resume or session flags
+      const argsStr = cmd.args.join(' ')
+      expect(argsStr).not.toContain('--resume')
+      expect(argsStr).not.toContain('--session')
+      expect(argsStr).not.toContain('resume ')
+      expect(argsStr).not.toContain(' -S ')
+      // Claude should not have --resume when no sessionId
+      if (actor === 'claude') {
+        expect(argsStr).not.toContain('--resume')
+      }
+      // Codex should not have 'resume' when no sessionId
+      if (actor === 'codex') {
+        expect(argsStr).not.toContain('resume')
+      }
+      // OpenCode should not have --session when no sessionId
+      if (actor === 'opencode') {
+        expect(argsStr).not.toContain('--session')
+      }
+      // Kimi should not have -S when no sessionId
+      if (actor === 'kimi') {
+        expect(argsStr).not.toContain('-S')
+      }
+    }
+  })
 })

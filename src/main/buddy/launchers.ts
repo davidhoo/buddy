@@ -72,6 +72,7 @@ export async function runLauncherWithPty(input: {
   env?: Record<string, string>
   timeoutMs: number
   onData(data: string): void
+  signal?: AbortSignal
 }): Promise<PtyRunResult> {
   // Lazy-load node-pty so it's only required when actually needed
   let pty: typeof import('node-pty')
@@ -97,6 +98,13 @@ export async function runLauncherWithPty(input: {
 
   let exited = false
 
+  // AbortSignal: kill the child when the signal aborts
+  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  if (input.signal) {
+    if (input.signal.aborted) onAbort()
+    else input.signal.addEventListener('abort', onAbort, { once: true })
+  }
+
   child.onData((data: string) => {
     // Strip ANSI escape codes and carriage returns before forwarding
     const cleaned = data.replace(ANSI_PATTERN, '').replace(/\r\n/g, '\n').replace(/\r/g, '')
@@ -121,6 +129,8 @@ export async function runLauncherWithPty(input: {
   })
 
   const result = await Promise.race([exitPromise, timeoutPromise])
+
+  if (input.signal) input.signal.removeEventListener('abort', onAbort)
 
   return {
     exitCode: result.exitCode,
@@ -308,6 +318,7 @@ export async function runLauncher(input: {
   timeoutMs: number
   onStdout(line: string): void
   onStderr(line: string): void
+  signal?: AbortSignal
 }): Promise<{ exitCode: number | null; signal: string | null }> {
   const [command, ...prefixArgs] = splitCommand(input.command)
   let child: ReturnType<typeof spawn>
@@ -321,6 +332,13 @@ export async function runLauncher(input: {
     throw commandNotFoundError(command, error)
   }
 
+  // AbortSignal: kill the child when the signal aborts
+  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  if (input.signal) {
+    if (input.signal.aborted) onAbort()
+    else input.signal.addEventListener('abort', onAbort, { once: true })
+  }
+
   const spawnError = await new Promise<Error | null>((resolve) => {
     child.on('error', (err) => {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -332,7 +350,10 @@ export async function runLauncher(input: {
     child.on('spawn', () => resolve(null))
   })
 
-  if (spawnError) throw spawnError
+  if (spawnError) {
+    if (input.signal) input.signal.removeEventListener('abort', onAbort)
+    throw spawnError
+  }
 
   child.stdout!.setEncoding('utf8')
   child.stderr!.setEncoding('utf8')
@@ -358,9 +379,13 @@ export async function runLauncher(input: {
   }
 
   const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
-  const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
-  clearTimeout(timeout)
-  return { exitCode, signal }
+  try {
+    const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
+    return { exitCode, signal }
+  } finally {
+    clearTimeout(timeout)
+    if (input.signal) input.signal.removeEventListener('abort', onAbort)
+  }
 }
 
 function commandNotFoundError(command: string, cause: unknown): Error {

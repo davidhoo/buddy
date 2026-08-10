@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
-import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings } from '../../shared/types'
+import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings, TaskSettings } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
 import { useLanguage } from '../hooks/useI18n'
@@ -192,6 +192,7 @@ interface CommitModalProps {
   gitStatus: GitStatusResult | null
   repoRoot: string
   globalSettings: GlobalSettings | null
+  taskSettings?: TaskSettings | null
   /** 任务执行中时禁用弹窗内的提交按钮(弹窗可能在倒计时期间打开,随后任务进入 RUNNING) */
   isTaskRunning?: boolean
   onClose: () => void
@@ -199,7 +200,7 @@ interface CommitModalProps {
   onError: (message: string) => void
 }
 
-export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning, onClose, onSuccess, onError }: CommitModalProps) {
+export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings, isTaskRunning, onClose, onSuccess, onError }: CommitModalProps) {
   const t = useT()
   const lang = useLanguage()
   const queryClient = useQueryClient()
@@ -228,16 +229,44 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
   const stageAll = useGitStageAll()
   const commitAndPush = useGitCommitAndPush()
 
+  // Actor selection for commit message generation
+  const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
+  const resolveDefaultActor = (): string => {
+    try {
+      const stored = localStorage.getItem('buddy.lastCommitMessageActor')
+      if (stored && SUPPORTED_ACTORS.includes(stored as typeof SUPPORTED_ACTORS[number])) return stored
+    } catch { /* localStorage not available */ }
+    const impl = taskSettings?.implementer_actor
+    if (impl && SUPPORTED_ACTORS.includes(impl as typeof SUPPORTED_ACTORS[number])) return impl
+    return 'claude'
+  }
+  const [selectedActor, setSelectedActor] = useState<string>(resolveDefaultActor)
+
+  const handleActorChange = useCallback((actor: string) => {
+    setSelectedActor(actor)
+    try { localStorage.setItem('buddy.lastCommitMessageActor', actor) } catch { /* ignore */ }
+    // Cancel any in-progress generation when switching actor
+    if (isGenerating) {
+      generateSeq.current++
+      api.cancelGenerateCommitMessage()
+      setIsGenerating(false)
+    }
+  }, [isGenerating])
+
   // Handle Escape at document level so it works regardless of focus position
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        api.cancelGenerateCommitMessage()
         onClose()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      api.cancelGenerateCommitMessage()
+    }
   }, [onClose])
 
   const selectedFiles = allFiles.filter((f) => selectedPaths.has(f.path))
@@ -259,7 +288,6 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
 
   const handleGenerate = useCallback(async (paths: string[]) => {
     if (!paths.length) {
-      // 没有选择任何文件时不生成
       setMessage('')
       setIsGenerating(false)
       return
@@ -268,10 +296,16 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
     setIsGenerating(true)
     setGenerateFailed(false)
     try {
-      const result = await api.generateCommitMessage(repoRoot, undefined, lang, paths)
-      if (seq !== generateSeq.current) return // 已被打断,丢弃结果
-      if (result) {
-        setMessage(result)
+      const result = await api.generateCommitMessage({
+        repoRoot,
+        actor: selectedActor,
+        lang,
+        paths,
+        taskSettings
+      })
+      if (seq !== generateSeq.current) return // stale result, discard
+      if (result?.message) {
+        setMessage(result.message)
       } else {
         setGenerateFailed(true)
       }
@@ -281,7 +315,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
     } finally {
       if (seq === generateSeq.current) setIsGenerating(false)
     }
-  }, [repoRoot, lang])
+  }, [repoRoot, lang, selectedActor, taskSettings])
 
   // 打断正在进行的生成,恢复为可点击的“生成”按钮
   const handleCancelGenerate = useCallback(() => {
@@ -511,19 +545,34 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, isTaskRunning
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-fg-secondary">{t('git.commitMessage')}</label>
-              <button
-                onClick={isGenerating ? handleCancelGenerate : () => void handleGenerate([...selectedPaths])}
-                disabled={isStaging || isCommitting || selectedPaths.size === 0}
-                title={isGenerating ? t('git.cancelGenerate') : undefined}
-                className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50"
-              >
-                {isGenerating ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Sparkles size={12} />
-                )}
-                {isGenerating ? t('git.generatingButton') : t('git.generateMessage')}
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedActor}
+                  onChange={(e) => handleActorChange(e.target.value)}
+                  disabled={false}
+                  title={t('git.commitMessageActor')}
+                  className="appearance-none px-2 py-0.5 text-xs border border-border rounded focus:outline-none focus:border-accent bg-bg"
+                >
+                  <option value="claude">Claude</option>
+                  <option value="codex">Codex</option>
+                  <option value="cursor">Cursor</option>
+                  <option value="opencode">OpenCode</option>
+                  <option value="kimi">Kimi</option>
+                </select>
+                <button
+                  onClick={isGenerating ? handleCancelGenerate : () => void handleGenerate([...selectedPaths])}
+                  disabled={isStaging || isCommitting || selectedPaths.size === 0}
+                  title={isGenerating ? t('git.cancelGenerate') : undefined}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50"
+                >
+                  {isGenerating ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={12} />
+                  )}
+                  {isGenerating ? t('git.generatingButton') : t('git.generateMessage')}
+                </button>
+              </div>
             </div>
             <textarea
               ref={textareaRef}
