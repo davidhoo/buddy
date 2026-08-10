@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.10] - 2026-08-10
+
+### Fixed
+- 提交并推送弹窗禁止点击遮罩层关闭：避免误触丢失已编辑的提交信息
+- 复制会话 ID 成功后切换为对号图标：按 actor 独立维护复制状态，任务切换或会话变更时自动重置
+
+---
+
 ## [1.2.9] - 2026-08-04
 
 ### Fixed
