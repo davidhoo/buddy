@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.13] - 2026-08-11
+
+### Changed
+- 自动更新验收版本：使用与 v1.2.12 完全相同的 Apple Development 签名身份构建
+- 用于验证 v1.2.12 到 v1.2.13 同签名链自动更新闭环
+
+### Important
+- 不覆盖 v1.2.11 和 v1.2.12 的 GitHub Release、tag 和资产
+- 证书、Team ID（XLDSS978CT）、bundle ID（com.buddy.app）、productName 保持不变
+
+---
+
 ## [1.2.12] - 2026-08-11
 
 ### Changed
