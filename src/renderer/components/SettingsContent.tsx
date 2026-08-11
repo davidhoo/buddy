@@ -28,6 +28,7 @@ import {
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
+import { Switch } from './Switch'
 
 export type SettingsTab = 'general' | 'appearance' | 'keyboard' | 'prompts'
 
@@ -360,6 +361,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               <Switch
                 checked={normalizedSettings.auto_generate_commit_message ?? true}
                 onChange={(v) => save({ auto_generate_commit_message: v })}
+                ariaLabel={t('settings.collab.autoGenerateCommit.title')}
               />
             }
           />
@@ -370,6 +372,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               <Switch
                 checked={normalizedSettings.system_notifications_enabled ?? true}
                 onChange={(v) => save({ system_notifications_enabled: v })}
+                ariaLabel={t('settings.collab.systemNotifications.title')}
               />
             }
           />
@@ -1176,22 +1179,6 @@ function SettingsRow({ title, description, right }: {
       </div>
       <div className="flex-shrink-0">{right}</div>
     </div>
-  )
-}
-
-function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${checked ? 'bg-accent-primary' : 'bg-border'}`}
-    >
-      <span
-        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
-      />
-    </button>
   )
 }
 
