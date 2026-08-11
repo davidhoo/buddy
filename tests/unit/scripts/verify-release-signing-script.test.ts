@@ -70,4 +70,24 @@ exit 0
     expect(result.status).not.toBe(0)
     expect(output).toContain(`Authority is not ${expectedAuthority}`)
   })
+
+  it('can skip local build-output Apps when validating downloaded release assets', async () => {
+    const artifactDir = await mkdtemp(join(tmpdir(), 'buddy-signing-packaged-'))
+    tempDirs.push(artifactDir)
+
+    const result = spawnSync('bash', [script, '9.9.9', artifactDir], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CSC_NAME: 'Apple Development: Test User (TEAM)',
+        VERIFY_BUILD_OUTPUTS: 'false'
+      }
+    })
+    const output = `${result.stdout}\n${result.stderr}`
+
+    expect(result.status).not.toBe(0)
+    expect(output).not.toContain('mac-arm64/Buddy.app')
+    expect(output).toContain('Buddy-9.9.9-arm64-mac.zip')
+  })
 })

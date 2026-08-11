@@ -25,6 +25,7 @@ ARTIFACT_DIR="$(cd "$ARTIFACT_DIR" && pwd)"
 EXPECTED_AUTHORITY="${CSC_NAME:?Set CSC_NAME to the Apple Development signing identity}"
 EXPECTED_TEAM_ID="XLDSS978CT"
 EXPECTED_BUNDLE_ID="com.buddy.app"
+VERIFY_BUILD_OUTPUTS="${VERIFY_BUILD_OUTPUTS:-true}"
 FAIL=0
 
 # --- helpers ---
@@ -214,13 +215,17 @@ verify_latest_mac_yml() {
 echo "=== Release Signing Verification (v${VERSION}) ==="
 echo ""
 
-# 1. Verify build-output Apps
-echo ">> Step 1: Verify build-output App bundles..."
-verify_app_signature "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
-verify_app_signature "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
-verify_app_version "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
-verify_app_version "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
-echo ""
+# 1. Verify build-output Apps when validating a local build directory.
+if [ "$VERIFY_BUILD_OUTPUTS" = "true" ]; then
+  echo ">> Step 1: Verify build-output App bundles..."
+  verify_app_signature "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
+  verify_app_signature "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
+  verify_app_version "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
+  verify_app_version "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
+  echo ""
+elif [ "$VERIFY_BUILD_OUTPUTS" != "false" ]; then
+  err "VERIFY_BUILD_OUTPUTS must be true or false"
+fi
 
 # 2. Verify ZIP contents
 echo ">> Step 2: Verify ZIP contents..."
