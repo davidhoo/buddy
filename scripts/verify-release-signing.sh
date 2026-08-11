@@ -4,7 +4,7 @@ set -euo pipefail
 # =============================================================================
 # verify-release-signing.sh — Verify final release artifacts are properly signed
 #
-# Usage: scripts/verify-release-signing.sh <version>
+# Usage: scripts/verify-release-signing.sh <version> [artifact-directory]
 #
 # Checks:
 #   1. release/mac/ and release/mac-arm64/ App bundles exist
@@ -16,10 +16,13 @@ set -euo pipefail
 #   7. latest-mac.yml: both ZIPs listed, filename/size/sha512 match
 # =============================================================================
 
-VERSION="${1:?Usage: verify-release-signing.sh <version>}"
+VERSION="${1:?Usage: verify-release-signing.sh <version> [artifact-directory]}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
+ARTIFACT_DIR="${2:-release}"
+ARTIFACT_DIR="$(cd "$ARTIFACT_DIR" && pwd)"
 
+EXPECTED_AUTHORITY="${CSC_NAME:?Set CSC_NAME to the Apple Development signing identity}"
 EXPECTED_TEAM_ID="XLDSS978CT"
 EXPECTED_BUNDLE_ID="com.buddy.app"
 FAIL=0
@@ -51,9 +54,9 @@ verify_app_signature() {
     return 1
   fi
 
-  # Authority must include Apple Development
-  if ! echo "$sig_output" | grep -q 'Authority=Apple Development'; then
-    err "${label}: Authority is not Apple Development"
+  # Authority must be the exact identity selected for this release.
+  if ! printf '%s\n' "$sig_output" | grep -Fq "Authority=${EXPECTED_AUTHORITY}"; then
+    err "${label}: Authority is not ${EXPECTED_AUTHORITY}"
     return 1
   fi
 
@@ -69,7 +72,7 @@ verify_app_signature() {
     return 1
   fi
 
-  echo "  [${label}] ✓ Signature valid (Apple Development, ${EXPECTED_TEAM_ID})"
+  echo "  [${label}] ✓ Signature valid (${EXPECTED_AUTHORITY}, ${EXPECTED_TEAM_ID})"
 }
 
 verify_app_version() {
@@ -150,7 +153,7 @@ verify_dmg() {
 }
 
 verify_latest_mac_yml() {
-  local yml_path="release/latest-mac.yml"
+  local yml_path="${ARTIFACT_DIR}/latest-mac.yml"
   echo "  Verifying ${yml_path}..."
 
   [ -f "$yml_path" ] || { err "latest-mac.yml not found"; return 1; }
@@ -168,7 +171,7 @@ verify_latest_mac_yml() {
 
   # Verify sha512 and size for each ZIP
   for zip_name in "$arm64_zip" "$x64_zip"; do
-    local zip_path="release/${zip_name}"
+    local zip_path="${ARTIFACT_DIR}/${zip_name}"
     [ -f "$zip_path" ] || { err "File not found: ${zip_path}"; continue; }
 
     local actual_sha512 actual_size
@@ -213,22 +216,22 @@ echo ""
 
 # 1. Verify build-output Apps
 echo ">> Step 1: Verify build-output App bundles..."
-verify_app_signature "release/mac-arm64/Buddy.app" "ARM64-build" || true
-verify_app_signature "release/mac/Buddy.app" "x64-build" || true
-verify_app_version "release/mac-arm64/Buddy.app" "ARM64-build" || true
-verify_app_version "release/mac/Buddy.app" "x64-build" || true
+verify_app_signature "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
+verify_app_signature "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
+verify_app_version "${ARTIFACT_DIR}/mac-arm64/Buddy.app" "ARM64-build" || true
+verify_app_version "${ARTIFACT_DIR}/mac/Buddy.app" "x64-build" || true
 echo ""
 
 # 2. Verify ZIP contents
 echo ">> Step 2: Verify ZIP contents..."
-verify_zip_contents "release/Buddy-${VERSION}-arm64-mac.zip" "ARM64-zip" || true
-verify_zip_contents "release/Buddy-${VERSION}-mac.zip" "x64-zip" || true
+verify_zip_contents "${ARTIFACT_DIR}/Buddy-${VERSION}-arm64-mac.zip" "ARM64-zip" || true
+verify_zip_contents "${ARTIFACT_DIR}/Buddy-${VERSION}-mac.zip" "x64-zip" || true
 echo ""
 
 # 3. Verify DMGs
 echo ">> Step 3: Verify DMGs..."
-verify_dmg "release/Buddy-${VERSION}-arm64.dmg" "ARM64-dmg" || true
-verify_dmg "release/Buddy-${VERSION}.dmg" "x64-dmg" || true
+verify_dmg "${ARTIFACT_DIR}/Buddy-${VERSION}-arm64.dmg" "ARM64-dmg" || true
+verify_dmg "${ARTIFACT_DIR}/Buddy-${VERSION}.dmg" "x64-dmg" || true
 echo ""
 
 # 4. Verify latest-mac.yml
