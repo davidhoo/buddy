@@ -14,6 +14,7 @@ import { Sidebar } from './components/Sidebar'
 import { ChatArea } from './components/ChatArea'
 import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
+import { Switch } from './components/Switch'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useUpdater } from './hooks/useUpdater'
 import { ACTOR_LABEL_KEY, Actor } from './lib/format'
@@ -778,7 +779,7 @@ export default function App() {
   )
 }
 
-function CreateTaskModal({
+export function CreateTaskModal({
   onClose,
   onCreate,
   defaultRepoRoot,
@@ -1221,56 +1222,41 @@ function CreateTaskModal({
           {sameActorError && (
             <div className="text-xs text-danger">{t('modal.create.sameActorError')}</div>
           )}
-
-          {/* 执行方式 */}
-          <div>
-            <label className="block text-xs font-medium text-fg-secondary mb-1">
-              {t('modal.create.executionMode')}
-            </label>
-            <div className="flex gap-4">
-              {(['immediate', 'queued'] as const).map((mode) => {
-                const active = executionMode === mode
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setExecutionMode(mode)}
-                    className={`flex-1 px-3 py-1.5 text-xs border rounded-lg transition-colors ${
-                      active
-                        ? 'border-accent bg-accent-soft text-fg'
-                        : 'border-border text-fg-secondary hover:bg-bg-subtle'
-                    }`}
-                  >
-                    {mode === 'immediate'
-                      ? t('modal.create.executionMode.immediate')
-                      : t('modal.create.executionMode.queued')}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="text-xs text-fg-muted mt-1">
-              {executionMode === 'immediate'
-                ? t('modal.create.executionMode.immediateHint')
-                : t('modal.create.executionMode.queuedHint')}
-            </div>
-          </div>
         </div>
 
         {/* 底部 */}
-        <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 text-xs text-fg hover:bg-bg-subtle rounded-lg transition-colors"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="px-4 py-1.5 text-xs bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {t('modal.create.submit')} <span className="opacity-60 ml-1">⌘⏎</span>
-          </button>
+        <div className="px-6 py-4 border-t border-border flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-fg-secondary">
+              {executionMode === 'immediate'
+                ? t('modal.create.executionMode.immediate')
+                : t('modal.create.executionMode.queued')}
+            </span>
+            <Switch
+              checked={executionMode === 'immediate'}
+              onChange={(checked) => setExecutionMode(checked ? 'immediate' : 'queued')}
+              ariaLabel={
+                executionMode === 'immediate'
+                  ? t('modal.create.executionMode.immediate')
+                  : t('modal.create.executionMode.queued')
+              }
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 text-xs text-fg hover:bg-bg-subtle rounded-lg transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="px-4 py-1.5 text-xs bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t('modal.create.submit')} <span className="opacity-60 ml-1">⌘⏎</span>
+            </button>
+          </div>
         </div>
       </div>
 
