@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.15] - 2026-08-11
+
+### Fixed
+- 细化自动更新错误提示：区分后台检查与手动检查，后台检查失败对用户静默，仅手动检查失败才弹通知；手动检查可“提升”进行中的后台检查为手动，使失败转为可见
+- 新增 runCheck 单飞守卫，重叠检查不再叠加；用 `.finally()` 作为 in-flight 标志唯一清零方，避免迟到回调覆盖新检查
+- sendError 按操作去重（lastDispatchedError），消除 generic 'error' 事件与 promise `.catch()` 对同一失败的双重派发，每次操作重置以保留跨操作重复错误上报
+- 通知与侧栏按 check/download/install 阶段展示差异化标题（检查失败/下载失败/安装失败）；错误时重置 dismissed 以重新显示通知，dismiss 仅隐藏当前通知但保留错误细节供侧栏重试
+- X 按钮补充 aria-label 关闭文案；i18n 补充 zh-CN/zh-TW/en 三语对应条目
+
+---
+
 ## [1.2.14] - 2026-08-11
 
 ### Fixed
