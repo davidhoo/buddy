@@ -17,9 +17,18 @@ pnpm test                   # Unit tests (vitest run tests/unit)
 pnpm vitest run tests/unit/main/buddy-store.test.ts  # Single test file
 pnpm test:e2e               # E2E tests (Playwright)
 pnpm typecheck              # tsc --noEmit
-pnpm dist                   # Build + unsigned DMG
-pnpm release:signed         # Build + sign + notarize (needs CSC_NAME env)
+pnpm dist                   # Local-only adhoc DMG/ZIP; never upload to a GitHub Release
+pnpm release:signed         # Build + Apple Development sign + verify (needs CSC_NAME; no notarization)
 ```
+
+## Release policy
+
+- `pnpm dist` and `pnpm package` are local adhoc build paths. Their artifacts must never be uploaded to a GitHub Release.
+- The only official publishing entrypoint is `CSC_NAME='Apple Development: ...' scripts/release.sh vX.Y.Z`.
+- Official releases intentionally use the Apple Development identity for Team ID `XLDSS978CT` without notarization.
+- The release script keeps a GitHub Release in Draft while it uploads packages, uploads `latest-mac.yml` last, downloads all five official assets again, and verifies signatures, versions, hashes, and metadata before publication.
+- `Signature=adhoc`, `TeamIdentifier=not set`, `skipped macOS application code signing`, a missing asset, or a remote verification failure is a release blocker. Do not publish or declare completion.
+- Reviewer completion evidence must include remote download and signature verification. Asset names, counts, and sizes alone are insufficient.
 
 ## Architecture
 
