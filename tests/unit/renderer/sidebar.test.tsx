@@ -339,6 +339,88 @@ describe('Sidebar', () => {
       expect(content).toHaveClass('items-center')
     }
   })
+
+  it('opens the task menu from a right-click without selecting the task', () => {
+    const onSelectTask = vi.fn()
+    const onCopyText = vi.fn()
+    const onOpenInFinder = vi.fn()
+    const onDeleteTask = vi.fn()
+    const onRenameTask = vi.fn()
+
+    renderSidebar([task('original-name')], {
+      onSelectTask,
+      onCopyText,
+      onOpenInFinder,
+      onDeleteTask,
+      onRenameTask,
+      taskNames: { 'original-name': '显示名称' }
+    })
+
+    const taskRow = screen.getByText('显示名称').closest('[title]')!
+    fireEvent.contextMenu(taskRow, { clientX: 90, clientY: 110 })
+
+    expect(onSelectTask).not.toHaveBeenCalled()
+    expect(screen.getByText('Copy Task Name')).toBeVisible()
+
+    fireEvent.click(screen.getByText('Copy Task Name'))
+    expect(onCopyText).toHaveBeenCalledWith('显示名称')
+    expect(onDeleteTask).not.toHaveBeenCalled()
+    expect(onRenameTask).not.toHaveBeenCalled()
+  })
+
+  it('opens the task data directory in Finder from the right-click menu', () => {
+    const onOpenInFinder = vi.fn()
+
+    renderSidebar([task('original-name')], { onOpenInFinder })
+
+    const taskRow = screen.getByText('original-name').closest('[title]')!
+    fireEvent.contextMenu(taskRow, { clientX: 90, clientY: 110 })
+
+    fireEvent.click(screen.getByText('Show in Finder'))
+    expect(onOpenInFinder).toHaveBeenCalledWith(
+      '/tmp/buddy/workspaces/original-name-workspace/tasks/original-name'
+    )
+  })
+
+  it('copies the task_id when the task has no custom display name', () => {
+    const onCopyText = vi.fn()
+
+    renderSidebar([task('plain')], { onCopyText })
+
+    const taskRow = screen.getByText('plain').closest('[title]')!
+    fireEvent.contextMenu(taskRow, { clientX: 30, clientY: 30 })
+
+    fireEvent.click(screen.getByText('Copy Task Name'))
+    expect(onCopyText).toHaveBeenCalledWith('plain')
+  })
+
+  it('reuses the same task menu for pinned tasks and shows Unpin', () => {
+    window.localStorage.setItem('buddy.pinnedTaskIds', JSON.stringify(['pinned']))
+    const onCopyText = vi.fn()
+    const onOpenInFinder = vi.fn()
+    const togglePinSpy = vi.fn()
+
+    renderSidebar([task('pinned')], { onCopyText, onOpenInFinder })
+
+    const taskRow = screen.getByText('pinned').closest('[title]')!
+    fireEvent.contextMenu(taskRow, { clientX: 50, clientY: 50 })
+
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    expect(screen.getByText('Copy Task Name')).toBeVisible()
+    expect(screen.getByText('Show in Finder')).toBeVisible()
+    expect(screen.getByText('Unpin')).toBeVisible()
+
+    fireEvent.click(screen.getByText('Copy Task Name'))
+    expect(onCopyText).toHaveBeenCalledWith('pinned')
+
+    // Reopen and verify Finder uses the pinned task's data directory too.
+    fireEvent.contextMenu(taskRow, { clientX: 50, clientY: 50 })
+    fireEvent.click(screen.getByText('Show in Finder'))
+    expect(onOpenInFinder).toHaveBeenCalledWith(
+      '/tmp/buddy/workspaces/pinned-workspace/tasks/pinned'
+    )
+    expect(togglePinSpy).not.toHaveBeenCalled()
+  })
   it('shows installing label when updateStatus is installing', () => {
     renderSidebar([], {
       updateStatus: 'installing',
