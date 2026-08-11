@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.16] - 2026-08-11
+
+### Added
+- 侧栏支持右键和「...」按钮唤出上下文菜单：项目菜单提供重命名、复制项目路径、在 Finder 中显示、移除；任务菜单提供常用任务操作，右键不再折叠项目或误写已读状态
+- 任务数据目录可在侧栏直接打开，便于排查问题与查看产物
+
+### Changed
+- 新建任务弹窗的执行方式（立即/排队）从两个按钮改为底部一个开关，状态语义不变；同时复用统一的 Switch 控件，统一焦点环与无障碍语义
+- 发布流程前置远程验证门：上传资产后远程核验，全部资产确认上传且签名校验通过才创建/发布 Release；发布仅在校验通过后执行，回滚边界更严格
+
+### Fixed
+- 修复在 Finder 中打开路径失败时静默无反馈的问题，现在会显式报错
+
+---
+
 ## [1.2.15] - 2026-08-11
 
 ### Fixed
@@ -486,6 +501,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.16]: https://github.com/davidhoo/buddy/releases/tag/v1.2.16
 [1.2.14]: https://github.com/davidhoo/buddy/releases/tag/v1.2.14
 [1.2.9]: https://github.com/davidhoo/buddy/releases/tag/v1.2.9
 [1.2.7]: https://github.com/davidhoo/buddy/releases/tag/v1.2.7
