@@ -30,6 +30,7 @@ describe('UpdateNotification', () => {
       progress: { percent: 100, bytesPerSecond: 0 },
       dismissed: false,
       errorMessage: '',
+      errorPhase: null as 'check' | 'download' | 'install' | null,
       onInstall: vi.fn(),
       onRetry: vi.fn(),
       onDismiss: vi.fn(),
@@ -56,11 +57,12 @@ describe('UpdateNotification', () => {
   it('renders error state with error message and retry button', () => {
     const props = defaultProps({
       status: 'error',
+      errorPhase: 'check',
       errorMessage: 'Code signature did not pass validation'
     })
     render(<UpdateNotification {...props} />)
 
-    expect(screen.getByText('Update failed')).toBeTruthy()
+    expect(screen.getByText('Check for updates failed')).toBeTruthy()
     expect(screen.getByText('Code signature did not pass validation')).toBeTruthy()
     expect(screen.getByText('Retry')).toBeTruthy()
   })
@@ -69,6 +71,7 @@ describe('UpdateNotification', () => {
     const onRetry = vi.fn()
     const props = defaultProps({
       status: 'error',
+      errorPhase: 'install',
       errorMessage: 'Install failed',
       onRetry
     })
@@ -93,7 +96,7 @@ describe('UpdateNotification', () => {
   it('error message is truncated with title attribute for full text', () => {
     const longError = 'A'.repeat(200)
     const html = renderToStaticMarkup(
-      <UpdateNotification {...defaultProps({ status: 'error', errorMessage: longError })} />
+      <UpdateNotification {...defaultProps({ status: 'error', errorPhase: 'check', errorMessage: longError })} />
     )
     expect(html).toContain(`title="${longError}"`)
     expect(html).toContain('line-clamp-3')
@@ -102,12 +105,13 @@ describe('UpdateNotification', () => {
   it('does not auto-dismiss error notification', () => {
     const props = defaultProps({
       status: 'error',
+      errorPhase: 'check',
       errorMessage: 'Failed',
       dismissed: false
     })
     render(<UpdateNotification {...props} />)
 
-    expect(screen.getByText('Update failed')).toBeTruthy()
+    expect(screen.getByText('Check for updates failed')).toBeTruthy()
   })
 
   it('returns null for idle/checking/available states', () => {
@@ -115,5 +119,57 @@ describe('UpdateNotification', () => {
       <UpdateNotification {...defaultProps({ status: 'idle' })} />
     )
     expect(html).toBe('')
+  })
+
+  it('renders nothing when dismissed and status is error', () => {
+    const html = renderToStaticMarkup(
+      <UpdateNotification {...defaultProps({
+        status: 'error',
+        errorPhase: 'check',
+        errorMessage: 'Network error',
+        dismissed: true
+      })} />
+    )
+    expect(html).toBe('')
+  })
+
+  it('still renders installing when dismissed (no close button)', () => {
+    const html = renderToStaticMarkup(
+      <UpdateNotification {...defaultProps({ status: 'installing', dismissed: true })} />
+    )
+    expect(html).toContain('Restarting &amp; Installing…')
+    expect(html).not.toContain('aria-label')
+  })
+
+  it('dismiss (X) button calls onDismiss and has accessible name', () => {
+    const onDismiss = vi.fn()
+    const props = defaultProps({
+      status: 'error',
+      errorPhase: 'check',
+      errorMessage: 'Network unreachable',
+      onDismiss
+    })
+    render(<UpdateNotification {...props} />)
+
+    const dismissBtn = screen.getByRole('button', { name: 'Close' })
+    fireEvent.click(dismissBtn)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses phase-specific error titles', () => {
+    const checkHtml = renderToStaticMarkup(
+      <UpdateNotification {...defaultProps({ status: 'error', errorPhase: 'check', errorMessage: 'a' })} />
+    )
+    expect(checkHtml).toContain('Check for updates failed')
+
+    const downloadHtml = renderToStaticMarkup(
+      <UpdateNotification {...defaultProps({ status: 'error', errorPhase: 'download', errorMessage: 'b' })} />
+    )
+    expect(downloadHtml).toContain('Download failed')
+
+    const installHtml = renderToStaticMarkup(
+      <UpdateNotification {...defaultProps({ status: 'error', errorPhase: 'install', errorMessage: 'c' })} />
+    )
+    expect(installHtml).toContain('Install failed')
   })
 })

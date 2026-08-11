@@ -23,7 +23,7 @@ import { ResizeHandle } from './ResizeHandle'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
-import type { UpdateStatus } from '../hooks/useUpdater'
+import type { UpdateStatus, UpdaterErrorPhase } from '../hooks/useUpdater'
 import { projectNameForTask, readStringArraySetting, writeStringArraySetting, isTaskUnread, readTaskNames, writeTaskNames, displayNameForTask } from '../lib/taskList'
 import logo from '../assets/logo.png'
 
@@ -42,6 +42,7 @@ interface SidebarProps {
   settingsTab: SettingsTab
   updateStatus: UpdateStatus
   updateVersion: string
+  updateErrorPhase: UpdaterErrorPhase
   onUpdateClick: () => void
   onSelectTask: (taskId: string, workspaceKey: string) => void
   onCreateTask: (repoRoot?: string) => void
@@ -72,6 +73,7 @@ export function Sidebar({
   settingsTab,
   updateStatus,
   updateVersion,
+  updateErrorPhase,
   onUpdateClick,
   onSelectTask,
   onCreateTask,
@@ -126,6 +128,7 @@ export function Sidebar({
           isHealthy={isHealthy}
           updateStatus={updateStatus}
           updateVersion={updateVersion}
+          updateErrorPhase={updateErrorPhase}
           onUpdateClick={onUpdateClick}
           onSelectTask={onSelectTask}
           onCreateTask={onCreateTask}
@@ -229,6 +232,7 @@ function ChatSidebar({
   isHealthy,
   updateStatus,
   updateVersion,
+  updateErrorPhase,
   onUpdateClick,
   onSelectTask,
   onCreateTask,
@@ -249,6 +253,7 @@ function ChatSidebar({
   isHealthy: boolean
   updateStatus: UpdateStatus
   updateVersion: string
+  updateErrorPhase: UpdaterErrorPhase
   onUpdateClick: () => void
   onSelectTask: (taskId: string, workspaceKey: string) => void
   onCreateTask: (repoRoot?: string) => void
@@ -392,7 +397,13 @@ function ChatSidebar({
                 : updateStatus === 'installing'
                   ? t('updater.sidebarInstalling')
                   : updateStatus === 'error'
-                    ? t('updater.sidebarFailed')
+                    ? updateErrorPhase === 'download'
+                      ? t('updater.sidebarDownloadFailed')
+                      : updateErrorPhase === 'install'
+                        ? t('updater.sidebarInstallFailed')
+                        : updateErrorPhase === 'check'
+                          ? t('updater.sidebarCheckFailed')
+                          : t('updater.sidebarFailed')
                     : updateStatus === 'downloaded'
                       ? t('updater.sidebarReady', { version: updateVersion })
                       : t('updater.sidebarUpdate', { version: updateVersion })}

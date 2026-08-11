@@ -468,9 +468,16 @@ const en = {
   'updater.installing': 'Restarting & Installing…',
   'updater.installingHint': 'The app will restart automatically. Please wait.',
   'updater.failed': 'Update failed',
+  'updater.checkFailed': 'Check for updates failed',
+  'updater.downloadFailed': 'Download failed',
+  'updater.installFailed': 'Install failed',
   'updater.retry': 'Retry',
+  'updater.dismiss': 'Close',
   'updater.sidebarInstalling': 'Installing…',
   'updater.sidebarFailed': 'Update failed',
+  'updater.sidebarCheckFailed': 'Check failed',
+  'updater.sidebarDownloadFailed': 'Download failed',
+  'updater.sidebarInstallFailed': 'Install failed',
 }
 
 // Simplified Chinese — preserves the original wording in the codebase.
@@ -882,9 +889,16 @@ const zhCN: typeof en = {
   'updater.installing': '正在重启并安装…',
   'updater.installingHint': '应用将自动重启，请稍候。',
   'updater.failed': '更新失败',
+  'updater.checkFailed': '检查更新失败',
+  'updater.downloadFailed': '下载更新失败',
+  'updater.installFailed': '安装更新失败',
   'updater.retry': '重试',
+  'updater.dismiss': '关闭',
   'updater.sidebarInstalling': '安装中…',
   'updater.sidebarFailed': '更新失败',
+  'updater.sidebarCheckFailed': '检查失败',
+  'updater.sidebarDownloadFailed': '下载失败',
+  'updater.sidebarInstallFailed': '安装失败',
 }
 
 // Traditional Chinese
@@ -1298,9 +1312,16 @@ const zhTW: typeof en = {
   'updater.installing': '正在重啟並安裝…',
   'updater.installingHint': '應用將自動重啟，請稍候。',
   'updater.failed': '更新失敗',
+  'updater.checkFailed': '檢查更新失敗',
+  'updater.downloadFailed': '下載更新失敗',
+  'updater.installFailed': '安裝更新失敗',
   'updater.retry': '重試',
+  'updater.dismiss': '關閉',
   'updater.sidebarInstalling': '安裝中…',
   'updater.sidebarFailed': '更新失敗',
+  'updater.sidebarCheckFailed': '檢查失敗',
+  'updater.sidebarDownloadFailed': '下載失敗',
+  'updater.sidebarInstallFailed': '安裝失敗',
 }
 
 const dictionaries: Record<Language, typeof en> = {

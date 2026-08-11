@@ -65,6 +65,7 @@ describe('Sidebar', () => {
       projectNames: {},
       updateStatus: 'idle' as const,
       updateVersion: '',
+      updateErrorPhase: null as any,
       onUpdateClick: vi.fn(),
       taskNames: {},
       ...overrides
@@ -270,6 +271,33 @@ describe('Sidebar', () => {
     expect(btn).toHaveAttribute('disabled')
     fireEvent.click(btn!)
     expect(onUpdateClick).not.toHaveBeenCalled()
+  })
+
+  it('shows phase-specific failed labels in sidebar', () => {
+    renderSidebar([], {
+      updateStatus: 'error',
+      updateErrorPhase: 'check',
+      onUpdateClick: vi.fn()
+    })
+    expect(screen.getByText('Check failed')).toBeTruthy()
+  })
+
+  it('shows download-failed label in sidebar for download phase', () => {
+    renderSidebar([], {
+      updateStatus: 'error',
+      updateErrorPhase: 'download',
+      onUpdateClick: vi.fn()
+    })
+    expect(screen.getByText('Download failed')).toBeTruthy()
+  })
+
+  it('shows install-failed label in sidebar for install phase', () => {
+    renderSidebar([], {
+      updateStatus: 'error',
+      updateErrorPhase: 'install',
+      onUpdateClick: vi.fn()
+    })
+    expect(screen.getByText('Install failed')).toBeTruthy()
   })
 
   it('shows failed label when updateStatus is error', () => {

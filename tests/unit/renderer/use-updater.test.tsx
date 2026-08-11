@@ -42,6 +42,7 @@ describe('useUpdater', () => {
     const ref = renderHook(useUpdater)
     expect(ref.current.status).toBe('idle')
     expect(ref.current.errorMessage).toBe('')
+    expect(ref.current.errorPhase).toBeNull()
   })
 
   it('transitions downloaded -> installing when install event arrives', async () => {
@@ -78,6 +79,7 @@ describe('useUpdater', () => {
     })
     expect(ref.current.status).toBe('error')
     expect(ref.current.errorMessage).toContain('Code signature')
+    expect(ref.current.errorPhase).toBe('install')
   })
 
   it('error is distinct from not-available', async () => {
@@ -89,12 +91,14 @@ describe('useUpdater', () => {
     })
     expect(ref.current.status).toBe('error')
     expect(ref.current.errorMessage).toBe('Install failed')
+    expect(ref.current.errorPhase).toBe('install')
 
     act(() => {
       updaterCallback?.({ type: 'not-available' })
     })
     expect(ref.current.status).toBe('idle')
     expect(ref.current.errorMessage).toBe('')
+    expect(ref.current.errorPhase).toBeNull()
   })
 
   it('retryUpdate clears error and re-checks', async () => {
@@ -111,6 +115,7 @@ describe('useUpdater', () => {
     })
     expect(ref.current.status).toBe('checking')
     expect(ref.current.errorMessage).toBe('')
+    expect(ref.current.errorPhase).toBeNull()
     expect((window as any).api.checkForUpdates).toHaveBeenCalled()
   })
 
@@ -128,6 +133,7 @@ describe('useUpdater', () => {
     })
     expect(ref.current.status).toBe('available')
     expect(ref.current.errorMessage).toBe('')
+    expect(ref.current.errorPhase).toBeNull()
   })
 
   it('downloaded status is not ignored when error follows it', async () => {
@@ -143,5 +149,66 @@ describe('useUpdater', () => {
       updaterCallback?.({ type: 'error', phase: 'install', message: 'Signature failed' })
     })
     expect(ref.current.status).toBe('error')
+  })
+
+  it('a new error re-shows the notification even after a dismiss', async () => {
+    const { useUpdater } = await import('../../../src/renderer/hooks/useUpdater')
+    const ref = renderHook(useUpdater)
+
+    act(() => {
+      updaterCallback?.({ type: 'error', phase: 'check', message: 'First failure' })
+    })
+    expect(ref.current.dismissed).toBe(false)
+
+    act(() => {
+      ref.current.dismissNotification()
+    })
+    expect(ref.current.dismissed).toBe(true)
+
+    // A new error must reset dismissed so it re-appears.
+    act(() => {
+      updaterCallback?.({ type: 'error', phase: 'check', message: 'Second failure' })
+    })
+    expect(ref.current.status).toBe('error')
+    expect(ref.current.dismissed).toBe(false)
+    expect(ref.current.errorMessage).toBe('Second failure')
+  })
+
+  it('dismissNotification only hides the notification, keeps error details', async () => {
+    const { useUpdater } = await import('../../../src/renderer/hooks/useUpdater')
+    const ref = renderHook(useUpdater)
+
+    act(() => {
+      updaterCallback?.({ type: 'error', phase: 'download', message: 'Download interrupted' })
+    })
+    expect(ref.current.status).toBe('error')
+    expect(ref.current.errorMessage).toBe('Download interrupted')
+
+    act(() => {
+      ref.current.dismissNotification()
+    })
+    expect(ref.current.dismissed).toBe(true)
+    // Error details are retained for the sidebar retry entry.
+    expect(ref.current.status).toBe('error')
+    expect(ref.current.errorMessage).toBe('Download interrupted')
+    expect(ref.current.errorPhase).toBe('download')
+  })
+
+  it('success events reset dismissed', async () => {
+    const { useUpdater } = await import('../../../src/renderer/hooks/useUpdater')
+    const ref = renderHook(useUpdater)
+
+    act(() => {
+      updaterCallback?.({ type: 'error', phase: 'check', message: 'failed' })
+    })
+    act(() => {
+      ref.current.dismissNotification()
+    })
+    expect(ref.current.dismissed).toBe(true)
+
+    act(() => {
+      updaterCallback?.({ type: 'available', info: { version: '1.2.13' } })
+    })
+    expect(ref.current.dismissed).toBe(false)
   })
 })

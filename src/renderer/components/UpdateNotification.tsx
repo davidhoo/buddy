@@ -1,5 +1,5 @@
 import { AlertCircle, RefreshCw, RotateCw, X } from 'lucide-react'
-import type { UpdateStatus } from '../hooks/useUpdater'
+import type { UpdateStatus, UpdaterErrorPhase } from '../hooks/useUpdater'
 import { useT } from '../hooks/useI18n'
 
 interface UpdateNotificationProps {
@@ -8,6 +8,7 @@ interface UpdateNotificationProps {
   progress: { percent: number; bytesPerSecond: number }
   dismissed: boolean
   errorMessage: string
+  errorPhase: UpdaterErrorPhase
   onInstall: () => void
   onRetry: () => void
   onDismiss: () => void
@@ -19,6 +20,7 @@ export function UpdateNotification({
   progress,
   dismissed,
   errorMessage,
+  errorPhase,
   onInstall,
   onRetry,
   onDismiss
@@ -26,7 +28,15 @@ export function UpdateNotification({
   const t = useT()
 
   if (status === 'idle' || status === 'checking' || status === 'available') return null
-  if (dismissed && status !== 'installing' && status !== 'error') return null
+  // Only installing stays visible after a dismiss and cannot be closed.
+  if (dismissed && status !== 'installing') return null
+
+  const errorTitleKey =
+    errorPhase === 'download'
+      ? 'updater.downloadFailed'
+      : errorPhase === 'install'
+        ? 'updater.installFailed'
+        : 'updater.checkFailed'
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80 bg-bg-elevated border border-border rounded-xl shadow-lg overflow-hidden">
@@ -53,7 +63,11 @@ export function UpdateNotification({
             <span className="text-xs font-semibold text-accent-primary">
               {t('updater.downloaded', { version })}
             </span>
-            <button onClick={onDismiss} className="text-fg-muted hover:text-fg">
+            <button
+              onClick={onDismiss}
+              aria-label={t('updater.dismiss')}
+              className="text-fg-muted hover:text-fg"
+            >
               <X size={14} />
             </button>
           </div>
@@ -85,10 +99,14 @@ export function UpdateNotification({
             <div className="flex items-center gap-2">
               <AlertCircle size={14} className="text-red-500" />
               <span className="text-xs font-semibold text-red-500">
-                {t('updater.failed')}
+                {t(errorTitleKey)}
               </span>
             </div>
-            <button onClick={onDismiss} className="text-fg-muted hover:text-fg">
+            <button
+              onClick={onDismiss}
+              aria-label={t('updater.dismiss')}
+              className="text-fg-muted hover:text-fg"
+            >
               <X size={14} />
             </button>
           </div>

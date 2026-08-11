@@ -618,6 +618,7 @@ export default function App() {
         settingsTab={settingsTab}
         updateStatus={updater.status}
         updateVersion={updater.version}
+        updateErrorPhase={updater.errorPhase}
         onUpdateClick={
           updater.status === 'downloaded'
             ? updater.installUpdate
@@ -760,6 +761,7 @@ export default function App() {
         onRetry={updater.retryUpdate}
         onDismiss={updater.dismissNotification}
         errorMessage={updater.errorMessage}
+        errorPhase={updater.errorPhase}
       />
     </div>
   )
