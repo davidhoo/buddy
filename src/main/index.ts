@@ -2,6 +2,7 @@
 process.env.ELECTRON_UPDATER_ALLOW_HTTP = '1'
 
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { openPathOrThrow } from './ipc/open-path'
 
 // Guard against EPIPE and other stream errors crashing the main process.
 // Child processes (e.g. wecode) may exit early during auto-upgrade, closing
@@ -94,7 +95,7 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('shell:openInFinder', async (_event, path: string) => {
-    await shell.openPath(path)
+    await openPathOrThrow(shell.openPath.bind(shell), path)
   })
 
   ipcMain.handle('shell:openExternal', async (_event, url: string) => {
