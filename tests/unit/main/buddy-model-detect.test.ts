@@ -224,6 +224,51 @@ describe('model-detect', () => {
     expect(await detectModelFromConfig('claude', 'claude --model opus')).toBe('opus')
   })
 
+  it('reads the selected Cursor model from ~/.cursor/cli-config.json', async () => {
+    const cursorDir = join(tempHome, '.cursor')
+    await mkdir(cursorDir, { recursive: true })
+    await writeFile(join(cursorDir, 'cli-config.json'), JSON.stringify({
+      model: {
+        modelId: 'composer-2.5',
+        displayModelId: 'composer-2.5'
+      },
+      selectedModel: {
+        modelId: 'gpt-5.3-codex-high',
+        parameters: [{ id: 'fast', value: 'false' }]
+      }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('cursor', 'cursor-agent')).toBe('gpt-5.3-codex-high')
+  })
+
+  it('reports Cursor Auto by its display model ID', async () => {
+    const cursorDir = join(tempHome, '.cursor')
+    await mkdir(cursorDir, { recursive: true })
+    await writeFile(join(cursorDir, 'cli-config.json'), JSON.stringify({
+      model: {
+        modelId: 'default',
+        displayModelId: 'auto',
+        displayName: 'Auto'
+      },
+      selectedModel: { modelId: 'default' }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('cursor', 'agent')).toBe('auto')
+  })
+
+  it('prefers an explicit Cursor --model launcher override', async () => {
+    const cursorDir = join(tempHome, '.cursor')
+    await mkdir(cursorDir, { recursive: true })
+    await writeFile(join(cursorDir, 'cli-config.json'), JSON.stringify({
+      selectedModel: { modelId: 'composer-2.5' }
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('cursor', 'cursor-agent --model gpt-5.3-codex-high')).toBe('gpt-5.3-codex-high')
+  })
+
   it('prefers Claude env.ANTHROPIC_MODEL over the model tier alias', async () => {
     // Real-world wecode/proxy setup: model field is a tier alias while
     // env.ANTHROPIC_MODEL is the actual model the SDK invokes.

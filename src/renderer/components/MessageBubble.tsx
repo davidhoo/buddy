@@ -4,7 +4,7 @@ import { AttachmentMeta, TranscriptEntry, RoundEventSummary, RoundEventEntry, Ta
 import { renderMarkdown } from '../lib/markdown'
 import { formatDuration, formatTimeWithRelativeDate, decodeErrorText, unescapeText, ACTOR_LABEL_KEY, actorText } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
-import { useRoundEvents } from '../hooks/useBuddy'
+import { useRoundEvents, useTaskStats } from '../hooks/useBuddy'
 import { translate } from '../lib/i18n'
 
 interface MessageBubbleProps {
@@ -288,12 +288,30 @@ export function MessageBubble({ entry, taskId, workspaceKey, onRetryHealthCheck,
         {runId && !isHuman && !isSystem && taskId && workspaceKey && (
           <RoundEvents taskId={taskId} runId={runId} workspaceKey={workspaceKey} actor={entry.role} elapsedMs={meta.elapsed_ms as number | undefined} />
         )}
-        {taskDoneStats ? (
-          <TaskDoneStats stats={taskDoneStats} />
+        {isTaskDone ? (
+          <LiveTaskDoneStats
+            taskId={taskId}
+            workspaceKey={workspaceKey}
+            snapshot={taskDoneStats}
+          />
         ) : null}
       </div>
     </div>
   )
+}
+
+function LiveTaskDoneStats({
+  taskId,
+  workspaceKey,
+  snapshot
+}: {
+  taskId?: string
+  workspaceKey?: string
+  snapshot?: TaskStats
+}) {
+  const { data } = useTaskStats(taskId ?? null, workspaceKey)
+  const stats = data ?? snapshot
+  return stats ? <TaskDoneStats stats={stats} /> : null
 }
 
 function RoundEvents({ taskId, runId, workspaceKey, actor, elapsedMs }: { taskId: string; runId: string; workspaceKey: string; actor: string; elapsedMs?: number }) {

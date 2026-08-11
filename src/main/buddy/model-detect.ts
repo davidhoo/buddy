@@ -28,8 +28,11 @@ import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand } from './l
  *      (when launched via WeCode — `wecode` without a leading `codex` token —
  *       reads ~/.wecode-cli/config.json → env.ANTHROPIC_MODEL instead, and does
  *       NOT fall back to ~/.claude/settings.json)
+ *    - cursor:   ~/.cursor/cli-config.json → selectedModel.modelId
+ *      (falls back to the legacy model object; Cursor's default is represented as
+ *       modelId="default" and displayModelId="auto")
  *
- * @param actor  Actor name (codex, opencode, kimi, claude)
+ * @param actor  Actor name (codex, cursor, opencode, kimi, claude)
  * @param command  Optional launcher command string. Used both to extract an
  *                 explicit `-m`/`--model` override and to determine the CLI
  *                 kind (e.g. distinguishing `wecode codex` from plain `codex`,
@@ -76,6 +79,9 @@ export async function detectModelFromConfig(
         return await readWecodeClaudeModel(join(home, '.wecode-cli', 'config.json'))
       }
       return await readClaudeModel(join(home, '.claude', 'settings.json'))
+    }
+    if (kind === 'native_cursor') {
+      return await readCursorModel(join(home, '.cursor', 'cli-config.json'))
     }
     // contract: model is not knowable before a run.
   } catch {
@@ -162,12 +168,49 @@ async function readClaudeModel(filePath: string): Promise<string | undefined> {
 }
 
 /**
+ * Read the selected Cursor CLI model from ~/.cursor/cli-config.json.
+ *
+ * Recent Cursor CLIs persist the effective selection in `selectedModel`.
+ * Older versions only expose the display-oriented `model` object. When the
+ * selection is Auto, Cursor stores `modelId: "default"`, so prefer its
+ * user-facing `displayModelId` (normally "auto") instead of showing the
+ * internal sentinel value.
+ */
+async function readCursorModel(filePath: string): Promise<string | undefined> {
+  const raw = await readFile(filePath, 'utf8')
+  const config = JSON.parse(raw) as Record<string, unknown>
+  const selected = recordValue(config.selectedModel)
+  const configured = recordValue(config.model)
+
+  const selectedModelId = textValue(selected?.modelId)
+  if (selectedModelId && selectedModelId !== 'default') return selectedModelId
+
+  const configuredModelId = textValue(configured?.modelId)
+  if (configuredModelId && configuredModelId !== 'default') return configuredModelId
+
+  return textValue(configured?.displayModelId)
+    ?? textValue(configured?.displayNameShort)
+    ?? selectedModelId
+    ?? configuredModelId
+}
+
+/**
  * Read a model field from a JSON config file.
  */
 async function readJsonModel(filePath: string, field: string): Promise<string | undefined> {
   const raw = await readFile(filePath, 'utf8')
   const obj = JSON.parse(raw) as Record<string, unknown>
   const value = obj[field]
+  return typeof value === 'string' && value ? value : undefined
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function textValue(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined
 }
 
