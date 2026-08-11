@@ -13,7 +13,8 @@ set -euo pipefail
 #   - CSC_NAME set to an Apple Development signing identity
 #
 # Flow:
-#   pre-check → bump version → build (forced signing) → verify signing → commit+tag+push → create GitHub Release → upload assets
+#   pre-check → bump version → forced signing → local verification → commit/tag/push
+#   → Draft upload → remote verification → publish/latest-feed verification
 # =============================================================================
 
 VERSION="${1:?Usage: release.sh <version>  e.g. release.sh v1.2.0}"
@@ -129,39 +130,9 @@ else
   echo "   Tag pushed ✓"
 fi
 
-# --- 7. Create GitHub Release with assets ---
-echo ">> Creating GitHub Release..."
-
-if gh release view "$VERSION" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
-  echo "   Release already exists, uploading assets only..."
-else
-  # Create release with a basic title; notes can be edited later on GitHub
-  gh release create "$VERSION" \
-    --repo "$GITHUB_REPO" \
-    --title "Buddy ${VERSION}" \
-    --notes "Release ${VERSION}"
-fi
-
-# Upload all assets — fail on any required asset failure
-UPLOAD_FILES=(
-  "release/Buddy-${PACKAGE_VERSION}-arm64.dmg"
-  "release/Buddy-${PACKAGE_VERSION}.dmg"
-  "release/Buddy-${PACKAGE_VERSION}-arm64-mac.zip"
-  "release/Buddy-${PACKAGE_VERSION}-mac.zip"
-  "release/latest-mac.yml"
-  "release/buddy-${VERSION}-source.tar.gz"
-  "release/buddy-${VERSION}-source.zip"
-)
-
-echo ">> Uploading assets to GitHub Release..."
-for f in "${UPLOAD_FILES[@]}"; do
-  [ -f "$f" ] || { echo "   Missing required upload file: ${f}" >&2; exit 1; }
-  echo "   Uploading $(basename "$f")..."
-  gh release upload "$VERSION" "$f" \
-    --repo "$GITHUB_REPO" \
-    --clobber
-done
-echo "   Upload complete ✓"
+# --- 7. Publish through the verified Draft gate ---
+echo ">> Publishing verified GitHub Release..."
+bash scripts/publish-release.sh "$VERSION" "$GITHUB_REPO"
 
 echo ""
 echo "=== Release ${VERSION} published! ==="

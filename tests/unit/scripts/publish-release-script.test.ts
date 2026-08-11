@@ -116,6 +116,14 @@ afterEach(async () => {
 })
 
 describe('publish-release.sh', () => {
+  it('is the only publication path used by the official release script', async () => {
+    const releaseScript = await readFile(join(repoRoot, 'scripts/release.sh'), 'utf8')
+
+    expect(releaseScript).toContain('bash scripts/publish-release.sh "$VERSION" "$GITHUB_REPO"')
+    expect(releaseScript).not.toContain('gh release upload')
+    expect(releaseScript).not.toContain('gh release create')
+  })
+
   it('creates a missing release as draft and publishes only after verification', async () => {
     const fixture = await makeFixture()
 
