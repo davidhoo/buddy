@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Play, RotateCw } from 'lucide-react'
 import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
@@ -171,7 +171,7 @@ export function StatusBar({
           <div className="space-y-2">
             {participants.map((actor) => (
               <ActorCard
-                key={actor}
+                key={`${taskState?.task_id ?? ''}\0${actor}`}
                 actor={actor}
                 taskSettings={taskSettings}
                 taskState={taskState}
@@ -320,21 +320,45 @@ function ActorCard({
   running: boolean
   t: TFunction
 }) {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const taskId = taskState?.task_id ?? ''
+  // 复制成功反馈只是临时状态：5 秒后自动恢复，不随任务/会话持久化。
+  const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
   const sessionField = SESSION_FIELD[actor]
   const session = (taskState?.[sessionField] as string | undefined) || ''
-  const currentKey = `${taskId}\0${session}`
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [])
 
   const handleCopy = () => {
     if (!session) return
     navigator.clipboard.writeText(session).then(
-      () => setCopiedKey(currentKey),
-      () => {}
+      () => {
+        // 5 秒从剪贴板 Promise 成功完成时开始计算；组件已卸载则放弃。
+        if (!mountedRef.current) return
+        setCopied(true)
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current)
+        }
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null
+          setCopied(false)
+        }, 5000)
+      },
+      () => {
+        // 复制失败：保持 Copy 图标，不启动定时器。
+      }
     )
   }
 
-  const isCopied = copiedKey !== null && copiedKey === currentKey
   const { impl, rev } = taskActors(taskSettings)
   const roleKey: TranslationKey | null =
     actor === impl ? 'statusBar.summary.implementer'
@@ -352,11 +376,11 @@ function ActorCard({
         {session && (
           <button
             onClick={handleCopy}
-            title={isCopied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
-            aria-label={isCopied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
+            title={copied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
+            aria-label={copied ? t('statusBar.actor.copied') : t('statusBar.actor.copy')}
             className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted"
           >
-            {isCopied ? <Check size={12} strokeWidth={2} /> : <Copy size={12} strokeWidth={2} />}
+            {copied ? <Check size={12} strokeWidth={2} /> : <Copy size={12} strokeWidth={2} />}
           </button>
         )}
       </div>
