@@ -253,13 +253,24 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
     }
   }, [isGenerating])
 
-  // Handle Escape at document level so it works regardless of focus position
+  // 保存最新的关闭回调,Escape 监听器只读取最新引用而不重新注册。
+  // 这样父组件(如 StatusBar)每次重渲染传入新的内联 onClose 时,
+  // 不会触发监听器副作用的清理,从而不会误取消正在进行的提交信息生成。
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  // Handle Escape at document level so it works regardless of focus position。
+  // 副作用仅在挂载时注册一次,依赖数组为 []:普通 onClose 引用变化不得
+  // 触发清理(否则会误杀正在运行的 Actor)。清理函数只在真正卸载时执行,
+  // 取消尚未结束的生成并移除监听器。
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
         api.cancelGenerateCommitMessage()
-        onClose()
+        onCloseRef.current()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
@@ -267,7 +278,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
       document.removeEventListener('keydown', handleKeyDown)
       api.cancelGenerateCommitMessage()
     }
-  }, [onClose])
+  }, [])
 
   const selectedFiles = allFiles.filter((f) => selectedPaths.has(f.path))
   const totalInsertions = selectedFiles.reduce((s, f) => s + f.insertions, 0)

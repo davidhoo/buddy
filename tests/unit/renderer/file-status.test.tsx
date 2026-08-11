@@ -281,3 +281,105 @@ describe('CommitModal actor selection', () => {
     })
   })
 })
+
+describe('CommitModal re-render resilience', () => {
+  beforeEach(() => {
+    vi.mocked(api.generateCommitMessage).mockClear()
+    vi.mocked(api.cancelGenerateCommitMessage).mockClear()
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('does not cancel generation when onClose callback identity changes', async () => {
+    const mockCancel = vi.mocked(api.cancelGenerateCommitMessage)
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    // 一个尚未完成的 Promise
+    let resolveGenerate!: (v: { message: string }) => void
+    const pending = new Promise<{ message: string }>((resolve) => { resolveGenerate = resolve })
+    mockGenerate.mockReturnValue(pending)
+
+    const baseProps = {
+      gitStatus: makeGitStatus(),
+      repoRoot: '/tmp/repo',
+      globalSettings: makeSettings(true),
+      taskSettings: { implementer_actor: 'codex' },
+      isTaskRunning: false,
+      onSuccess: vi.fn(),
+      onError: vi.fn(),
+    }
+    const firstOnClose = vi.fn()
+    const { rerender } = render(<CommitModal {...baseProps} onClose={firstOnClose} />)
+
+    // 自动生成只应触发一次
+    await vi.waitFor(() => {
+      expect(mockGenerate).toHaveBeenCalledTimes(1)
+    })
+
+    // 用一个新的 onClose 函数引用重新渲染(模拟 StatusBar 每秒重渲染)
+    const newOnClose = vi.fn()
+    rerender(<CommitModal {...baseProps} onClose={newOnClose} />)
+
+    // onClose 引用变化不得取消正在进行的生成
+    expect(mockCancel).not.toHaveBeenCalled()
+    // 也没有重新发起生成
+    expect(mockGenerate).toHaveBeenCalledTimes(1)
+    // 仍在生成状态(生成按钮显示“生成中”文案)
+    expect(screen.getByText(/git\.generatingButton/)).toBeTruthy()
+    // 没有显示生成失败提示
+    expect(screen.queryByText(/git\.generateFailed/)).toBeNull()
+
+    // 让原始生成请求返回合法提交信息
+    resolveGenerate({ message: 'feat: resolved via pending promise' })
+
+    await vi.waitFor(() => {
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+      expect(textarea.value).toBe('feat: resolved via pending promise')
+    })
+  })
+
+  it('cancels pending generation when unmounted', () => {
+    const mockCancel = vi.mocked(api.cancelGenerateCommitMessage)
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    mockGenerate.mockReturnValue(new Promise(() => {}))
+
+    const onClose = vi.fn()
+    const baseProps = {
+      gitStatus: makeGitStatus(),
+      repoRoot: '/tmp/repo',
+      globalSettings: makeSettings(false),
+      taskSettings: { implementer_actor: 'codex' },
+      isTaskRunning: false,
+      onClose,
+      onSuccess: vi.fn(),
+      onError: vi.fn(),
+    }
+    const { unmount } = render(<CommitModal {...baseProps} />)
+
+    const generateBtn = screen.getByText(/git\.generateMessage/)
+    fireEvent.click(generateBtn)
+
+    unmount()
+
+    // 卸载时清理函数应取消尚未结束的生成
+    expect(mockCancel).toHaveBeenCalled()
+
+    // 卸载后触发 Escape 不得再次调用旧 onClose:
+    // document 上的 Esc 监听器必须已被移除,残留会导致旧 onClose 被调用。
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
