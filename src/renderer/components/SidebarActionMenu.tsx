@@ -87,7 +87,8 @@ export function SidebarActionMenu({ anchor, onClose, children, minWidth = 168 }:
   const style: React.CSSProperties = {
     position: 'fixed',
     minWidth,
-    zIndex: 50
+    // Above the sidebar and any modals that might open from menu actions.
+    zIndex: 60
   }
   if (position) {
     style.left = position.left

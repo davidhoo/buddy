@@ -398,7 +398,6 @@ describe('Sidebar', () => {
     window.localStorage.setItem('buddy.pinnedTaskIds', JSON.stringify(['pinned']))
     const onCopyText = vi.fn()
     const onOpenInFinder = vi.fn()
-    const togglePinSpy = vi.fn()
 
     renderSidebar([task('pinned')], { onCopyText, onOpenInFinder })
 
@@ -410,6 +409,10 @@ describe('Sidebar', () => {
     expect(screen.getByText('Show in Finder')).toBeVisible()
     expect(screen.getByText('Unpin')).toBeVisible()
 
+    // Right-clicking alone must not toggle pin state — the pin list is unchanged
+    // until the user explicitly clicks Unpin.
+    expect(JSON.parse(window.localStorage.getItem('buddy.pinnedTaskIds') || '[]')).toEqual(['pinned'])
+
     fireEvent.click(screen.getByText('Copy Task Name'))
     expect(onCopyText).toHaveBeenCalledWith('pinned')
 
@@ -419,7 +422,21 @@ describe('Sidebar', () => {
     expect(onOpenInFinder).toHaveBeenCalledWith(
       '/tmp/buddy/workspaces/pinned-workspace/tasks/pinned'
     )
-    expect(togglePinSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not write taskReadState when opening or closing the task context menu', () => {
+    window.localStorage.removeItem('buddy.taskReadState')
+
+    renderSidebar([task('first')])
+
+    const taskRow = screen.getByText('first').closest('[title]')!
+    fireEvent.contextMenu(taskRow, { clientX: 30, clientY: 30 })
+    expect(screen.getByText('Copy Task Name')).toBeVisible()
+
+    // Closing via Escape must still leave the read state untouched.
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(window.localStorage.getItem('buddy.taskReadState')).toBeNull()
   })
   it('shows installing label when updateStatus is installing', () => {
     renderSidebar([], {
