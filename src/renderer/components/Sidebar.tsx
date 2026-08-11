@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   AlertCircle,
   ChevronLeft,
+  Copy,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -20,6 +21,7 @@ import {
 import { Task } from '../../shared/types'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ResizeHandle } from './ResizeHandle'
+import { SidebarActionMenu, SidebarMenuItem, SidebarMenuDivider, type SidebarMenuAnchor } from './SidebarActionMenu'
 import { useT } from '../hooks/useI18n'
 import type { TFunction } from '../hooks/useI18n'
 import type { TranslationKey } from '../lib/i18n'
@@ -56,6 +58,7 @@ interface SidebarProps {
   onRenameProject: (repoRoot: string, newName: string) => void
   onRenameTask: (taskId: string, newName: string) => void
   onOpenInFinder: (path: string) => void
+  onCopyText: (text: string) => void
   onRemoveProject: (repoRoot: string) => void
   projectNames: Record<string, string>
   taskNames: Record<string, string>
@@ -87,6 +90,7 @@ export function Sidebar({
   onRenameProject,
   onRenameTask,
   onOpenInFinder,
+  onCopyText,
   onRemoveProject,
   projectNames,
   taskNames
@@ -137,6 +141,7 @@ export function Sidebar({
           onRenameProject={onRenameProject}
           onRenameTask={onRenameTask}
           onOpenInFinder={onOpenInFinder}
+          onCopyText={onCopyText}
           onRemoveProject={onRemoveProject}
           projectNames={projectNames}
           taskNames={taskNames}
@@ -241,6 +246,7 @@ function ChatSidebar({
   onRenameProject,
   onRenameTask,
   onOpenInFinder,
+  onCopyText,
   onRemoveProject,
   projectNames,
   taskNames,
@@ -262,27 +268,38 @@ function ChatSidebar({
   onRenameProject: (repoRoot: string, newName: string) => void
   onRenameTask: (taskId: string, newName: string) => void
   onOpenInFinder: (path: string) => void
+  onCopyText: (text: string) => void
   onRemoveProject: (repoRoot: string) => void
   projectNames: Record<string, string>
   taskNames: Record<string, string>
   t: TFunction
 }) {
-  const [openMenuRepoRoot, setOpenMenuRepoRoot] = useState<string | null>(null)
-  const [openMenuTaskId, setOpenMenuTaskId] = useState<string | null>(null)
+  type SidebarMenuState =
+    | {
+        kind: 'project'
+        repoRoot: string
+        projectName: string
+        anchor: SidebarMenuAnchor
+      }
+    | {
+        kind: 'task'
+        task: Task
+        displayName: string
+        isPinned: boolean
+        anchor: SidebarMenuAnchor
+      }
+    | null
+
+  const [menuState, setMenuState] = useState<SidebarMenuState>(null)
   const [renamingRepoRoot, setRenamingRepoRoot] = useState<string | null>(null)
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const taskMenuRef = useRef<HTMLDivElement | null>(null)
-
-  // Callback ref that always binds to the currently-open task menu container
-  const taskMenuCallbackRef = useCallback((node: HTMLDivElement | null) => {
-    taskMenuRef.current = node
-  }, [])
 
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>(() => readStringArraySetting('buddy.pinnedTaskIds'))
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<string[]>(() => readStringArraySetting('buddy.collapsedProjectKeys'))
   const [expandedTaskProjects, setExpandedTaskProjects] = useState<Set<string>>(new Set())
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
+
+  const closeMenu = useCallback(() => setMenuState(null), [])
 
   const togglePin = useCallback((taskId: string) => {
     setPinnedTaskIds(prev => {
@@ -328,30 +345,6 @@ function ChatSidebar({
     .filter(Boolean)
   const unpinnedTasks = tasks.filter(t => !validPinnedIds.includes(t.task_id))
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!openMenuRepoRoot) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuRepoRoot(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [openMenuRepoRoot])
-
-  // Close task menu on outside click
-  useEffect(() => {
-    if (!openMenuTaskId) return
-    const handler = (e: MouseEvent) => {
-      if (taskMenuRef.current && !taskMenuRef.current.contains(e.target as Node)) {
-        setOpenMenuTaskId(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [openMenuTaskId])
-
   const groupedTasks = unpinnedTasks.reduce<Record<string, Task[]>>((acc, task) => {
     const key = projectNameForTask(task, projectNames)
     if (!acc[key]) acc[key] = []
@@ -362,6 +355,16 @@ function ChatSidebar({
   Object.values(groupedTasks).forEach(list => {
     list.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
   })
+
+  // Open the project menu from the "..." button (right-aligned to the button) or a right-click.
+  const openProjectMenu = useCallback((repoRoot: string, projectName: string, anchor: SidebarMenuAnchor) => {
+    setMenuState({ kind: 'project', repoRoot, projectName, anchor })
+  }, [])
+
+  // Open the task menu from the "..." button (right-aligned to the button) or a right-click.
+  const openTaskMenu = useCallback((task: Task, displayName: string, isPinned: boolean, anchor: SidebarMenuAnchor) => {
+    setMenuState({ kind: 'task', task, displayName, isPinned, anchor })
+  }, [])
 
   return (
     <>
@@ -452,12 +455,16 @@ function ChatSidebar({
                   const isSelected = selectedTaskId === task.task_id
                   const unread = isTaskUnread(task, selectedTaskId)
                   const proj = projectNameForTask(task, projectNames)
-                  const isTaskMenuOpen = openMenuTaskId === task.task_id
                   const displayName = displayNameForTask(task, taskNames)
                   return (
                     <div
                       key={task.task_id}
                       onClick={() => onSelectTask(task.task_id, task.workspace_key)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openTaskMenu(task, displayName, true, { x: e.clientX, y: e.clientY, align: 'left' })
+                      }}
                       title={`${displayName}\n${task.workspace_key}`}
                       className={`group/task w-full h-7 text-left px-3 ml-2 rounded-md mb-0.5 transition-colors cursor-pointer ${
                         isSelected
@@ -478,52 +485,19 @@ function ChatSidebar({
                             {formatRelativeTime(task.updated_at, t)}
                           </span>
                         )}
-                        <div className="relative hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0" ref={isTaskMenuOpen ? taskMenuCallbackRef : undefined}>
+                        <div className="relative hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0">
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(isTaskMenuOpen ? null : task.task_id) }}
-                            className={`w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted ${isTaskMenuOpen ? 'opacity-100' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              openTaskMenu(task, displayName, true, { x: rect.right, y: rect.bottom, align: 'right' })
+                            }}
+                            className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted"
                             title={t('sidebar.tooltipMore')}
                           >
                             <Ellipsis size={14} strokeWidth={2} />
                           </button>
-                          {isTaskMenuOpen && (
-                            <div className="absolute right-0 top-full mt-0.5 z-50 min-w-[140px] bg-bg border border-fg-muted/40 rounded-lg shadow-lg py-0.5 text-[13px]">
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(null); setRenamingTaskId(task.task_id) }}
-                                className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                              >
-                                <SquarePen size={13} strokeWidth={2} />
-                                {t('sidebar.menuRenameTask')}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(null); togglePin(task.task_id) }}
-                                className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                              >
-                                <Pin size={13} fill="currentColor" strokeWidth={2} style={{ transform: 'rotate(-30deg)' }} />
-                                {t('sidebar.menuUnpinTask')}
-                              </button>
-                              <div className="my-0.5 border-t border-border-subtle" />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setOpenMenuTaskId(null)
-                                  setConfirmState({
-                                    title: t('sidebar.deleteTaskTitle'),
-                                    message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
-                                    onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
-                                  })
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
-                              >
-                                <Trash2 size={13} strokeWidth={2} />
-                                {t('sidebar.menuDeleteTask')}
-                              </button>
-                            </div>
-                          )}
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); togglePin(task.task_id) }}
@@ -543,7 +517,6 @@ function ChatSidebar({
             {Object.entries(groupedTasks).map(([projectKey, workspaceTasks]) => {
               const hasSelected = workspaceTasks.some(t => t.task_id === selectedTaskId)
               const repoRoot = workspaceTasks[0]?.repo_root || ''
-              const isMenuOpen = openMenuRepoRoot === repoRoot
               const isCollapsed = collapsedProjectKeys.includes(projectKey)
               const isExpanded = !isCollapsed
               return (
@@ -553,6 +526,11 @@ function ChatSidebar({
                     tabIndex={0}
                     aria-expanded={isExpanded}
                     onClick={() => toggleProject(projectKey)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openProjectMenu(repoRoot, projectKey, { x: e.clientX, y: e.clientY, align: 'left' })
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
@@ -565,52 +543,19 @@ function ChatSidebar({
                   }`}>
                     <FolderIcon isOpen={isExpanded} />
                     <span className="truncate flex-1">{projectKey}</span>
-                    <div className="relative" ref={isMenuOpen ? menuRef : undefined}>
+                    <div className="relative">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(isMenuOpen ? null : repoRoot) }}
-                        className={`w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted transition-opacity ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          openProjectMenu(repoRoot, projectKey, { x: rect.right, y: rect.bottom, align: 'right' })
+                        }}
+                        className={`w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted transition-opacity ${menuState?.kind === 'project' && menuState.repoRoot === repoRoot ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                         title={t('sidebar.tooltipMore')}
                       >
                         <Ellipsis size={14} strokeWidth={2} />
                       </button>
-                      {isMenuOpen && (
-                        <div className="absolute right-0 top-full mt-0.5 z-50 min-w-[168px] bg-bg border border-fg-muted/40 rounded-lg shadow-lg py-0.5 text-[13px]">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(null); setRenamingRepoRoot(repoRoot) }}
-                            className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                          >
-                            <SquarePen size={13} strokeWidth={2} />
-                            {t('sidebar.menuRename')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setOpenMenuRepoRoot(null); onOpenInFinder(repoRoot) }}
-                            className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                          >
-                            <FolderOpen size={13} strokeWidth={2} />
-                            {t('sidebar.menuOpenInFinder')}
-                          </button>
-                          <div className="my-0.5 border-t border-border-subtle" />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setOpenMenuRepoRoot(null)
-                              setConfirmState({
-                                title: t('sidebar.removeProjectTitle'),
-                                message: t('sidebar.confirmRemoveProject', { name: projectKey }),
-                                onConfirm: () => onRemoveProject(repoRoot)
-                              })
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
-                          >
-                            <Trash2 size={13} strokeWidth={2} />
-                            {t('sidebar.menuRemove')}
-                          </button>
-                        </div>
-                      )}
                     </div>
                     <button
                       type="button"
@@ -628,13 +573,17 @@ function ChatSidebar({
                       {(expandedTaskProjects.has(projectKey) ? workspaceTasks : workspaceTasks.slice(0, 10)).map((task) => {
                       const isSelected = selectedTaskId === task.task_id
                       const unread = isTaskUnread(task, selectedTaskId)
-                      const isTaskMenuOpen = openMenuTaskId === task.task_id
                       const displayName = displayNameForTask(task, taskNames)
                       const isPinned = pinnedTaskIds.includes(task.task_id)
                       return (
                         <div
                           key={task.task_id}
                           onClick={() => onSelectTask(task.task_id, task.workspace_key)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openTaskMenu(task, displayName, isPinned, { x: e.clientX, y: e.clientY, align: 'left' })
+                          }}
                           title={`${displayName}\n${task.workspace_key}`}
                           className={`group/task w-full h-7 text-left px-3 ml-2 rounded-md mb-0.5 transition-colors cursor-pointer ${
                             isSelected
@@ -654,52 +603,19 @@ function ChatSidebar({
                                 {formatRelativeTime(task.updated_at, t)}
                               </span>
                             )}
-                            <div className="relative hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0" ref={isTaskMenuOpen ? taskMenuCallbackRef : undefined}>
+                            <div className="relative hidden group-hover/task:flex items-center gap-0.5 flex-shrink-0">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(isTaskMenuOpen ? null : task.task_id) }}
-                                className={`w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted ${isTaskMenuOpen ? 'opacity-100' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                  openTaskMenu(task, displayName, isPinned, { x: rect.right, y: rect.bottom, align: 'right' })
+                                }}
+                                className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-bg-muted"
                                 title={t('sidebar.tooltipMore')}
                               >
                                 <Ellipsis size={14} strokeWidth={2} />
                               </button>
-                              {isTaskMenuOpen && (
-                                <div className="absolute right-0 top-full mt-0.5 z-50 min-w-[140px] bg-bg border border-fg-muted/40 rounded-lg shadow-lg py-0.5 text-[13px]">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(null); setRenamingTaskId(task.task_id) }}
-                                    className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                                  >
-                                    <SquarePen size={13} strokeWidth={2} />
-                                    {t('sidebar.menuRenameTask')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setOpenMenuTaskId(null); togglePin(task.task_id) }}
-                                    className="w-full flex items-center gap-2 px-3 py-[3px] text-fg hover:bg-bg-muted rounded-[4px] mx-0.5"
-                                  >
-                                    <Pin size={13} fill="currentColor" strokeWidth={2} style={{ transform: 'rotate(-30deg)' }} />
-                                    {isPinned ? t('sidebar.menuUnpinTask') : t('sidebar.menuPinTask')}
-                                  </button>
-                                  <div className="my-0.5 border-t border-border-subtle" />
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setOpenMenuTaskId(null)
-                                      setConfirmState({
-                                        title: t('sidebar.deleteTaskTitle'),
-                                        message: t('sidebar.confirmDeleteTask', { id: task.task_id }),
-                                        onConfirm: () => onDeleteTask(task.task_id, task.workspace_key)
-                                      })
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-[3px] text-danger hover:bg-bg-muted rounded-[4px] mx-0.5"
-                                  >
-                                    <Trash2 size={13} strokeWidth={2} />
-                                    {t('sidebar.menuDeleteTask')}
-                                  </button>
-                                </div>
-                              )}
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); togglePin(task.task_id) }}
@@ -729,6 +645,45 @@ function ChatSidebar({
           </>
         )}
       </div>
+
+      {menuState && (
+        <SidebarActionMenu anchor={menuState.anchor} onClose={closeMenu}>
+          {menuState.kind === 'project' ? (
+            <ProjectActionsMenu
+              projectName={menuState.projectName}
+              onRename={() => { setMenuState(null); setRenamingRepoRoot(menuState.repoRoot) }}
+              onCopyDirectory={() => { setMenuState(null); onCopyText(menuState.repoRoot) }}
+              onOpenInFinder={() => { setMenuState(null); onOpenInFinder(menuState.repoRoot) }}
+              onRemove={() => {
+                setMenuState(null)
+                setConfirmState({
+                  title: t('sidebar.removeProjectTitle'),
+                  message: t('sidebar.confirmRemoveProject', { name: menuState.projectName }),
+                  onConfirm: () => onRemoveProject(menuState.repoRoot)
+                })
+              }}
+              t={t}
+            />
+          ) : (
+            <TaskActionsMenu
+              isPinned={menuState.isPinned}
+              onRename={() => { setMenuState(null); setRenamingTaskId(menuState.task.task_id) }}
+              onCopyName={() => { setMenuState(null); onCopyText(menuState.displayName) }}
+              onOpenInFinder={() => { setMenuState(null); onOpenInFinder(menuState.task.task_dir) }}
+              onTogglePin={() => { setMenuState(null); togglePin(menuState.task.task_id) }}
+              onDelete={() => {
+                setMenuState(null)
+                setConfirmState({
+                  title: t('sidebar.deleteTaskTitle'),
+                  message: t('sidebar.confirmDeleteTask', { id: menuState.task.task_id }),
+                  onConfirm: () => onDeleteTask(menuState.task.task_id, menuState.task.workspace_key)
+                })
+              }}
+              t={t}
+            />
+          )}
+        </SidebarActionMenu>
+      )}
 
       {renamingRepoRoot && (
         <RenameDialog
@@ -773,6 +728,82 @@ function ChatSidebar({
           onCancel={() => setConfirmState(null)}
         />
       )}
+    </>
+  )
+}
+
+function ProjectActionsMenu({
+  projectName,
+  onRename,
+  onCopyDirectory,
+  onOpenInFinder,
+  onRemove,
+  t
+}: {
+  projectName: string
+  onRename: () => void
+  onCopyDirectory: () => void
+  onOpenInFinder: () => void
+  onRemove: () => void
+  t: TFunction
+}) {
+  return (
+    <>
+      <SidebarMenuItem icon={<SquarePen size={13} strokeWidth={2} />} onSelect={onRename}>
+        {t('sidebar.menuRename')}
+      </SidebarMenuItem>
+      <SidebarMenuItem icon={<Copy size={13} strokeWidth={2} />} onSelect={onCopyDirectory}>
+        {t('sidebar.menuCopyProjectDirectory')}
+      </SidebarMenuItem>
+      <SidebarMenuItem icon={<FolderOpen size={13} strokeWidth={2} />} onSelect={onOpenInFinder}>
+        {t('sidebar.menuOpenInFinder')}
+      </SidebarMenuItem>
+      <SidebarMenuDivider />
+      <SidebarMenuItem icon={<Trash2 size={13} strokeWidth={2} />} danger onSelect={onRemove}>
+        {t('sidebar.menuRemove')}
+      </SidebarMenuItem>
+    </>
+  )
+}
+
+function TaskActionsMenu({
+  isPinned,
+  onRename,
+  onCopyName,
+  onOpenInFinder,
+  onTogglePin,
+  onDelete,
+  t
+}: {
+  isPinned: boolean
+  onRename: () => void
+  onCopyName: () => void
+  onOpenInFinder: () => void
+  onTogglePin: () => void
+  onDelete: () => void
+  t: TFunction
+}) {
+  return (
+    <>
+      <SidebarMenuItem icon={<SquarePen size={13} strokeWidth={2} />} onSelect={onRename}>
+        {t('sidebar.menuRenameTask')}
+      </SidebarMenuItem>
+      <SidebarMenuItem icon={<Copy size={13} strokeWidth={2} />} onSelect={onCopyName}>
+        {t('sidebar.menuCopyTaskName')}
+      </SidebarMenuItem>
+      <SidebarMenuItem icon={<FolderOpen size={13} strokeWidth={2} />} onSelect={onOpenInFinder}>
+        {t('sidebar.menuOpenInFinder')}
+      </SidebarMenuItem>
+      <SidebarMenuItem
+        icon={<Pin size={13} fill="currentColor" strokeWidth={2} style={{ transform: 'rotate(-30deg)' }} />}
+        onSelect={onTogglePin}
+      >
+        {isPinned ? t('sidebar.menuUnpinTask') : t('sidebar.menuPinTask')}
+      </SidebarMenuItem>
+      <SidebarMenuDivider />
+      <SidebarMenuItem icon={<Trash2 size={13} strokeWidth={2} />} danger onSelect={onDelete}>
+        {t('sidebar.menuDeleteTask')}
+      </SidebarMenuItem>
     </>
   )
 }

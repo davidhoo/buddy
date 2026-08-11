@@ -187,8 +187,18 @@ export default function App() {
   const handleOpenInFinder = useCallback((path: string) => {
     window.api.openInFinder(path).catch((err: unknown) => {
       console.error('Failed to open in Finder:', err)
+      window.alert(t('sidebar.openInFinderFail', { message: err instanceof Error ? err.message : String(err) }))
     })
-  }, [])
+  }, [t])
+
+  const handleCopyText = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).catch((error: unknown) => {
+      console.error('Failed to copy text:', error)
+      window.alert(t('sidebar.copyFail', {
+        message: error instanceof Error ? error.message : String(error)
+      }))
+    })
+  }, [t])
 
   const handleRemoveProject = useCallback(async (repoRoot: string) => {
     const projectTasks = tasks.filter(t => t.repo_root === repoRoot)
@@ -637,6 +647,7 @@ export default function App() {
         onRenameProject={handleRenameProject}
         onRenameTask={handleRenameTask}
         onOpenInFinder={handleOpenInFinder}
+        onCopyText={handleCopyText}
         onRemoveProject={handleRemoveProject}
         projectNames={projectNames}
         taskNames={taskNames}

@@ -62,6 +62,7 @@ describe('Sidebar', () => {
       isFullScreen: false,
       onRenameProject: vi.fn(),
       onOpenInFinder: vi.fn(),
+      onCopyText: vi.fn(),
       onRemoveProject: vi.fn(),
       projectNames: {},
       updateStatus: 'idle' as const,
@@ -110,6 +111,7 @@ describe('Sidebar', () => {
         isFullScreen={false}
         onRenameProject={() => {}}
         onOpenInFinder={() => {}}
+        onCopyText={() => {}}
         onRemoveProject={() => {}}
         projectNames={{}}
       />
@@ -160,6 +162,7 @@ describe('Sidebar', () => {
         isFullScreen={false}
         onRenameProject={() => {}}
         onOpenInFinder={() => {}}
+        onCopyText={() => {}}
         onRemoveProject={() => {}}
         projectNames={{}}
       />
@@ -204,7 +207,7 @@ describe('Sidebar', () => {
     fireEvent.click(projectRow)
     expect(projectRow).toHaveAttribute('aria-expanded', 'false')
 
-    fireEvent.click(screen.getByTitle('More actions'))
+    fireEvent.click(screen.getAllByTitle('More actions')[0])
     expect(projectRow).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('first')).toBeNull()
 
@@ -212,6 +215,44 @@ describe('Sidebar', () => {
     expect(props.onCreateTask).toHaveBeenCalledWith('/tmp/repo')
     expect(projectRow).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('second')).toBeNull()
+  })
+
+  it('renders only one shared menu at a time across project and task actions', () => {
+    renderSidebar([task('first'), task('second')])
+
+    // The project "..." button is the first "More actions"; the rest belong to (hidden) task rows.
+    const moreButtons = screen.getAllByTitle('More actions')
+    const projectMoreButton = moreButtons[0]
+    const taskMoreButton = moreButtons.find((btn) => {
+      let node: HTMLElement | null = btn as HTMLElement
+      while (node) {
+        if (node.classList.contains('group/task')) return true
+        node = node.parentElement
+      }
+      return false
+    })!
+
+    fireEvent.click(projectMoreButton)
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    expect(screen.getByText('Rename project')).toBeTruthy()
+
+    fireEvent.click(taskMoreButton)
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    expect(screen.queryByText('Rename project')).toBeNull()
+    expect(screen.getByText('Delete')).toBeTruthy()
+
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('closes the shared menu on Escape', () => {
+    renderSidebar([task('first')])
+
+    fireEvent.click(screen.getAllByTitle('More actions')[0])
+    expect(screen.getByRole('menu')).toBeTruthy()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('allows the selected task project to stay collapsed when the project was persisted collapsed', () => {
