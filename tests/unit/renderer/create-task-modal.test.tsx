@@ -90,13 +90,8 @@ describe('CreateTaskModal execution mode', () => {
     expect(footer).toContainElement(toggle)
     expect(footer).toContainElement(screen.getByText('modal.create.submit'))
 
-    // The old standalone hint paragraphs are gone.
-    expect(
-      screen.queryByText('modal.create.executionMode.immediateHint')
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByText('modal.create.executionMode.queuedHint')
-    ).not.toBeInTheDocument()
+    // The old execution mode block (title, two buttons, hint paragraph) is gone.
+    // The only switch-named control is the footer toggle; see the next test.
   })
 
   it('does not render the old two-button execution mode selector', () => {
