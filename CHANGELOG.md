@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.14] - 2026-08-11
+
+### Fixed
+- 修复提交信息生成被误取消的问题：状态栏每秒重渲染传入新的内联函数，导致 Escape 监听副作用被反复清理、误杀正在运行的生成请求；改用 ref 持有 onClose，仅在挂载/卸载时注册监听
+- 修复复制会话 ID 后「已复制」对号在切换任务后不消失的问题：改为布尔状态 + ref 定时器，5 秒自动恢复，组件卸载时清理；同时给 ActorCard 加上 task_id 前缀的 key，避免跨任务复用组件实例
+
+---
+
 ## [1.2.13] - 2026-08-11
 
 ### Changed
@@ -467,6 +475,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.14]: https://github.com/davidhoo/buddy/releases/tag/v1.2.14
 [1.2.9]: https://github.com/davidhoo/buddy/releases/tag/v1.2.9
 [1.2.7]: https://github.com/davidhoo/buddy/releases/tag/v1.2.7
 [1.2.8]: https://github.com/davidhoo/buddy/releases/tag/v1.2.8
