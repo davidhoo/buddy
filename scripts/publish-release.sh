@@ -41,12 +41,12 @@ else
     --draft >/dev/null
 fi
 
-PUBLISHED=false
+PUBLICATION_ATTEMPTED=false
 FEED_VERIFIED=false
 FEED_FILE=""
 rollback_if_needed() {
   local status=$?
-  if [ "$PUBLISHED" = "true" ] && [ "$FEED_VERIFIED" != "true" ]; then
+  if [ "$PUBLICATION_ATTEMPTED" = "true" ] && [ "$FEED_VERIFIED" != "true" ]; then
     echo "Latest feed verification failed; returning ${VERSION} to Draft" >&2
     gh release edit "$VERSION" --repo "$GITHUB_REPO" --draft >/dev/null 2>&1 || true
   fi
@@ -71,8 +71,8 @@ echo ">> Verifying assets downloaded from the Draft release..."
 bash "$VERIFY_PUBLISHED_RELEASE_SCRIPT" "$VERSION" "$GITHUB_REPO"
 
 echo ">> Publishing verified release ${VERSION}..."
+PUBLICATION_ATTEMPTED=true
 gh release edit "$VERSION" --repo "$GITHUB_REPO" --draft=false --latest >/dev/null
-PUBLISHED=true
 
 LATEST_TAG="$(gh api "repos/${GITHUB_REPO}/releases/latest" --jq .tag_name)"
 if [ "$LATEST_TAG" != "$VERSION" ]; then

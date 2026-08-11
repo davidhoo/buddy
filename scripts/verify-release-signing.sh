@@ -56,7 +56,7 @@ verify_app_signature() {
   fi
 
   # Authority must be the exact identity selected for this release.
-  if ! printf '%s\n' "$sig_output" | grep -Fq "Authority=${EXPECTED_AUTHORITY}"; then
+  if ! printf '%s\n' "$sig_output" | grep -Fxq "Authority=${EXPECTED_AUTHORITY}"; then
     err "${label}: Authority is not ${EXPECTED_AUTHORITY}"
     return 1
   fi

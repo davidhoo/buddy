@@ -40,6 +40,7 @@ describe('verify-release-signing.sh', () => {
     await mkdir(join(artifactDir, 'mac-arm64/Buddy.app'), { recursive: true })
     await mkdir(join(artifactDir, 'mac/Buddy.app'), { recursive: true })
 
+    const expectedAuthority = 'Apple Development: Test User (TEAM)'
     const fakeCodesign = join(fakeBin, 'codesign')
     await writeFile(
       fakeCodesign,
@@ -47,7 +48,7 @@ describe('verify-release-signing.sh', () => {
 if [ "\${1:-}" = "-dv" ]; then
   printf '%s\n' \
     'Identifier=com.buddy.app' \
-    'Authority=Apple Development: Wrong User (WRONG)' \
+    'Authority=${expectedAuthority} Unexpected Suffix' \
     'TeamIdentifier=XLDSS978CT' >&2
 fi
 exit 0
@@ -55,7 +56,6 @@ exit 0
     )
     await chmod(fakeCodesign, 0o755)
 
-    const expectedAuthority = 'Apple Development: Test User (TEAM)'
     const result = spawnSync('bash', [script, '9.9.9', artifactDir], {
       cwd: repoRoot,
       encoding: 'utf8',

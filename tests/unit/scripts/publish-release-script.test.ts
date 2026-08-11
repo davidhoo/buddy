@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,6 +48,9 @@ printf 'gh %s\n' "$*" >> "$EVENT_LOG"
 if [ "\${1:-}" = "release" ] && [ "\${2:-}" = "view" ]; then
   [ "\${GH_RELEASE_EXISTS:-1}" = "1" ]
   exit
+fi
+if [ "\${1:-}" = "release" ] && [ "\${2:-}" = "edit" ] && [[ " $* " = *" --draft=false "* ]]; then
+  exit "\${GH_PUBLISH_EXIT_CODE:-0}"
 fi
 if [ "\${1:-}" = "api" ]; then
   printf '%s\n' "\${GH_LATEST_TAG:-v9.9.9}"
@@ -116,6 +119,14 @@ afterEach(async () => {
 })
 
 describe('publish-release.sh', () => {
+  it('ships release command scripts as executable files', async () => {
+    for (const name of ['publish-release.sh', 'verify-published-release.sh']) {
+      const mode = (await stat(join(repoRoot, 'scripts', name))).mode
+
+      expect(mode & 0o111).not.toBe(0)
+    }
+  })
+
   it('is the only publication path used by the official release script', async () => {
     const releaseScript = await readFile(join(repoRoot, 'scripts/release.sh'), 'utf8')
 
@@ -184,6 +195,19 @@ describe('publish-release.sh', () => {
     const events = await eventLines(fixture)
 
     expect(result.status).not.toBe(0)
+    const publishIndex = events.findIndex((line) => line.includes('--draft=false --latest'))
+    const rollbackIndex = events.findLastIndex((line) => line.endsWith('--draft'))
+    expect(publishIndex).toBeGreaterThan(-1)
+    expect(rollbackIndex).toBeGreaterThan(publishIndex)
+  })
+
+  it('attempts a Draft rollback when the publish request reports an ambiguous failure', async () => {
+    const fixture = await makeFixture()
+
+    const result = runScript(fixture, { GH_PUBLISH_EXIT_CODE: '37' })
+    const events = await eventLines(fixture)
+
+    expect(result.status).toBe(37)
     const publishIndex = events.findIndex((line) => line.includes('--draft=false --latest'))
     const rollbackIndex = events.findLastIndex((line) => line.endsWith('--draft'))
     expect(publishIndex).toBeGreaterThan(-1)
