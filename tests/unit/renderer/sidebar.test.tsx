@@ -31,6 +31,7 @@ describe('Sidebar', () => {
     return {
       task_id: taskId,
       workspace_key: `${taskId}-workspace`,
+      task_dir: `/tmp/buddy/workspaces/${taskId}-workspace/tasks/${taskId}`,
       status: 'READY',
       updated_at: '2026-05-26T10:00:00.000Z',
       repo_root: repoRoot,
@@ -79,6 +80,7 @@ describe('Sidebar', () => {
     const tasks: Task[] = [{
       task_id: 'demo',
       workspace_key: 'abc123def456',
+      task_dir: '/tmp/buddy/workspaces/abc123def456/tasks/demo',
       status: 'READY',
       updated_at: '',
       repo_root: '/tmp/repo',
@@ -125,6 +127,7 @@ describe('Sidebar', () => {
     const tasks: Task[] = [{
       task_id: 'running demo',
       workspace_key: 'abc123def456',
+      task_dir: '/tmp/buddy/workspaces/abc123def456/tasks/running demo',
       status: 'RUNNING_CLAUDE',
       updated_at: '2026-05-26T08:00:14.000Z',
       repo_root: '/tmp/repo',

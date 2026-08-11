@@ -72,12 +72,15 @@ describe('BuddyStore read model', () => {
 
     const store = new BuddyStore(root)
 
+    const expectedTaskDir = join(root, 'workspaces', 'abc123def456', 'tasks', 'demo')
+
     await expect(store.getTasks()).resolves.toEqual([
       expect.objectContaining({
         task_id: 'demo',
         workspace_key: 'abc123def456',
         status: 'READY',
-        repo_root: '/tmp/repo'
+        repo_root: '/tmp/repo',
+        task_dir: expectedTaskDir
       })
     ])
 
@@ -293,12 +296,15 @@ describe('BuddyStore read model', () => {
 
     const store = new BuddyStore(root)
 
+    const expectedTaskDir = join(root, 'workspaces', 'buddy-macos-31bd2c697ab4', 'tasks', '设置页基本功能')
+
     await expect(store.getTasks()).resolves.toEqual([
       expect.objectContaining({
         task_id: '设置页基本功能',
         workspace_key: 'buddy-macos-31bd2c697ab4',
         status: 'PAUSED',
-        repo_root: '/tmp/buddy-macos'
+        repo_root: '/tmp/buddy-macos',
+        task_dir: expectedTaskDir
       })
     ])
 

@@ -59,6 +59,7 @@ export class BuddyStore {
           tasks.push({
             task_id: taskId,
             workspace_key: workspaceKey,
+            task_dir: this.taskDirectory(taskId, workspaceKey),
             status: state.status,
             updated_at: state.updated_at ?? '',
             repo_root: state.repo_root ?? '',

@@ -6,6 +6,7 @@ function task(taskId: string, repoRoot: string, updatedAt: string): Task {
   return {
     task_id: taskId,
     workspace_key: `${taskId}-workspace`,
+    task_dir: `/tmp/buddy/workspaces/${taskId}-workspace/tasks/${taskId}`,
     status: 'READY',
     updated_at: updatedAt,
     repo_root: repoRoot,

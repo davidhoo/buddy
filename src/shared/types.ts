@@ -1,6 +1,7 @@
 export interface Task {
   task_id: string
   workspace_key: string
+  task_dir: string
   status: TaskStatus
   updated_at: string
   repo_root: string
