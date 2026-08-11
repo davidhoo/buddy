@@ -255,6 +255,50 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('opens the project menu from a right-click without collapsing the project', () => {
+    const onCopyText = vi.fn()
+    const onCreateTask = vi.fn()
+    const props = renderSidebar([task('first')], { onCopyText, onCreateTask })
+    const projectRow = screen.getByRole('button', { name: /repo/ })
+
+    fireEvent.contextMenu(projectRow, { clientX: 120, clientY: 80 })
+
+    expect(projectRow).toHaveAttribute('aria-expanded', 'true')
+    expect(onCreateTask).not.toHaveBeenCalled()
+    expect(screen.getByText('Copy Project Path')).toBeVisible()
+
+    fireEvent.click(screen.getByText('Copy Project Path'))
+    expect(onCopyText).toHaveBeenCalledWith('/tmp/repo')
+    expect(props.onOpenInFinder).not.toHaveBeenCalled()
+  })
+
+  it('exposes the same project menu actions from the "..." button as from right-click', () => {
+    renderSidebar([task('first')])
+
+    fireEvent.click(screen.getAllByTitle('More actions')[0])
+
+    const menu = screen.getByRole('menu')
+    expect(menu).toHaveTextContent('Rename project')
+    expect(menu).toHaveTextContent('Copy Project Path')
+    expect(menu).toHaveTextContent('Show in Finder')
+    expect(menu).toHaveTextContent('Remove')
+  })
+
+  it('keeps a collapsed project collapsed when right-clicking it', () => {
+    renderSidebar([task('first'), task('second')])
+    const projectRow = screen.getByRole('button', { name: /repo/ })
+
+    fireEvent.click(projectRow)
+    expect(projectRow).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.contextMenu(projectRow, { clientX: 10, clientY: 10 })
+    expect(projectRow).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('Copy Project Path')).toBeVisible()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(projectRow).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('allows the selected task project to stay collapsed when the project was persisted collapsed', () => {
     window.localStorage.setItem('buddy.collapsedProjectKeys', JSON.stringify(['repo']))
 
