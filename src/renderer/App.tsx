@@ -24,6 +24,7 @@ import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readL
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
 import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
+import { TASK_ID_MAX_CODE_POINTS, validateTaskId } from '../shared/task-id'
 
 export default function App() {
   const t = useT()
@@ -935,12 +936,12 @@ export function CreateTaskModal({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose, showBranchModal])
 
-  const TASK_NAME_RE = /^[a-zA-Z0-9一-鿿㐀-䶿""「」【】{}][a-zA-Z0-9一-鿿㐀-䶿 ._\-""「」【】{}]{0,63}$/
-  const taskIdError = taskId.trim() && !TASK_NAME_RE.test(taskId.trim())
+  const taskIdValidation = validateTaskId(taskId)
+  const taskIdError = taskIdValidation.reason !== null && taskId.trim()
     ? t('modal.create.taskNameError')
     : null
   const sameActorError = implementer === reviewer
-  const canSubmit = taskId.trim() && !taskIdError && !sameActorError
+  const canSubmit = taskIdValidation.reason === null && !sameActorError
 
   const seedFor = (actor: Actor, session: string): Record<string, string> => {
     const value = session.trim()
@@ -978,7 +979,7 @@ export function CreateTaskModal({
       ...seedFor(implementer, implementerSession),
       ...seedFor(reviewer, reviewerSession)
     }
-    onCreate(taskId.trim(), taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined, executionMode)
+    onCreate(taskIdValidation.value, taskText, repoRoot.trim(), settings, attachments.length > 0 ? attachments : undefined, executionMode)
   }
 
   const handleSelectDirectory = async () => {
@@ -1035,7 +1036,7 @@ export function CreateTaskModal({
             />
             <div className="flex justify-between mt-1">
               <span className="text-xs text-fg-muted">{t('modal.create.taskNameHint')}</span>
-              <span className="text-xs text-fg-muted">{taskId.trim().length}/64</span>
+              <span className="text-xs text-fg-muted">{[...taskIdValidation.value].length}/{TASK_ID_MAX_CODE_POINTS}</span>
             </div>
             {taskIdError && (
               <div className="text-xs text-danger mt-1">{taskIdError}</div>
@@ -1044,15 +1045,20 @@ export function CreateTaskModal({
 
           {/* 任务说明 */}
           <div>
-            <label className="block text-xs font-medium text-fg-secondary mb-1">
-              {t('modal.create.taskBrief')}
-            </label>
+            <div className="flex flex-wrap items-baseline gap-x-2 mb-1">
+              <label className="block text-xs font-medium text-fg-secondary">
+                {t('modal.create.taskBrief')}
+              </label>
+              <span className="text-[11px] text-fg-muted">
+                {t('modal.create.taskBriefPasteHint')}
+              </span>
+            </div>
             <textarea
               value={taskText}
               onChange={(e) => setTaskText(e.target.value)}
               onPaste={handlePaste}
-              rows={8}
-              className="w-full h-[160px] px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
+              rows={9}
+              className="w-full min-h-[176px] px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent font-mono text-xs bg-bg"
             />
             {/* Attachment previews — same layout as Composer */}
             {attachments.length > 0 && (

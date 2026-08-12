@@ -149,3 +149,83 @@ describe('CreateTaskModal execution mode', () => {
     expect(args[args.length - 1]).toBe('immediate')
   })
 })
+
+describe('CreateTaskModal task ID validation', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear())
+      }
+    })
+  })
+
+  it('accepts broad Unicode punctuation and passes the trimmed ID to onCreate', () => {
+    const { onCreate } = renderModal()
+    const input = 'feat: “任务名称” (v2) [macOS + Linux] #42 🚀'
+
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), {
+      target: { value: `  ${input}  ` }
+    })
+
+    const submit = screen.getByRole('button', { name: /modal.create.submit/ })
+    expect(submit).not.toBeDisabled()
+
+    fireEvent.click(submit)
+    expect(onCreate).toHaveBeenCalledTimes(1)
+    expect(onCreate.mock.calls[0][0]).toBe(input)
+  })
+
+  it.each([
+    ['path separator', 'a/b'],
+    ['dot segment', '.'],
+    ['overlong (65 emoji)', '🚀'.repeat(65)]
+  ])('disables submission and shows the error for an unsafe ID (%s)', (_label, unsafeId) => {
+    renderModal()
+
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), {
+      target: { value: unsafeId }
+    })
+
+    expect(screen.getByText('modal.create.taskNameError')).toBeInTheDocument()
+    // The submit button is gated by canSubmit; when invalid it is disabled.
+    expect(screen.getByRole('button', { name: /modal.create.submit/ })).toBeDisabled()
+  })
+
+  it('counts Unicode code points, not UTF-16 units, in the counter', () => {
+    renderModal()
+    const input = screen.getByPlaceholderText('modal.create.taskNamePlaceholder') as HTMLInputElement
+
+    // 3 emoji = 3 code points, 6 UTF-16 units. Counter must read 3/64.
+    fireEvent.change(input, { target: { value: '🚀🚀🚀' } })
+    expect(screen.getByText('3/64')).toBeInTheDocument()
+  })
+})
+
+describe('CreateTaskModal task brief layout', () => {
+  it('renders the brief textarea at rows=9 with min-h-[176px] instead of the old fixed height', () => {
+    renderModal()
+
+    // The brief is the only textarea in the modal.
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
+    expect(textarea).not.toBeNull()
+    expect(textarea).toHaveAttribute('rows', '9')
+    expect(textarea.className).toContain('min-h-[176px]')
+    expect(textarea.className).not.toContain('h-[160px]')
+  })
+
+  it('exposes the localized paste hint next to the task-brief label', () => {
+    renderModal()
+
+    // The label and the hint sit in the same flex row.
+    const label = screen.getByText('modal.create.taskBrief')
+    const hint = screen.getByText('modal.create.taskBriefPasteHint')
+    const row = label.parentElement
+    expect(row).toContainElement(hint)
+  })
+})
+
