@@ -28,6 +28,7 @@ import type {
   TranscriptEntry
 } from '../../shared/types'
 import { normalizeGlobalSettings, normalizeLaunchers } from '../../shared/defaults'
+import { validateTaskId } from '../../shared/task-id'
 import { canonicalRepoRoot, createBuddyPaths, taskDir, workspaceKeyForRepo } from './paths'
 import { redactJsonValue } from './redact'
 import { detectModelFromConfig } from './model-detect'
@@ -103,9 +104,14 @@ export class BuddyStore {
   }
 
   async createTask(input: CreateTaskInput): Promise<CreateTaskResult> {
+    const validation = validateTaskId(input.task_id)
+    if (validation.reason) {
+      throw new Error(`Invalid task ID: ${validation.reason}`)
+    }
+    const requestedTaskId = validation.value
     const repoRoot = canonicalRepoRoot(input.repo_root ?? '')
-    const workspaceKey = workspaceKeyForRepo(repoRoot || input.task_id)
-    const taskId = await deduplicateTaskId(input.task_id, this.taskDirectory.bind(this), workspaceKey)
+    const workspaceKey = workspaceKeyForRepo(repoRoot || requestedTaskId)
+    const taskId = await deduplicateTaskId(requestedTaskId, this.taskDirectory.bind(this), workspaceKey)
     const dir = this.taskDirectory(taskId, workspaceKey)
     const now = utcNow()
     const taskText = taskMarkdownContent(input.task_text ?? '')
