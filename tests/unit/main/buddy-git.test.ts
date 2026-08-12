@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { execSync } from 'node:child_process'
+import { execSync, execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   getGitFileStatuses,
+  getGitRemotes,
   getGitStatus,
   gitDiffForCommitMessage,
   gitStageFiles,
@@ -18,6 +19,19 @@ function createTestRepo(): string {
   execSync('git config user.email test@test.com', { cwd: dir })
   execSync('git config user.name Test', { cwd: dir })
   return dir
+}
+
+/** Create a bare remote repo and add it to `dir` under the given remote name. */
+function addBareRemote(dir: string, name: string): string {
+  const bare = mkdtempSync(join(tmpdir(), `buddy-git-bare-${name}-`))
+  execSync(`git init --bare`, { cwd: bare })
+  execSync(`git remote add ${name} ${bare}`, { cwd: dir })
+  return bare
+}
+
+/** Branch on a new branch from current HEAD (no upstream). */
+function checkoutNewBranch(dir: string, branch: string): void {
+  execSync(`git checkout -b ${branch}`, { cwd: dir })
 }
 
 describe('gitDiffForCommitMessage', () => {
@@ -162,10 +176,208 @@ describe('gitCommitAndPush preserves multi-line message', () => {
       const message = 'feat: add new feature\n\n- First bullet\n- Second bullet\n\nSupplemental paragraph.'
       const result = await gitCommitAndPush(dir, message, 'origin', false)
       expect(result.commitHash).toBeTruthy()
+      expect(result.pushStatus).toBe('not_requested')
 
       const committed = execSync('git log -1 --pretty=%B', { cwd: dir }).toString()
       // Git adds a trailing newline
       expect(committed.trim()).toBe(message.trim())
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('gitCommitAndPush push semantics', () => {
+  it('returns not_requested when push=false and does not require a remote', async () => {
+    const dir = createTestRepo()
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'content\n')
+      await gitStageFiles(dir, ['file.txt'])
+      const result = await gitCommitAndPush(dir, 'msg', '', false)
+      expect(result.pushStatus).toBe('not_requested')
+      expect(result.remote).toBeNull()
+      expect(result.upstreamCreated).toBe(false)
+      expect(result.pushError).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('first-pushes a branch with no upstream and sets upstream on success', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      checkoutNewBranch(dir, 'feature')
+
+      writeFileSync(join(dir, 'file.txt'), 'changed\n')
+      await gitStageFiles(dir, ['file.txt'])
+      const result = await gitCommitAndPush(dir, 'feat: change', 'origin', true)
+      expect(result.pushStatus).toBe('pushed')
+      expect(result.remote).toBe('origin')
+      expect(result.upstreamCreated).toBe(true)
+      expect(result.pushError).toBeNull()
+
+      // bare remote now has the same branch
+      const remoteBranches = execFileSync('git', ['--git-dir=' + bare, 'branch', '--format=%(refname:short)']).toString().trim()
+      expect(remoteBranches).toBe('feature')
+
+      // upstream now points to origin/feature
+      const upstream = execSync('git rev-parse --abbrev-ref feature@{upstream}', { cwd: dir }).toString().trim()
+      expect(upstream).toBe('origin/feature')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('pushes again on a branch that already tracks origin and reports upstreamCreated=false', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+
+      writeFileSync(join(dir, 'file.txt'), 'changed\n')
+      await gitStageFiles(dir, ['file.txt'])
+      const result = await gitCommitAndPush(dir, 'feat: change', 'origin', true)
+      expect(result.pushStatus).toBe('pushed')
+      expect(result.upstreamCreated).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('pushes to a second remote without rewriting the original upstream', async () => {
+    const dir = createTestRepo()
+    const originBare = addBareRemote(dir, 'origin')
+    const backupBare = addBareRemote(dir, 'backup')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+
+      writeFileSync(join(dir, 'file.txt'), 'changed\n')
+      await gitStageFiles(dir, ['file.txt'])
+      const result = await gitCommitAndPush(dir, 'feat: change', 'backup', true)
+      expect(result.pushStatus).toBe('pushed')
+      expect(result.remote).toBe('backup')
+
+      // backup now has main
+      const backupBranches = execFileSync('git', ['--git-dir=' + backupBare, 'branch', '--format=%(refname:short)']).toString().trim()
+      expect(backupBranches).toBe('main')
+
+      // original upstream unchanged
+      const upstream = execSync('git rev-parse --abbrev-ref main@{upstream}', { cwd: dir }).toString().trim()
+      expect(upstream).toBe('origin/main')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(originBare, { recursive: true, force: true })
+      rmSync(backupBare, { recursive: true, force: true })
+    }
+  })
+
+  it('reports failed push (not reject) and preserves the local commit', async () => {
+    const dir = createTestRepo()
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      // point origin at a nonexistent path
+      execSync('git remote add origin /nonexistent/path/to/remote.git', { cwd: dir })
+
+      writeFileSync(join(dir, 'file.txt'), 'changed\n')
+      await gitStageFiles(dir, ['file.txt'])
+      const localHeadBefore = execSync('git rev-parse --short HEAD', { cwd: dir }).toString().trim()
+
+      const result = await gitCommitAndPush(dir, 'feat: change', 'origin', true)
+      expect(result.pushStatus).toBe('failed')
+      expect(result.remote).toBe('origin')
+      expect(result.upstreamCreated).toBe(false)
+      expect(result.pushError).toBeTruthy()
+      expect(result.pushError).not.toContain('Commit failed')
+
+      // local commit retained
+      const lastMsg = execSync('git log -1 --pretty=%B', { cwd: dir }).toString().trim()
+      expect(lastMsg).toBe('feat: change')
+      expect(result.commitHash).not.toBe(localHeadBefore)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('still rejects when git commit itself fails', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      // nothing staged -> commit fails
+      await expect(gitCommitAndPush(dir, 'msg', 'origin', true)).rejects.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('getGitRemotes', () => {
+  it('returns origin when a single remote is configured', async () => {
+    const dir = createTestRepo()
+    try {
+      execSync('git remote add origin git@github.com:test/repo.git', { cwd: dir })
+      const remotes = await getGitRemotes(dir)
+      expect(remotes).toEqual([{ name: 'origin', url: 'git@github.com:test/repo.git' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns all remotes in git remote output order', async () => {
+    const dir = createTestRepo()
+    try {
+      execSync('git remote add origin git@github.com:test/repo.git', { cwd: dir })
+      execSync('git remote add backup git@github.com:test/backup.git', { cwd: dir })
+      const remotes = await getGitRemotes(dir)
+      expect(remotes.map(r => r.name).sort()).toEqual(['backup', 'origin'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns the push URL when push URL differs from fetch URL', async () => {
+    const dir = createTestRepo()
+    try {
+      execSync('git remote add origin git@github.com:test/fetch.git', { cwd: dir })
+      execSync('git remote set-url --push origin git@github.com:test/push.git', { cwd: dir })
+      const remotes = await getGitRemotes(dir)
+      expect(remotes).toEqual([{ name: 'origin', url: 'git@github.com:test/push.git' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('discovers origin when only a push URL is configured', async () => {
+    const dir = createTestRepo()
+    try {
+      execSync('git remote add origin git@github.com:test/fetch.git', { cwd: dir })
+      // 清除 fetch url，仅保留 pushurl
+      execSync('git config --unset remote.origin.url', { cwd: dir })
+      execSync('git config remote.origin.pushurl git@github.com:test/push.git', { cwd: dir })
+      const remotes = await getGitRemotes(dir)
+      expect(remotes).toEqual([{ name: 'origin', url: 'git@github.com:test/push.git' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns empty array when no remote is configured', async () => {
+    const dir = createTestRepo()
+    try {
+      const remotes = await getGitRemotes(dir)
+      expect(remotes).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

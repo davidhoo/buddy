@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { gitDiffForSelectedFiles } from './commit-message'
-import type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
+import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
 
-export type { GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
+export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -89,6 +89,20 @@ export async function getGitBranch(cwd: string): Promise<string> {
   }
 }
 
+interface GitUpstream {
+  remote: string
+  mergeRef: string
+}
+
+async function getGitUpstream(cwd: string, branch: string): Promise<GitUpstream | null> {
+  if (!branch || branch === 'HEAD') return null
+  const [remote, mergeRef] = await Promise.all([
+    execGit(['config', '--get', `branch.${branch}.remote`], cwd).catch(() => ''),
+    execGit(['config', '--get', `branch.${branch}.merge`], cwd).catch(() => '')
+  ])
+  return remote && mergeRef ? { remote, mergeRef } : null
+}
+
 export async function getGitDiffStats(cwd: string): Promise<GitDiffStats | null> {
   try {
     const output = await execGit(['diff', '--numstat', '--no-renames'], cwd)
@@ -109,17 +123,13 @@ export async function getGitStagedStats(cwd: string): Promise<GitDiffStats | nul
 
 export async function getGitRemotes(cwd: string): Promise<GitRemote[]> {
   try {
-    const output = await execGit(['remote', '-v'], cwd)
-    const remotes: GitRemote[] = []
-    const seen = new Set<string>()
-    for (const line of output.split('\n')) {
-      const match = line.match(/^(\S+)\s+(\S+)\s+\(fetch\)/)
-      if (match && !seen.has(match[1])) {
-        seen.add(match[1])
-        remotes.push({ name: match[1], url: match[2] })
-      }
-    }
-    return remotes
+    const output = await execGit(['remote'], cwd)
+    const names = output.split('\n').map(name => name.trim()).filter(Boolean)
+    const remotes = await Promise.all(names.map(async (name) => {
+      const url = await execGit(['remote', 'get-url', '--push', name], cwd).catch(() => '')
+      return url ? { name, url: url.split('\n')[0] } : null
+    }))
+    return remotes.filter((remote): remote is GitRemote => remote !== null)
   } catch {
     return []
   }
@@ -269,14 +279,47 @@ export async function gitCommitAndPush(
   message: string,
   remote: string,
   push: boolean = true
-): Promise<{ commitHash: string }> {
+): Promise<GitCommitPushResult> {
   removeStaleIndexLock(cwd)
   await execGit(['commit', '-m', message], cwd)
   const commitHash = await execGit(['rev-parse', '--short', 'HEAD'], cwd)
-  if (push) {
-    await execGit(['push', remote], cwd)
+  if (!push) {
+    return {
+      commitHash,
+      pushStatus: 'not_requested',
+      remote: null,
+      upstreamCreated: false,
+      pushError: null
+    }
   }
-  return { commitHash }
+
+  const branch = await getGitBranch(cwd)
+  const upstream = await getGitUpstream(cwd, branch)
+
+  const pushArgs = !upstream && branch !== 'HEAD'
+    ? ['push', '--set-upstream', remote, `HEAD:refs/heads/${branch}`]
+    : upstream?.remote === remote
+      ? ['push', remote, `HEAD:${upstream.mergeRef}`]
+      : ['push', remote, branch === 'HEAD' ? 'HEAD' : `HEAD:refs/heads/${branch}`]
+
+  try {
+    await execGit(pushArgs, cwd)
+    return {
+      commitHash,
+      pushStatus: 'pushed',
+      remote,
+      upstreamCreated: !upstream && branch !== 'HEAD',
+      pushError: null
+    }
+  } catch (error) {
+    return {
+      commitHash,
+      pushStatus: 'failed',
+      remote,
+      upstreamCreated: false,
+      pushError: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 /** List local branch names (short form). Returns [] on error. */
