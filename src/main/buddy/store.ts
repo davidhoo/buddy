@@ -403,9 +403,12 @@ export class BuddyStore {
       if (event.type === 'result') {
         if (event.usage) {
           const u = event.usage as Record<string, unknown>
-          inputTokens = (u.input_tokens as number) ?? inputTokens
-          outputTokens = (u.output_tokens as number) ?? outputTokens
-          cacheReadTokens = (u.cache_read_input_tokens as number) ?? cacheReadTokens
+          // Claude uses snake_case while Cursor uses camelCase in its final
+          // result event. Keep the cache column aligned with the existing
+          // cache-read-only semantics used for Claude, OpenCode, and Kimi.
+          inputTokens = (u.input_tokens as number) ?? (u.inputTokens as number) ?? inputTokens
+          outputTokens = (u.output_tokens as number) ?? (u.outputTokens as number) ?? outputTokens
+          cacheReadTokens = (u.cache_read_input_tokens as number) ?? (u.cacheReadTokens as number) ?? cacheReadTokens
         }
         if (event.duration_ms != null) durationMs = event.duration_ms as number
         if (event.total_cost_usd != null) costUsd = event.total_cost_usd as number

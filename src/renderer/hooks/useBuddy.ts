@@ -268,7 +268,7 @@ export function useRoundEvents(taskId: string | null, runId: string | null, work
 
 export function useTaskStats(taskId: string | null, workspaceKey?: string) {
   return useQuery({
-    queryKey: ['taskStats', taskId],
+    queryKey: ['taskStats', taskId, workspaceKey],
     queryFn: () => api.getTaskStats(taskId!, workspaceKey),
     enabled: !!taskId,
     staleTime: Infinity
