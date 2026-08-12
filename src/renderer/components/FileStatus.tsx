@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
-import type { GitStatusResult, GitFileStatusCode, GitRemote, GlobalSettings, TaskSettings } from '../../shared/types'
+import type { GitStatusResult, GitFileStatusCode, GitRemote, GitCommitPushResult, GlobalSettings, TaskSettings } from '../../shared/types'
 import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
 import { useLanguage } from '../hooks/useI18n'
@@ -219,7 +219,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
       try { return localStorage.getItem(`buddy.lastRemote.${repoRoot}`) } catch { return null }
     })()
     if (stored && remoteNames.includes(stored)) return stored
-    return remoteNames[0] ?? 'origin'
+    return remoteNames[0] ?? ''
   })
   const hasRemotes = (gitStatus?.remotes.length ?? 0) > 0
   const [shouldPush, setShouldPush] = useState(hasRemotes)
@@ -388,9 +388,18 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
         message: message.trim(),
         remote: selectedRemote,
         push: shouldPush
-      }) as { commitHash: string }
-      onSuccess(shouldPush
-        ? t('git.commitSuccess', { remote: selectedRemote, hash: result.commitHash })
+      }) as GitCommitPushResult
+      if (result.pushStatus === 'failed') {
+        onError(t('git.pushFailedAfterCommit', {
+          hash: result.commitHash,
+          remote: result.remote ?? selectedRemote,
+          message: result.pushError ?? ''
+        }))
+        onClose()
+        return
+      }
+      onSuccess(result.pushStatus === 'pushed'
+        ? t('git.commitSuccess', { remote: result.remote ?? selectedRemote, hash: result.commitHash })
         : t('git.commitOnlySuccess', { hash: result.commitHash })
       )
     } catch (e) {
@@ -531,7 +540,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
           )}
 
           {/* 远端选择 */}
-          {gitStatus && gitStatus.remotes.length > 1 && (
+          {gitStatus && gitStatus.remotes.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('git.remote')}</label>
               <div className="relative">

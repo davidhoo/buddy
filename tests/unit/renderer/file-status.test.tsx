@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitStatusResult, GlobalSettings } from '../../../src/shared/types'
 
@@ -13,9 +13,10 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useLanguage: () => 'zh-CN',
 }))
 
+let commitPushMock: ReturnType<typeof vi.fn>
 vi.mock('../../../src/renderer/hooks/useBuddy', () => ({
   useGitStageAll: () => ({ mutateAsync: vi.fn() }),
-  useGitCommitAndPush: () => ({ mutateAsync: vi.fn() }),
+  useGitCommitAndPush: () => ({ mutateAsync: (...args: unknown[]) => commitPushMock(...args) }),
 }))
 
 vi.mock('../../../src/renderer/lib/api', () => ({
@@ -380,6 +381,190 @@ describe('CommitModal re-render resilience', () => {
     // 卸载后触发 Escape 不得再次调用旧 onClose:
     // document 上的 Esc 监听器必须已被移除,残留会导致旧 onClose 被调用。
     fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('CommitModal remote display', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('hides remote selector and disables push when no remotes', () => {
+    renderModal({ gitStatus: { ...makeGitStatus(), remotes: [] } })
+    // no remote label
+    expect(screen.queryByText('git.remote')).toBeNull()
+    // no remote <select>; the remaining select is the actor picker, whose option values are actor names
+    const selects = document.querySelectorAll('select')
+    for (const sel of Array.from(selects)) {
+      const opts = Array.from(sel.options).map(o => o.value)
+      expect(opts).not.toContain('origin')
+    }
+    // push checkbox disabled (the one labeled "Push after commit"), shows noRemote hint
+    const pushLabel = screen.getByText('git.push').closest('label') as HTMLElement
+    const pushCheckbox = pushLabel.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(pushCheckbox.disabled).toBe(true)
+    expect(screen.getByText(/git\.noRemote/)).toBeTruthy()
+  })
+
+  it('shows the single remote with its push URL and enables push', () => {
+    renderModal({ gitStatus: { ...makeGitStatus(), remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }] } })
+    expect(screen.getByText('git.remote')).toBeTruthy()
+    // find the remote select by its origin option
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    expect(select).toBeTruthy()
+    expect(select.value).toBe('origin')
+    expect(select.options[0].textContent).toBe('origin (git@github.com:test/repo.git)')
+    const pushLabel = screen.getByText('git.push').closest('label') as HTMLElement
+    const pushCheckbox = pushLabel.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(pushCheckbox.disabled).toBe(false)
+  })
+
+  it('lists multiple remotes and persists the chosen one per repo', () => {
+    renderModal({
+      gitStatus: {
+        ...makeGitStatus(),
+        remotes: [
+          { name: 'origin', url: 'git@github.com:test/origin.git' },
+          { name: 'backup', url: 'git@github.com:test/backup.git' }
+        ]
+      }
+    })
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    expect(select.value).toBe('origin')
+    fireEvent.change(select, { target: { value: 'backup' } })
+    expect(select.value).toBe('backup')
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('buddy.lastRemote./tmp/repo', 'backup')
+  })
+
+  it('falls back to first remote when stored remote no longer exists', () => {
+    window.localStorage.setItem('buddy.lastRemote./tmp/repo', 'deleted-remote')
+    renderModal({ gitStatus: { ...makeGitStatus(), remotes: [{ name: 'origin', url: 'git@github.com:test/origin.git' }] } })
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    expect(select.value).toBe('origin')
+    // must not fabricate a fake origin when there is no remote; selectedRemote is '' so
+    // the persistence effect skips writing.
+    expect(window.localStorage.setItem).not.toHaveBeenCalledWith('buddy.lastRemote./tmp/repo', '')
+  })
+})
+
+describe('CommitModal commit/push result feedback', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  async function commitWithResult(result: unknown) {
+    commitPushMock = vi.fn().mockResolvedValue(result)
+    const onSuccess = vi.fn()
+    const onError = vi.fn()
+    const onClose = vi.fn()
+    render(<CommitModal
+      gitStatus={makeGitStatus()}
+      repoRoot="/tmp/repo"
+      globalSettings={makeSettings(false)}
+      taskSettings={null}
+      isTaskRunning={false}
+      onClose={onClose}
+      onSuccess={onSuccess}
+      onError={onError}
+    />)
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'msg' } })
+    const commitBtn = screen.getByRole('button', { name: /git\.commitTitle|git\.commit/ })
+    fireEvent.click(commitBtn)
+    await waitFor(() => expect(commitPushMock).toHaveBeenCalled())
+    return { onSuccess, onError, onClose }
+  }
+
+  it('shows commitSuccess and closes on pushed', async () => {
+    const { onSuccess, onError, onClose } = await commitWithResult({
+      commitHash: 'abc1234', pushStatus: 'pushed', remote: 'origin', upstreamCreated: false, pushError: null
+    })
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(onSuccess.mock.calls[0][0]).toContain('git.commitSuccess')
+    expect(onError).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('shows commitOnlySuccess and closes on not_requested', async () => {
+    const { onSuccess, onError } = await commitWithResult({
+      commitHash: 'abc1234', pushStatus: 'not_requested', remote: null, upstreamCreated: false, pushError: null
+    })
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(onSuccess.mock.calls[0][0]).toContain('git.commitOnlySuccess')
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('shows pushFailedAfterCommit with hash/remote/error, then closes without onSuccess', async () => {
+    const { onSuccess, onError, onClose } = await commitWithResult({
+      commitHash: 'abc1234', pushStatus: 'failed', remote: 'origin', upstreamCreated: false, pushError: 'non-fast-forward'
+    })
+    await waitFor(() => expect(onError).toHaveBeenCalled())
+    const msg = onError.mock.calls[0][0]
+    expect(msg).toContain('git.pushFailedAfterCommit')
+    expect(msg).toContain('abc1234')
+    expect(msg).toContain('origin')
+    expect(msg).toContain('non-fast-forward')
+    expect(onSuccess).not.toHaveBeenCalled()
+    // modal closes after partial-success push failure
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('keeps modal open and shows commitFailed when mutation rejects', async () => {
+    commitPushMock = vi.fn().mockRejectedValue(new Error('nothing staged'))
+    const onSuccess = vi.fn()
+    const onError = vi.fn()
+    const onClose = vi.fn()
+    render(<CommitModal
+      gitStatus={makeGitStatus()}
+      repoRoot="/tmp/repo"
+      globalSettings={makeSettings(false)}
+      taskSettings={null}
+      isTaskRunning={false}
+      onClose={onClose}
+      onSuccess={onSuccess}
+      onError={onError}
+    />)
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'msg' } })
+    const commitBtn = screen.getByRole('button', { name: /git\.commitTitle|git\.commit/ })
+    fireEvent.click(commitBtn)
+    await waitFor(() => expect(onError).toHaveBeenCalled())
+    expect(onError.mock.calls[0][0]).toContain('git.commitFailed')
+    expect(onSuccess).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
