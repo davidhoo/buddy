@@ -25,4 +25,19 @@ describe('createBuddyPreloadApi', () => {
     unsubscribe()
     expect(removeListener).toHaveBeenCalledWith('buddy:event', expect.any(Function))
   })
+
+  it('invokes buddy:gitCommitAndPush with repoRoot, message, remote, push in order', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      commitHash: 'abc1234',
+      pushStatus: 'pushed',
+      remote: 'origin',
+      upstreamCreated: true,
+      pushError: null
+    })
+    const api = createBuddyPreloadApi({ invoke, on: vi.fn(), removeListener: vi.fn() })
+
+    const result = await api.gitCommitAndPush('/tmp/repo', 'msg', 'origin', true)
+    expect(invoke).toHaveBeenCalledWith('buddy:gitCommitAndPush', '/tmp/repo', 'msg', 'origin', true)
+    expect(result.pushStatus).toBe('pushed')
+  })
 })

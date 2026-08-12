@@ -5,6 +5,7 @@ import type {
   CreateTaskInput,
   CreateTaskResult,
   Event,
+  GitCommitPushResult,
   GlobalSettings,
   InstructionQueueItem,
   RoundEventSummary,
@@ -71,8 +72,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitStageAll', repoRoot) as Promise<void>,
     gitStageFiles: (repoRoot: string, paths: string[]): Promise<void> =>
       ipc.invoke('buddy:gitStageFiles', repoRoot, paths) as Promise<void>,
-    gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown> =>
-      ipc.invoke('buddy:gitCommitAndPush', repoRoot, message, remote, push),
+    gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean): Promise<GitCommitPushResult> =>
+      ipc.invoke('buddy:gitCommitAndPush', repoRoot, message, remote, push) as Promise<GitCommitPushResult>,
     gitDiffForCommitMessage: (repoRoot: string, paths?: string[]): Promise<string> =>
       ipc.invoke('buddy:gitDiffForCommitMessage', repoRoot, paths) as Promise<string>,
     gitFileDiff: (repoRoot: string, filePath: string): Promise<string> =>

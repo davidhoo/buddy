@@ -30,7 +30,7 @@ import {
   gitCheckout,
   gitCreateBranch
 } from './git'
-import type { GitStatusResult, TaskSettings } from '../../shared/types'
+import type { GitStatusResult, GitCommitPushResult, TaskSettings } from '../../shared/types'
 import {
   generateCommitMessageWithActor,
   cancelGenerateCommitMessage as cancelCommitMessage,
@@ -212,7 +212,7 @@ export class BuddyCoreService {
     return gitStageFiles(repoRoot, paths)
   }
 
-  gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<{ commitHash: string }> {
+  gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<GitCommitPushResult> {
     return gitCommitAndPush(repoRoot, message, remote, push)
   }
 

@@ -2,6 +2,7 @@ import type {
   AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
+  GitCommitPushResult,
   GlobalSettings,
   InstructionQueueItem,
   RoundEventSummary,
@@ -61,7 +62,7 @@ export const api = {
     buddy().gitStageAll(repoRoot),
   gitStageFiles: (repoRoot: string, paths: string[]) =>
     buddy().gitStageFiles(repoRoot, paths),
-  gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean) =>
+  gitCommitAndPush: (repoRoot: string, message: string, remote: string, push?: boolean): Promise<GitCommitPushResult> =>
     buddy().gitCommitAndPush(repoRoot, message, remote, push),
   gitDiffForCommitMessage: (repoRoot: string, paths?: string[]) =>
     buddy().gitDiffForCommitMessage(repoRoot, paths),

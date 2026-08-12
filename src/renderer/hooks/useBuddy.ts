@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { GlobalSettings, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
+import type { GlobalSettings, GitCommitPushResult, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
 import type { TestLauncherResult } from '../../shared/types'
 
 export function useHealthCheck() {
@@ -246,7 +246,7 @@ export function useGitCommitAndPush() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ repoRoot, message, remote, push }: { repoRoot: string; message: string; remote: string; push?: boolean }) =>
+    mutationFn: ({ repoRoot, message, remote, push }: { repoRoot: string; message: string; remote: string; push?: boolean }): Promise<GitCommitPushResult> =>
       api.gitCommitAndPush(repoRoot, message, remote, push),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['gitStatus'] })

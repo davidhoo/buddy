@@ -347,3 +347,13 @@ export interface GitStatusResult {
   files: GitFileStatus[]
   remotes: GitRemote[]
 }
+
+export type GitPushStatus = 'not_requested' | 'pushed' | 'failed'
+
+export interface GitCommitPushResult {
+  commitHash: string
+  pushStatus: GitPushStatus
+  remote: string | null
+  upstreamCreated: boolean
+  pushError: string | null
+}

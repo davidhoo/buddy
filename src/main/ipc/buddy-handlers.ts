@@ -4,6 +4,7 @@ import type {
   CountdownInput,
   CreateTaskInput,
   GlobalSettings,
+  GitCommitPushResult,
   RoundEventSummary,
   SendMessageInput,
   StartTaskInput,
@@ -34,7 +35,7 @@ export interface BuddyHandlerService {
   gitStatus(repoRoot: string): Promise<unknown>
   gitStageAll(repoRoot: string): Promise<void>
   gitStageFiles(repoRoot: string, paths: string[]): Promise<void>
-  gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<unknown>
+  gitCommitAndPush(repoRoot: string, message: string, remote: string, push?: boolean): Promise<GitCommitPushResult>
   gitDiffForCommitMessage(repoRoot: string, paths?: string[]): Promise<string>
   gitFileDiff(repoRoot: string, filePath: string): Promise<string>
   gitBranches(repoRoot: string): Promise<string[]>
