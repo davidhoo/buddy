@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.17] - 2026-08-12
+
+### Changed
+- 放宽新建任务名称限制：任务名现接受任意可见字符（中文、字母、数字、空格、emoji、标点，含反斜杠），仅拒绝会破坏文件名的内容（`/`、控制字符、`.`/`..`），最长 64 个字符。前后端共用同一套校验规则，前端与主进程行为一致
+- 新建任务弹窗的字符计数改为按 Unicode 码点统计，与实际校验口径一致；任务说明输入框提示可直接粘贴图片和文件，并略微增高输入区
+
+### Fixed
+- 修复主进程在创建任务目录前未校验任务 ID 的问题，现在先校验再建目录，避免非法 ID 写入磁盘
+
+---
+
 ## [1.2.16] - 2026-08-11
 
 ### Added
@@ -501,6 +512,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.17]: https://github.com/davidhoo/buddy/releases/tag/v1.2.17
 [1.2.16]: https://github.com/davidhoo/buddy/releases/tag/v1.2.16
 [1.2.14]: https://github.com/davidhoo/buddy/releases/tag/v1.2.14
 [1.2.9]: https://github.com/davidhoo/buddy/releases/tag/v1.2.9
