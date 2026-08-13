@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { gitDiffForSelectedFiles } from './commit-message'
-import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult } from '../../shared/types'
+import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult, GitUpstream } from '../../shared/types'
 
-export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult }
+export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult, GitUpstream }
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -89,18 +89,34 @@ export async function getGitBranch(cwd: string): Promise<string> {
   }
 }
 
-interface GitUpstream {
+interface GitUpstreamRef {
   remote: string
   mergeRef: string
 }
 
-async function getGitUpstream(cwd: string, branch: string): Promise<GitUpstream | null> {
+async function getGitUpstream(cwd: string, branch: string): Promise<GitUpstreamRef | null> {
   if (!branch || branch === 'HEAD') return null
   const [remote, mergeRef] = await Promise.all([
     execGit(['config', '--get', `branch.${branch}.remote`], cwd).catch(() => ''),
     execGit(['config', '--get', `branch.${branch}.merge`], cwd).catch(() => '')
   ])
   return remote && mergeRef ? { remote, mergeRef } : null
+}
+
+/** 只读解析当前分支的 upstream, 返回 UI 需要的 { remote, branch }; 异常/分离 HEAD 降级为 null。 */
+async function getGitUpstreamInfo(cwd: string, branch: string): Promise<GitUpstream | null> {
+  try {
+    const ref = await getGitUpstream(cwd, branch)
+    if (!ref) return null
+    // branch.<name>.merge 形如 refs/heads/main; 只接受该前缀并剥离, 不暴露给 Renderer。
+    const branchName = ref.mergeRef.startsWith('refs/heads/')
+      ? ref.mergeRef.slice('refs/heads/'.length)
+      : ''
+    if (!branchName) return null
+    return { remote: ref.remote, branch: branchName }
+  } catch {
+    return null
+  }
 }
 
 export async function getGitDiffStats(cwd: string): Promise<GitDiffStats | null> {
@@ -203,8 +219,10 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResult> {
     getGitRemotes(cwd),
     getGitFileStatuses(cwd)
   ])
+  // upstream 依赖 branch 结果, 不能并入上面的 Promise.all; 失败降级为 null。
+  const upstream = await getGitUpstreamInfo(cwd, branch)
   const mergedFiles = mergeFileStatuses(files, diff?.files, staged?.files)
-  return { branch, diff, staged, untracked, remotes, files: mergedFiles }
+  return { branch, diff, staged, untracked, remotes, files: mergedFiles, upstream }
 }
 
 export async function gitStageAll(cwd: string): Promise<void> {

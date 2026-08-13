@@ -419,3 +419,56 @@ describe('gitFileDiff', () => {
     }
   })
 })
+
+describe('getGitStatus upstream', () => {
+  it('exposes upstream { remote, branch } when current branch tracks origin/main', async () => {
+    const dir = createTestRepo()
+    addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      // 建立 origin/main upstream
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+
+      const status = await getGitStatus(dir)
+      expect(status.branch).toBe('main')
+      expect(status.remotes.map(r => r.name)).toContain('origin')
+      expect(status.upstream).toEqual({ remote: 'origin', branch: 'main' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns upstream null for a branch with no upstream configured', async () => {
+    const dir = createTestRepo()
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      checkoutNewBranch(dir, 'feature')
+
+      const status = await getGitStatus(dir)
+      expect(status.branch).toBe('feature')
+      expect(status.upstream).toBeNull()
+      // 既有字段仍可读取
+      expect(status.remotes).toEqual([])
+      expect(status.files.length).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns upstream null on detached HEAD', async () => {
+    const dir = createTestRepo()
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git checkout --detach', { cwd: dir })
+
+      const status = await getGitStatus(dir)
+      expect(status.branch).toBe('HEAD')
+      expect(status.upstream).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
