@@ -188,7 +188,6 @@ export function StatusBar({
           gitStatus={gitStatus}
           isLoading={isGitLoading}
           repoRoot={repoRoot}
-          isTaskRunning={isTaskRunning}
           onOpenCommit={() => { setCommitFeedback(null); setShowCommitModal(true) }}
           commitFeedback={commitFeedback}
           onDismissFeedback={() => setCommitFeedback(null)}
@@ -211,7 +210,6 @@ export function StatusBar({
           repoRoot={repoRoot}
           globalSettings={globalSettings}
           taskSettings={taskSettings}
-          isTaskRunning={isTaskRunning}
           onClose={() => {
             setShowCommitModal(false)
             requestAnimationFrame(() => {

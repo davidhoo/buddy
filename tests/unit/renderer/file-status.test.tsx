@@ -51,6 +51,7 @@ function makeGitStatus(): GitStatusResult {
       { path: 'src/app.ts', status: 'M', insertions: 5, deletions: 2 },
     ],
     remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }],
+    upstream: null,
   }
 }
 
@@ -65,7 +66,6 @@ function renderModal(overrides: Record<string, unknown> = {}) {
     repoRoot: '/tmp/repo',
     globalSettings: makeSettings(false),
     taskSettings: null,
-    isTaskRunning: false,
     onClose,
     onSuccess: vi.fn(),
     onError: vi.fn(),
@@ -318,7 +318,6 @@ describe('CommitModal re-render resilience', () => {
       repoRoot: '/tmp/repo',
       globalSettings: makeSettings(true),
       taskSettings: { implementer_actor: 'codex' },
-      isTaskRunning: false,
       onSuccess: vi.fn(),
       onError: vi.fn(),
     }
@@ -363,7 +362,6 @@ describe('CommitModal re-render resilience', () => {
       repoRoot: '/tmp/repo',
       globalSettings: makeSettings(false),
       taskSettings: { implementer_actor: 'codex' },
-      isTaskRunning: false,
       onClose,
       onSuccess: vi.fn(),
       onError: vi.fn(),
@@ -422,7 +420,7 @@ describe('CommitModal remote display', () => {
     expect(screen.getByText(/git\.noRemote/)).toBeTruthy()
   })
 
-  it('shows the single remote with its push URL and enables push', () => {
+  it('shows the single remote by name (no URL) and enables push', () => {
     renderModal({ gitStatus: { ...makeGitStatus(), remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }] } })
     expect(screen.getByText('git.remote')).toBeTruthy()
     // find the remote select by its origin option
@@ -430,10 +428,61 @@ describe('CommitModal remote display', () => {
     const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
     expect(select).toBeTruthy()
     expect(select.value).toBe('origin')
-    expect(select.options[0].textContent).toBe('origin (git@github.com:test/repo.git)')
+    expect(select.options[0].textContent).toBe('origin')
+    // 不显示 URL
+    expect(document.body.textContent).not.toContain('git@github.com')
     const pushLabel = screen.getByText('git.push').closest('label') as HTMLElement
     const pushCheckbox = pushLabel.querySelector('input[type="checkbox"]') as HTMLInputElement
     expect(pushCheckbox.disabled).toBe(false)
+  })
+
+  it('marks only the upstream remote with (remote/branch)', () => {
+    renderModal({
+      gitStatus: {
+        ...makeGitStatus(),
+        upstream: { remote: 'origin', branch: 'main' },
+        remotes: [
+          { name: 'origin', url: 'git@github.com:test/origin.git' },
+          { name: 'backup', url: 'git@github.com:test/backup.git' }
+        ]
+      }
+    })
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    const labels = Array.from(select.options).map(o => o.textContent)
+    expect(labels).toEqual(['origin (origin/main)', 'backup'])
+  })
+
+  it('shows only remote names when upstream is null', () => {
+    renderModal({
+      gitStatus: {
+        ...makeGitStatus(),
+        upstream: null,
+        remotes: [
+          { name: 'origin', url: 'git@github.com:test/origin.git' },
+          { name: 'backup', url: 'git@github.com:test/backup.git' }
+        ]
+      }
+    })
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    const labels = Array.from(select.options).map(o => o.textContent)
+    expect(labels).toEqual(['origin', 'backup'])
+    // 不出现括号标记
+    expect(document.body.textContent).not.toContain('(origin/')
+  })
+
+  it('keeps remote label and select on the same row, separate from the bottom push row', () => {
+    renderModal({ gitStatus: { ...makeGitStatus(), remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }] } })
+    const remoteLabel = screen.getByText('git.remote')
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
+    // 远端标签与 select 在同一个行容器
+    const rowContainer = remoteLabel.parentElement
+    expect(rowContainer).toContainElement(select)
+    // 左下角 push 行在另一个容器, 不与远端行共享父节点
+    const pushLabel = screen.getByText('git.push')
+    expect(rowContainer).not.toContainElement(pushLabel)
   })
 
   it('lists multiple remotes and persists the chosen one per repo', () => {
@@ -496,7 +545,6 @@ describe('CommitModal commit/push result feedback', () => {
       repoRoot="/tmp/repo"
       globalSettings={makeSettings(false)}
       taskSettings={null}
-      isTaskRunning={false}
       onClose={onClose}
       onSuccess={onSuccess}
       onError={onError}
@@ -553,7 +601,6 @@ describe('CommitModal commit/push result feedback', () => {
       repoRoot="/tmp/repo"
       globalSettings={makeSettings(false)}
       taskSettings={null}
-      isTaskRunning={false}
       onClose={onClose}
       onSuccess={onSuccess}
       onError={onError}
@@ -566,5 +613,49 @@ describe('CommitModal commit/push result feedback', () => {
     expect(onError.mock.calls[0][0]).toContain('git.commitFailed')
     expect(onSuccess).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('CommitModal commit allowed while task running', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('commit button stays enabled with changes and a message (no isTaskRunning prop)', async () => {
+    commitPushMock = vi.fn().mockResolvedValue({
+      commitHash: 'abc1234', pushStatus: 'not_requested', remote: null, upstreamCreated: false, pushError: null
+    })
+    render(<CommitModal
+      gitStatus={makeGitStatus()}
+      repoRoot="/tmp/repo"
+      globalSettings={makeSettings(false)}
+      taskSettings={null}
+      onClose={vi.fn()}
+      onSuccess={vi.fn()}
+      onError={vi.fn()}
+    />)
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'msg' } })
+    const commitBtn = screen.getByRole('button', { name: /git\.commitTitle|git\.commit/ }) as HTMLButtonElement
+    expect(commitBtn.disabled).toBe(false)
+    fireEvent.click(commitBtn)
+    await waitFor(() => expect(commitPushMock).toHaveBeenCalled())
+    // 确认提交仍调用 stage + commitAndPush
+    expect(api.gitStageFiles).toHaveBeenCalledWith('/tmp/repo', expect.any(Array))
   })
 })

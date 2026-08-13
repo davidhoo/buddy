@@ -20,8 +20,6 @@ interface FileStatusProps {
   gitStatus: GitStatusResult | null | undefined
   isLoading: boolean
   repoRoot: string | null
-  /** 任务执行中(RUNNING_* / PINGING)时禁用提交按钮 */
-  isTaskRunning?: boolean
   onOpenCommit: () => void
   commitFeedback?: CommitFeedback | null
   onDismissFeedback?: () => void
@@ -41,7 +39,7 @@ export function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: T
   return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${cls}`}>{label}</span>
 }
 
-export function FileStatus({ gitStatus, isLoading, repoRoot, isTaskRunning, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
+export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
   const t = useT()
   const [showChangesModal, setShowChangesModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
@@ -128,11 +126,11 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, isTaskRunning, onOp
           <span className="ml-auto truncate">{gitStatus.branch}</span>
         </button>
 
-        {/* 提交(任务执行中禁用) */}
+        {/* 提交 */}
         <button
           onClick={onOpenCommit}
-          disabled={!hasChanges || isTaskRunning}
-          title={isTaskRunning ? t('git.commitDisabledWhileRunning') : undefined}
+          disabled={!hasChanges}
+          title={hasChanges ? t('git.changesTitle') : undefined}
           className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
         >
           <GitCommit size={13} className="text-fg-muted flex-shrink-0" />
@@ -193,14 +191,12 @@ interface CommitModalProps {
   repoRoot: string
   globalSettings: GlobalSettings | null
   taskSettings?: TaskSettings | null
-  /** 任务执行中时禁用弹窗内的提交按钮(弹窗可能在倒计时期间打开,随后任务进入 RUNNING) */
-  isTaskRunning?: boolean
   onClose: () => void
   onSuccess: (message: string) => void
   onError: (message: string) => void
 }
 
-export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings, isTaskRunning, onClose, onSuccess, onError }: CommitModalProps) {
+export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings, onClose, onSuccess, onError }: CommitModalProps) {
   const t = useT()
   const lang = useLanguage()
   const queryClient = useQueryClient()
@@ -377,7 +373,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   }, [isGenerating])
 
   const handleCommit = useCallback(async () => {
-    if (!message.trim() || selectedPaths.size === 0 || isTaskRunning) return
+    if (!message.trim() || selectedPaths.size === 0) return
     setIsCommitting(true)
     try {
       await queryClient.cancelQueries({ queryKey: ['gitStatus'] })
@@ -407,7 +403,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
     } finally {
       setIsCommitting(false)
     }
-  }, [message, repoRoot, selectedRemote, shouldPush, selectedPaths, isTaskRunning, commitAndPush, onSuccess, onError, t, queryClient])
+  }, [message, repoRoot, selectedRemote, shouldPush, selectedPaths, commitAndPush, onSuccess, onError, t, queryClient])
 
   // Persist last-used remote for this repo
   useEffect(() => {
@@ -539,19 +535,23 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
             </div>
           )}
 
-          {/* 远端选择 */}
+          {/* 远端选择 (标签与下拉框同一行) */}
           {gitStatus && gitStatus.remotes.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-fg-secondary mb-1">{t('git.remote')}</label>
-              <div className="relative">
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs font-medium text-fg-secondary flex-shrink-0">{t('git.remote')}</label>
+              <div className="relative flex-1 min-w-0">
                 <select
                   value={selectedRemote}
                   onChange={(e) => setSelectedRemote(e.target.value)}
                   className="w-full appearance-none px-3 pr-9 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
                 >
-                  {gitStatus.remotes.map((r: GitRemote) => (
-                    <option key={r.name} value={r.name}>{r.name} ({r.url})</option>
-                  ))}
+                  {gitStatus.remotes.map((r: GitRemote) => {
+                    const upstream = gitStatus.upstream
+                    const label = upstream && upstream.remote === r.name
+                      ? `${r.name} (${upstream.remote}/${upstream.branch})`
+                      : r.name
+                    return <option key={r.name} value={r.name}>{label}</option>
+                  })}
                 </select>
                 <ChevronDown
                   size={14}
@@ -645,8 +645,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
             </button>
           <button
             onClick={handleCommit}
-            disabled={!message.trim() || isBusy || selectedPaths.size === 0 || isTaskRunning}
-            title={isTaskRunning ? t('git.commitDisabledWhileRunning') : undefined}
+            disabled={!message.trim() || isBusy || selectedPaths.size === 0}
             className="px-4 py-1.5 text-xs bg-accent-primary text-fg-inverse rounded-lg hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {isCommitting && <Loader2 size={12} className="animate-spin" />}
