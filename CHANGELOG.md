@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.19] - 2026-08-13
+
+### Added
+- Git 状态新增当前分支 upstream 信息：提交时远端下拉框会标注当前分支默认跟踪的 `remote/branch`，无 upstream 时只显示 remote 名称，便于一眼区分推送目标
+
+### Changed
+- 提交弹窗的远端标签与下拉框改为同一行布局，更紧凑
+- 移除任务执行中禁用提交入口的限制：任务运行期间也可提交，左下角提交后推送与 push 语义不变
+
+---
+
 ## [1.2.18] - 2026-08-13
 
 ### Fixed
@@ -519,6 +530,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.19]: https://github.com/davidhoo/buddy/releases/tag/v1.2.19
 [1.2.17]: https://github.com/davidhoo/buddy/releases/tag/v1.2.17
 [1.2.16]: https://github.com/davidhoo/buddy/releases/tag/v1.2.16
 [1.2.14]: https://github.com/davidhoo/buddy/releases/tag/v1.2.14
