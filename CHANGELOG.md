@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.18] - 2026-08-13
+
+### Fixed
+- 修复首次推送（无 upstream）的 Git 远程发现与推送流程：更可靠地发现可推送的远程分支，UI 始终显示可用的推送远程，支持无上游分支的首次推送
+
+---
+
 ## [1.2.17] - 2026-08-12
 
 ### Changed
