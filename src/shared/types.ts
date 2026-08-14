@@ -365,3 +365,41 @@ export interface GitCommitPushResult {
   upstreamCreated: boolean
   pushError: string | null
 }
+
+/**
+ * 独立“推送已有提交”入口的远端可推性状态。
+ * - ahead: 本地领先, 远端未领先
+ * - up_to_date: 本地与远端同步
+ * - behind: 仅落后
+ * - diverged: 双方都有各自提交
+ * - new_branch: 远端尚无目标分支, 首次推送
+ * - unavailable: 无有效 HEAD / 分离 HEAD 等不可推送情形
+ *
+ * 注意: fetch 本身失败不映射为某个 state, 而是让查询抛错,
+ * 由调用方呈现“检查远端状态失败”而非伪装成可推送或已同步。
+ */
+export type GitPushAvailabilityState =
+  | 'ahead'
+  | 'up_to_date'
+  | 'behind'
+  | 'diverged'
+  | 'new_branch'
+  | 'unavailable'
+
+export interface GitPushAvailability {
+  state: GitPushAvailabilityState
+  remote: string
+  branch: string
+  ahead: number
+  behind: number
+  /** 本次推送是否会在成功后建立 upstream (仅无 upstream 的非分离 HEAD 首次推送为 true)。 */
+  upstreamCreatedOnPush: boolean
+}
+
+/** 独立推送结果: 只推当前 HEAD, 不产生新提交、不改动工作区。 */
+export interface GitPushResult {
+  pushStatus: 'pushed' | 'failed'
+  remote: string
+  upstreamCreated: boolean
+  pushError: string | null
+}

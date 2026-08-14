@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { gitDiffForSelectedFiles } from './commit-message'
-import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult, GitUpstream } from '../../shared/types'
+import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream } from '../../shared/types'
 
-export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitRemote, GitStatusResult, GitUpstream }
+export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream }
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -311,27 +311,133 @@ export async function gitCommitAndPush(
     }
   }
 
-  const branch = await getGitBranch(cwd)
-  const upstream = await getGitUpstream(cwd, branch)
-
-  const pushArgs = !upstream && branch !== 'HEAD'
-    ? ['push', '--set-upstream', remote, `HEAD:refs/heads/${branch}`]
-    : upstream?.remote === remote
-      ? ['push', remote, `HEAD:${upstream.mergeRef}`]
-      : ['push', remote, branch === 'HEAD' ? 'HEAD' : `HEAD:refs/heads/${branch}`]
-
+  const { args, upstreamCreatedOnPush } = await resolvePushArgs(cwd, remote)
   try {
-    await execGit(pushArgs, cwd)
+    await execGit(args, cwd)
     return {
       commitHash,
       pushStatus: 'pushed',
       remote,
-      upstreamCreated: !upstream && branch !== 'HEAD',
+      upstreamCreated: upstreamCreatedOnPush,
       pushError: null
     }
   } catch (error) {
     return {
       commitHash,
+      pushStatus: 'failed',
+      remote,
+      upstreamCreated: false,
+      pushError: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+interface ResolvedPushArgs {
+  args: string[]
+  /** 本次 push 成功后是否会建立 upstream。仅“无 upstream 且非分离 HEAD”的首次推送为 true。 */
+  upstreamCreatedOnPush: boolean
+}
+
+/**
+ * 解析当前 HEAD 推送到 `remote` 所需的 git 参数, 供“提交后推送”与“独立推送”共用,
+ * 确保两条路径的首次推送与 alternate-remote 语义不出现分叉:
+ * - 无 upstream 且非分离 HEAD: `push --set-upstream remote HEAD:refs/heads/<branch>`,
+ *   成功后建立 upstream。
+ * - upstream.remote === remote: 推到 upstream 的 mergeRef (如 refs/heads/main)。
+ * - 已有 upstream 但选择了其它 remote / 分离 HEAD: 显式推到同名本地分支,
+ *   绝不改写原 upstream。
+ */
+async function resolvePushArgs(cwd: string, remote: string): Promise<ResolvedPushArgs> {
+  const branch = await getGitBranch(cwd)
+  const upstream = await getGitUpstream(cwd, branch)
+  if (!upstream && branch !== 'HEAD') {
+    return {
+      args: ['push', '--set-upstream', remote, `HEAD:refs/heads/${branch}`],
+      upstreamCreatedOnPush: true
+    }
+  }
+  if (upstream && upstream.remote === remote) {
+    return {
+      args: ['push', remote, `HEAD:${upstream.mergeRef}`],
+      upstreamCreatedOnPush: false
+    }
+  }
+  return {
+    args: ['push', remote, branch === 'HEAD' ? 'HEAD' : `HEAD:refs/heads/${branch}`],
+    upstreamCreatedOnPush: false
+  }
+}
+
+/**
+ * 对所选 remote 执行 fetch 后比较本地 HEAD 与目标远端分支, 返回可推性。
+ * 这是一个独立的网络操作入口: 只被显式的 push-status IPC 调用,
+ * 不得从 getGitStatus() 或其 10 秒轮询触发。
+ *
+ * 目标分支: 所选 remote 等于当前 upstream.remote 时用 upstream.branch,
+ * 否则用当前本地分支名——与 resolvePushArgs() 的推送目标保持一致。
+ * fetch 失败时抛错, 由调用方呈现“检查远端状态失败”而非伪装成可推送。
+ */
+export async function getGitPushAvailability(cwd: string, remote: string): Promise<GitPushAvailability> {
+  const branch = await getGitBranch(cwd)
+  if (!branch || branch === 'HEAD') {
+    return { state: 'unavailable', remote, branch: '', ahead: 0, behind: 0, upstreamCreatedOnPush: false }
+  }
+  const upstream = await getGitUpstream(cwd, branch)
+  // 非分离 HEAD 时, upstreamCreatedOnPush 与 resolvePushArgs 等价 (= !upstream)。
+  const upstreamCreatedOnPush = !upstream
+
+  // 仅 fetch 这一个确定的 remote; 失败让其抛错上浮。
+  await execGit(['fetch', remote], cwd)
+
+  const targetBranch = upstream && upstream.remote === remote
+    ? upstream.mergeRef.replace(/^refs\/heads\//, '')
+    : branch
+  const remoteRef = `refs/remotes/${remote}/${targetBranch}`
+
+  const refExists = await execGit(['rev-parse', '--verify', '--quiet', `${remoteRef}^{commit}`], cwd)
+    .then(out => !!out.trim())
+    .catch(() => false)
+
+  if (!refExists) {
+    // 远端尚无目标分支: 若本地已有提交即为首次推送, 否则不可推。
+    const hasHead = await execGit(['rev-parse', '--verify', '--quiet', 'HEAD'], cwd)
+      .then(out => !!out.trim())
+      .catch(() => false)
+    return {
+      state: hasHead ? 'new_branch' : 'unavailable',
+      remote,
+      branch: targetBranch,
+      ahead: hasHead ? 1 : 0,
+      behind: 0,
+      upstreamCreatedOnPush
+    }
+  }
+
+  const counts = await execGit(['rev-list', '--left-right', '--count', `${remoteRef}...HEAD`], cwd)
+    .catch(() => '0\t0')
+  const [behindStr, aheadStr] = counts.split('\t').map(s => s.trim())
+  const ahead = parseInt(aheadStr ?? '0', 10) || 0
+  const behind = parseInt(behindStr ?? '0', 10) || 0
+  let state: GitPushAvailabilityState
+  if (ahead > 0 && behind > 0) state = 'diverged'
+  else if (ahead > 0) state = 'ahead'
+  else if (behind > 0) state = 'behind'
+  else state = 'up_to_date'
+  return { state, remote, branch: targetBranch, ahead, behind, upstreamCreatedOnPush }
+}
+
+/**
+ * 独立推送当前 HEAD: 只推已有提交, 不调用 git commit / add / reset,
+ * 也不改动工作区。成功/失败以 GitPushResult 返回, 失败时保留原始 Git stderr,
+ * 不抛弃本地状态。
+ */
+export async function gitPush(cwd: string, remote: string): Promise<GitPushResult> {
+  const { args, upstreamCreatedOnPush } = await resolvePushArgs(cwd, remote)
+  try {
+    await execGit(args, cwd)
+    return { pushStatus: 'pushed', remote, upstreamCreated: upstreamCreatedOnPush, pushError: null }
+  } catch (error) {
+    return {
       pushStatus: 'failed',
       remote,
       upstreamCreated: false,
