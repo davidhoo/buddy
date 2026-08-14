@@ -545,6 +545,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.21]: https://github.com/davidhoo/buddy/releases/tag/v1.2.21
 [1.2.20]: https://github.com/davidhoo/buddy/releases/tag/v1.2.20
 [1.2.19]: https://github.com/davidhoo/buddy/releases/tag/v1.2.19
 [1.2.17]: https://github.com/davidhoo/buddy/releases/tag/v1.2.17
