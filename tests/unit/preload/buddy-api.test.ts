@@ -40,4 +40,34 @@ describe('createBuddyPreloadApi', () => {
     expect(invoke).toHaveBeenCalledWith('buddy:gitCommitAndPush', '/tmp/repo', 'msg', 'origin', true)
     expect(result.pushStatus).toBe('pushed')
   })
+
+  it('invokes buddy:gitPushAvailability with repoRoot and remote in order', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      state: 'ahead',
+      remote: 'origin',
+      branch: 'main',
+      ahead: 1,
+      behind: 0,
+      upstreamCreatedOnPush: false
+    })
+    const api = createBuddyPreloadApi({ invoke, on: vi.fn(), removeListener: vi.fn() })
+
+    const result = await api.gitPushAvailability('/tmp/repo', 'origin')
+    expect(invoke).toHaveBeenCalledWith('buddy:gitPushAvailability', '/tmp/repo', 'origin')
+    expect(result.state).toBe('ahead')
+  })
+
+  it('invokes buddy:gitPush with repoRoot and remote in order', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      pushStatus: 'pushed',
+      remote: 'origin',
+      upstreamCreated: false,
+      pushError: null
+    })
+    const api = createBuddyPreloadApi({ invoke, on: vi.fn(), removeListener: vi.fn() })
+
+    const result = await api.gitPush('/tmp/repo', 'origin')
+    expect(invoke).toHaveBeenCalledWith('buddy:gitPush', '/tmp/repo', 'origin')
+    expect(result.pushStatus).toBe('pushed')
+  })
 })

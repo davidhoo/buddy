@@ -41,6 +41,8 @@ export interface BuddyHandlerService {
   gitBranches(repoRoot: string): Promise<string[]>
   gitCheckout(repoRoot: string, branch: string): Promise<void>
   gitCreateBranch(repoRoot: string, branch: string): Promise<void>
+  gitPushAvailability(repoRoot: string, remote: string): Promise<import('../../shared/types').GitPushAvailability>
+  gitPush(repoRoot: string, remote: string): Promise<import('../../shared/types').GitPushResult>
   generateCommitMessage(input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: unknown }): Promise<{ message: string }>
   cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
@@ -128,6 +130,12 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:gitCreateBranch', (_event, repoRoot: string, branch: string) =>
     service.gitCreateBranch(repoRoot, branch)
+  )
+  ipcMain.handle('buddy:gitPushAvailability', (_event, repoRoot: string, remote: string) =>
+    service.gitPushAvailability(repoRoot, remote)
+  )
+  ipcMain.handle('buddy:gitPush', (_event, repoRoot: string, remote: string) =>
+    service.gitPush(repoRoot, remote)
   )
   ipcMain.handle('buddy:generateCommitMessage', (_event, input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: unknown }) =>
     service.generateCommitMessage(input as { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: import('../../shared/types').TaskSettings | null })

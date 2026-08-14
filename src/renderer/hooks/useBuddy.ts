@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { GlobalSettings, GitCommitPushResult, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
 import type { TestLauncherResult } from '../../shared/types'
+import type { GitPushAvailability, GitPushResult } from '../../shared/types'
 
 export function useHealthCheck() {
   return useQuery({
@@ -253,6 +254,34 @@ export function useGitCommitAndPush() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gitStatus'] })
+      queryClient.invalidateQueries({ queryKey: ['gitPushAvailability'] })
+    }
+  })
+}
+
+export function useGitPushAvailability(
+  repoRoot: string | null | undefined,
+  remote: string | null | undefined,
+  branch: string | null | undefined,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ['gitPushAvailability', repoRoot, remote, branch],
+    queryFn: () => api.gitPushAvailability(repoRoot!, remote!),
+    enabled: !!repoRoot && !!remote && enabled,
+    retry: 1
+  })
+}
+
+export function useGitPush() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ repoRoot, remote }: { repoRoot: string; remote: string }): Promise<GitPushResult> =>
+      api.gitPush(repoRoot, remote),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gitStatus'] })
+      queryClient.invalidateQueries({ queryKey: ['gitPushAvailability'] })
     }
   })
 }

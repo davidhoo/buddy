@@ -33,6 +33,8 @@ describe('registerBuddyHandlers', () => {
       gitBranches: vi.fn(),
       gitCheckout: vi.fn(),
       gitCreateBranch: vi.fn(),
+      gitPushAvailability: vi.fn(),
+      gitPush: vi.fn(),
       generateCommitMessage: vi.fn(),
       cancelGenerateCommitMessage: vi.fn(),
       testLauncher: vi.fn(),
@@ -49,9 +51,11 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitBranches', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitCheckout', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitCreateBranch', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitPushAvailability', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:gitPush', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(33)
+    expect(handle).toHaveBeenCalledTimes(35)
   })
 })

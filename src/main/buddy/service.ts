@@ -28,9 +28,11 @@ import {
   gitFileDiff,
   gitBranches,
   gitCheckout,
-  gitCreateBranch
+  gitCreateBranch,
+  getGitPushAvailability,
+  gitPush
 } from './git'
-import type { GitStatusResult, GitCommitPushResult, TaskSettings } from '../../shared/types'
+import type { GitStatusResult, GitCommitPushResult, GitPushAvailability, GitPushResult, TaskSettings } from '../../shared/types'
 import {
   generateCommitMessageWithActor,
   cancelGenerateCommitMessage as cancelCommitMessage,
@@ -234,6 +236,14 @@ export class BuddyCoreService {
 
   gitCreateBranch(repoRoot: string, branch: string): Promise<void> {
     return gitCreateBranch(repoRoot, branch)
+  }
+
+  gitPushAvailability(repoRoot: string, remote: string): Promise<GitPushAvailability> {
+    return getGitPushAvailability(repoRoot, remote)
+  }
+
+  gitPush(repoRoot: string, remote: string): Promise<GitPushResult> {
+    return gitPush(repoRoot, remote)
   }
 
   async generateCommitMessage(input: {
