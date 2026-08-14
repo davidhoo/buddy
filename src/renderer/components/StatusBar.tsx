@@ -91,6 +91,8 @@ export function StatusBar({
   const repoRoot = taskState?.repo_root || null
   const { data: gitStatus, isLoading: isGitLoading } = useGitStatus(repoRoot)
   const [showCommitModal, setShowCommitModal] = useState(false)
+  const [showPushModal, setShowPushModal] = useState(false)
+  const [pushRemote, setPushRemote] = useState('')
   const [commitFeedback, setCommitFeedback] = useState<CommitFeedback | null>(null)
   // 任务执行中(RUNNING_* / PINGING)时禁止提交,COUNTDOWN 是人工介入窗口,允许提交
   const status = taskState?.status
@@ -189,6 +191,7 @@ export function StatusBar({
           isLoading={isGitLoading}
           repoRoot={repoRoot}
           onOpenCommit={() => { setCommitFeedback(null); setShowCommitModal(true) }}
+          onOpenPush={(remote) => { setPushRemote(remote); setShowPushModal(true); setCommitFeedback(null) }}
           commitFeedback={commitFeedback}
           onDismissFeedback={() => setCommitFeedback(null)}
         />

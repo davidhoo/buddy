@@ -14,9 +14,20 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 }))
 
 let commitPushMock: ReturnType<typeof vi.fn>
+let pushAvailData: import('../../../src/shared/types').GitPushAvailability | undefined = undefined
+let pushAvailLoading = false
+let pushAvailError = false
+const pushAvailRefetch = vi.fn()
 vi.mock('../../../src/renderer/hooks/useBuddy', () => ({
   useGitStageAll: () => ({ mutateAsync: vi.fn() }),
   useGitCommitAndPush: () => ({ mutateAsync: (...args: unknown[]) => commitPushMock(...args) }),
+  useGitPushAvailability: vi.fn(() => ({
+    data: pushAvailData,
+    isLoading: pushAvailLoading,
+    isError: pushAvailError,
+    error: pushAvailError ? new Error('boom') : null,
+    refetch: pushAvailRefetch,
+  })),
 }))
 
 vi.mock('../../../src/renderer/lib/api', () => ({
@@ -38,8 +49,10 @@ vi.mock('../../../src/renderer/components/BranchModal', () => ({
   BranchModal: () => null,
 }))
 
-import { CommitModal } from '../../../src/renderer/components/FileStatus'
+import { CommitModal, FileStatus } from '../../../src/renderer/components/FileStatus'
 import { api } from '../../../src/renderer/lib/api'
+import { useGitPushAvailability } from '../../../src/renderer/hooks/useBuddy'
+import type { GitPushAvailability } from '../../../src/shared/types'
 
 function makeGitStatus(): GitStatusResult {
   return {
@@ -657,5 +670,170 @@ describe('CommitModal commit allowed while task running', () => {
     await waitFor(() => expect(commitPushMock).toHaveBeenCalled())
     // 确认提交仍调用 stage + commitAndPush
     expect(api.gitStageFiles).toHaveBeenCalledWith('/tmp/repo', expect.any(Array))
+  })
+})
+
+function makeCleanGitStatus(overrides: Partial<GitStatusResult> = {}): GitStatusResult {
+  return {
+    branch: 'main',
+    diff: null,
+    staged: null,
+    untracked: 0,
+    files: [],
+    remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }],
+    upstream: null,
+    ...overrides,
+  }
+}
+
+function makeAvail(overrides: Partial<GitPushAvailability> = {}): GitPushAvailability {
+  return {
+    state: 'ahead',
+    remote: 'origin',
+    branch: 'main',
+    ahead: 1,
+    behind: 0,
+    upstreamCreatedOnPush: false,
+    ...overrides,
+  }
+}
+
+function resetPushAvail() {
+  pushAvailData = undefined
+  pushAvailLoading = false
+  pushAvailError = false
+  pushAvailRefetch.mockClear()
+  vi.mocked(useGitPushAvailability).mockClear()
+}
+
+function renderFileStatus(overrides: Record<string, unknown> = {}) {
+  const onOpenCommit = vi.fn()
+  const onOpenPush = vi.fn()
+  const props = {
+    gitStatus: makeCleanGitStatus(),
+    isLoading: false,
+    repoRoot: '/tmp/repo',
+    onOpenCommit,
+    onOpenPush,
+    ...overrides,
+  }
+  render(<FileStatus {...props} />)
+  return { onOpenCommit, onOpenPush, props }
+}
+
+describe('FileStatus pending-push entry', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear()),
+      },
+    })
+    resetPushAvail()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('hides push entry when there are changes; commit button stays enabled', () => {
+    pushAvailData = makeAvail()
+    renderFileStatus({ gitStatus: makeGitStatus() })
+    expect(screen.queryByText(/git\.pushPending/)).toBeNull()
+    const commitBtn = screen.getByText('git.commit').closest('button') as HTMLButtonElement
+    expect(commitBtn.disabled).toBe(false)
+  })
+
+  it('shows push entry with ahead count when clean and ahead; click carries detect remote', () => {
+    pushAvailData = makeAvail({ ahead: 3 })
+    const { onOpenPush } = renderFileStatus()
+    const entry = screen.getByText(/git\.pushPending/).closest('button') as HTMLButtonElement
+    expect(entry).toBeTruthy()
+    expect(screen.getByText(/git\.pushAhead/).textContent).toContain('3')
+    fireEvent.click(entry)
+    expect(onOpenPush).toHaveBeenCalledWith('origin')
+  })
+
+  it('shows first-push entry when clean and new_branch', () => {
+    pushAvailData = makeAvail({ state: 'new_branch', ahead: 1 })
+    renderFileStatus()
+    expect(screen.getByText(/git\.pushPending/)).toBeTruthy()
+    expect(screen.getByText(/git\.pushNewBranch/)).toBeTruthy()
+  })
+
+  for (const state of ['up_to_date', 'behind', 'diverged', 'unavailable'] as const) {
+    it(`hides clickable push entry when state is ${state}`, () => {
+      pushAvailData = makeAvail({ state })
+      renderFileStatus()
+      expect(screen.queryByText(/git\.pushPending/)).toBeNull()
+    })
+  }
+
+  it('shows no clickable entry while loading', () => {
+    pushAvailData = undefined
+    pushAvailLoading = true
+    renderFileStatus()
+    expect(screen.queryByText(/git\.pushPending/)).toBeNull()
+    expect(screen.getByText(/git\.pushChecking/)).toBeTruthy()
+  })
+
+  it('shows check-failed error with retry and no push button on fetch error', () => {
+    pushAvailData = undefined
+    pushAvailError = true
+    renderFileStatus()
+    expect(screen.queryByText(/git\.pushPending/)).toBeNull()
+    expect(screen.getByText(/git\.pushCheckFailed/)).toBeTruthy()
+    const retryBtn = screen.getByText('common.retry')
+    fireEvent.click(retryBtn)
+    expect(pushAvailRefetch).toHaveBeenCalled()
+  })
+
+  it('does not enable the push-status query when there are no remotes', () => {
+    renderFileStatus({ gitStatus: makeCleanGitStatus({ remotes: [] }) })
+    expect(useGitPushAvailability).toHaveBeenLastCalledWith('/tmp/repo', null, 'main', false)
+  })
+
+  it('does not enable the push-status query on detached HEAD', () => {
+    renderFileStatus({ gitStatus: makeCleanGitStatus({ branch: 'HEAD' }) })
+    expect(useGitPushAvailability).toHaveBeenLastCalledWith('/tmp/repo', null, 'HEAD', false)
+  })
+
+  it('prefers the upstream remote as detection target', () => {
+    pushAvailData = makeAvail({ remote: 'origin' })
+    const { onOpenPush } = renderFileStatus({
+      gitStatus: makeCleanGitStatus({
+        upstream: { remote: 'origin', branch: 'main' },
+        remotes: [
+          { name: 'backup', url: 'u1' },
+          { name: 'origin', url: 'u2' },
+        ],
+      }),
+    })
+    const entry = screen.getByText(/git\.pushPending/).closest('button') as HTMLButtonElement
+    fireEvent.click(entry)
+    // 检测远端取 upstream.remote (origin)，而非 backup/remotes[0]
+    expect(onOpenPush).toHaveBeenCalledWith('origin')
+  })
+
+  it('falls back to stored lastRemote when no upstream', () => {
+    localStorage.setItem('buddy.lastRemote./tmp/repo', 'backup')
+    pushAvailData = makeAvail({ remote: 'backup' })
+    const { onOpenPush } = renderFileStatus({
+      gitStatus: makeCleanGitStatus({
+        remotes: [
+          { name: 'origin', url: 'u1' },
+          { name: 'backup', url: 'u2' },
+        ],
+      }),
+    })
+    const entry = screen.getByText(/git\.pushPending/).closest('button') as HTMLButtonElement
+    fireEvent.click(entry)
+    expect(onOpenPush).toHaveBeenCalledWith('backup')
   })
 })

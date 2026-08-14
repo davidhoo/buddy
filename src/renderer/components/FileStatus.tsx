@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { GitBranch, GitCommit, FileDiff, FileText, Loader2, Plus, Minus, Sparkles, Upload, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
 import type { GitStatusResult, GitFileStatusCode, GitRemote, GitCommitPushResult, GlobalSettings, TaskSettings } from '../../shared/types'
-import { useGitStageAll, useGitCommitAndPush } from '../hooks/useBuddy'
+import { useGitStageAll, useGitCommitAndPush, useGitPushAvailability } from '../hooks/useBuddy'
 import { useT, type TFunction } from '../hooks/useI18n'
 import { useLanguage } from '../hooks/useI18n'
 import { api } from '../lib/api'
@@ -21,6 +21,8 @@ interface FileStatusProps {
   isLoading: boolean
   repoRoot: string | null
   onOpenCommit: () => void
+  /** 打开独立推送弹窗, 携带触发入口的检测远端。 */
+  onOpenPush?: (remote: string) => void
   commitFeedback?: CommitFeedback | null
   onDismissFeedback?: () => void
 }
@@ -39,7 +41,7 @@ export function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: T
   return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${cls}`}>{label}</span>
 }
 
-export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commitFeedback, onDismissFeedback }: FileStatusProps) {
+export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, onOpenPush, commitFeedback, onDismissFeedback }: FileStatusProps) {
   const t = useT()
   const [showChangesModal, setShowChangesModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
@@ -84,6 +86,33 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
   const totalDeletions = (gitStatus.files ?? []).reduce((s, f) => s + f.deletions, 0)
   const totalFiles = (gitStatus.files ?? []).length || ((gitStatus.diff?.filesChanged ?? 0) + (gitStatus.staged?.filesChanged ?? 0) + gitStatus.untracked)
   const hasChanges = totalFiles > 0
+
+  const branch = gitStatus.branch
+  const remotes = gitStatus.remotes ?? []
+  const repoRootStr = repoRoot ?? ''
+  // 检测远端优先级: 有效 upstream.remote → 项目级 localStorage 记忆 → remotes[0]。
+  // 不读取/写入/排序 Git 配置。
+  const detectRemote = useMemo(() => {
+    if (remotes.length === 0 || !repoRootStr) return ''
+    const names = remotes.map(r => r.name)
+    const up = gitStatus.upstream
+    if (up && names.includes(up.remote)) return up.remote
+    try {
+      const stored = localStorage.getItem(`buddy.lastRemote.${repoRootStr}`)
+      if (stored && names.includes(stored)) return stored
+    } catch { /* localStorage unavailable */ }
+    return names[0] ?? ''
+  }, [remotes, gitStatus.upstream, repoRootStr])
+  // 只在干净、非分离 HEAD、有远端、有检测远端时启用 push-status 查询。
+  const pushCheckEnabled = !hasChanges && !!branch && branch !== 'HEAD' && remotes.length > 0 && !!detectRemote
+  const availability = useGitPushAvailability(
+    repoRootStr || null,
+    pushCheckEnabled ? detectRemote : null,
+    branch,
+    pushCheckEnabled
+  )
+  const avail = availability.data
+  const canPush = avail?.state === 'ahead' || avail?.state === 'new_branch'
 
   return (
     <>
@@ -139,6 +168,45 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, commi
             <span className="ml-auto text-accent-primary">{t('shortcuts.commitAndPush')}<span className="text-fg-muted ml-1">{formatBinding(loadBindings().commitAndPush)}</span></span>
           )}
         </button>
+
+        {/* 独立推送入口: 仅工作区干净、非分离 HEAD、有远端时检查; ahead/new_branch 可推 */}
+        {pushCheckEnabled && (
+          <>
+            {availability.isLoading && !availability.isError && (
+              <div className="flex items-center gap-2 text-xs px-6 py-1.5 text-fg-muted">
+                <Loader2 size={13} className="animate-spin flex-shrink-0" />
+                <span>{t('git.pushChecking')}</span>
+              </div>
+            )}
+            {availability.isError && (
+              <div className="flex items-center gap-2 text-xs px-6 py-1.5 text-danger bg-danger/10">
+                <AlertCircle size={13} className="flex-shrink-0" />
+                <span className="truncate min-w-0">{t('git.pushCheckFailed')}</span>
+                <button
+                  onClick={() => availability.refetch()}
+                  className="ml-auto flex-shrink-0 text-fg-muted hover:text-fg underline"
+                >
+                  {t('common.retry')}
+                </button>
+              </div>
+            )}
+            {canPush && avail && (
+              <button
+                onClick={() => onOpenPush?.(detectRemote)}
+                data-buddy-push-entry
+                className="flex items-center gap-2 text-xs px-6 py-1.5 w-full hover:bg-bg-subtle transition-colors text-left"
+              >
+                <Upload size={13} className="text-fg-muted flex-shrink-0" />
+                <span className="text-fg-secondary flex-shrink-0">{t('git.pushPending')}</span>
+                <span className="ml-auto text-accent-primary">
+                  {avail.state === 'ahead'
+                    ? t('git.pushAhead', { n: avail.ahead })
+                    : t('git.pushNewBranch')}
+                </span>
+              </button>
+            )}
+          </>
+        )}
 
         {/* 提交反馈 */}
         {activeFeedback && (

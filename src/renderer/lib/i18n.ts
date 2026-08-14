@@ -374,6 +374,19 @@ const en = {
   'git.statusColumn': 'Status',
   'git.fileColumn': 'File',
 
+  // Push pending commits (independent push entry)
+  'git.pushPending': 'Push pending commits',
+  'git.pushChecking': 'Checking remote status…',
+  'git.pushAhead': 'Local is {n} commit(s) ahead',
+  'git.pushNewBranch': 'Remote has no such branch (first push)',
+  'git.pushUpToDate': 'Up to date with remote',
+  'git.pushBehind': 'Local is {n} commit(s) behind',
+  'git.pushDiverged': 'Local and remote have diverged',
+  'git.pushCheckFailed': 'Failed to check remote status',
+  'git.pushNow': 'Push',
+  'git.pushSuccess': 'Pushed to {remote}',
+  'git.pushFailed': 'Push to {remote} failed: {message}',
+
   // Event types
   'event.task.created': 'Created',
   'event.task.done': 'Completed',
@@ -799,6 +812,19 @@ const zhCN: typeof en = {
   'git.statusColumn': '状态',
   'git.fileColumn': '文件',
 
+  // 推送待推送的提交（独立推送入口）
+  'git.pushPending': '推送待推送的提交',
+  'git.pushChecking': '正在检查远端状态…',
+  'git.pushAhead': '本地领先 {n} 个提交',
+  'git.pushNewBranch': '远端尚无此分支（首次推送）',
+  'git.pushUpToDate': '与远端已同步',
+  'git.pushBehind': '本地落后 {n} 个提交',
+  'git.pushDiverged': '本地与远端已分叉',
+  'git.pushCheckFailed': '检查远端状态失败',
+  'git.pushNow': '推送',
+  'git.pushSuccess': '已推送到 {remote}',
+  'git.pushFailed': '推送到 {remote} 失败：{message}',
+
   // Event types
   'event.task.created': '已创建',
   'event.task.done': '已完成',
@@ -1220,6 +1246,19 @@ const zhTW: typeof en = {
   'git.statusUnmerged': '未合併',
   'git.statusColumn': '狀態',
   'git.fileColumn': '檔案',
+
+  // 推送待推送的提交（獨立推送入口）
+  'git.pushPending': '推送待推送的提交',
+  'git.pushChecking': '正在檢查遠端狀態…',
+  'git.pushAhead': '本地領先 {n} 個提交',
+  'git.pushNewBranch': '遠端尚無此分支（首次推送）',
+  'git.pushUpToDate': '與遠端已同步',
+  'git.pushBehind': '本地落後 {n} 個提交',
+  'git.pushDiverged': '本地與遠端已分叉',
+  'git.pushCheckFailed': '檢查遠端狀態失敗',
+  'git.pushNow': '推送',
+  'git.pushSuccess': '已推送到 {remote}',
+  'git.pushFailed': '推送到 {remote} 失敗：{message}',
 
   // Event types
   'event.task.created': '已建立',
