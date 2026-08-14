@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.20] - 2026-08-14
+
+### Added
+- 新增「已提交待推送」入口与推送弹窗：Git 状态检测到本地有未推送的提交时，状态栏与文件面板会显示待推送入口，点击弹窗确认后即可将本地提交推送到远端，无需切到终端
+- 提交弹窗的远端下拉项现拼入脱敏后的 push URL，便于在多个 remote 间辨认实际推送目标：HTTP(S) 地址去掉 userinfo（含令牌），SSH/scp 风格 `git@host:path` 原样显示，option 仅用 remote 名称、不写入任何 Git 配置
+
+---
+
 ## [1.2.19] - 2026-08-13
 
 ### Added
@@ -530,6 +538,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.20]: https://github.com/davidhoo/buddy/releases/tag/v1.2.20
 [1.2.19]: https://github.com/davidhoo/buddy/releases/tag/v1.2.19
 [1.2.17]: https://github.com/davidhoo/buddy/releases/tag/v1.2.17
 [1.2.16]: https://github.com/davidhoo/buddy/releases/tag/v1.2.16
