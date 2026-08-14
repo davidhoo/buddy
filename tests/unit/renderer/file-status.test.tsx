@@ -433,7 +433,7 @@ describe('CommitModal remote display', () => {
     expect(screen.getByText(/git\.noRemote/)).toBeTruthy()
   })
 
-  it('shows the single remote by name (no URL) and enables push', () => {
+  it('shows the single remote name with its push URL and enables push', () => {
     renderModal({ gitStatus: { ...makeGitStatus(), remotes: [{ name: 'origin', url: 'git@github.com:test/repo.git' }] } })
     expect(screen.getByText('git.remote')).toBeTruthy()
     // find the remote select by its origin option
@@ -441,32 +441,35 @@ describe('CommitModal remote display', () => {
     const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
     expect(select).toBeTruthy()
     expect(select.value).toBe('origin')
-    expect(select.options[0].textContent).toBe('origin')
-    // 不显示 URL
-    expect(document.body.textContent).not.toContain('git@github.com')
+    expect(select.options[0].value).toBe('origin')
+    // option 文案 = remote 名称 + 两个空格 + Git 地址
+    expect(select.options[0].textContent).toBe('origin  git@github.com:test/repo.git')
     const pushLabel = screen.getByText('git.push').closest('label') as HTMLElement
     const pushCheckbox = pushLabel.querySelector('input[type="checkbox"]') as HTMLInputElement
     expect(pushCheckbox.disabled).toBe(false)
   })
 
-  it('marks only the upstream remote with (remote/branch)', () => {
+  it('marks only the upstream remote with (remote/branch) and shows each URL', () => {
     renderModal({
       gitStatus: {
         ...makeGitStatus(),
         upstream: { remote: 'origin', branch: 'main' },
         remotes: [
           { name: 'origin', url: 'git@github.com:test/origin.git' },
-          { name: 'backup', url: 'git@github.com:test/backup.git' }
+          { name: 'backup', url: 'https://github.com/test/backup.git' }
         ]
       }
     })
     const selects = Array.from(document.querySelectorAll('select'))
     const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
     const labels = Array.from(select.options).map(o => o.textContent)
-    expect(labels).toEqual(['origin (origin/main)', 'backup'])
+    expect(labels).toEqual([
+      'origin (origin/main)  git@github.com:test/origin.git',
+      'backup  https://github.com/test/backup.git',
+    ])
   })
 
-  it('shows only remote names when upstream is null', () => {
+  it('shows each remote name with its URL when upstream is null', () => {
     renderModal({
       gitStatus: {
         ...makeGitStatus(),
@@ -480,9 +483,30 @@ describe('CommitModal remote display', () => {
     const selects = Array.from(document.querySelectorAll('select'))
     const select = selects.find(s => Array.from(s.options).some(o => o.value === 'origin')) as HTMLSelectElement
     const labels = Array.from(select.options).map(o => o.textContent)
-    expect(labels).toEqual(['origin', 'backup'])
-    // 不出现括号标记
+    expect(labels).toEqual([
+      'origin  git@github.com:test/origin.git',
+      'backup  git@github.com:test/backup.git',
+    ])
+    // 无 upstream 时不出现括号标记
     expect(document.body.textContent).not.toContain('(origin/')
+  })
+
+  it('strips HTTP(S) userinfo from the displayed URL', () => {
+    renderModal({
+      gitStatus: {
+        ...makeGitStatus(),
+        remotes: [
+          { name: 'private', url: 'https://alice:secret@example.com/org/repo.git' },
+        ],
+      },
+    })
+    const selects = Array.from(document.querySelectorAll('select'))
+    const select = selects.find(s => Array.from(s.options).some(o => o.value === 'private')) as HTMLSelectElement
+    expect(select.options[0].textContent).toBe('private  https://example.com/org/repo.git')
+    expect(select.options[0].value).toBe('private')
+    // 凭据(用户名/令牌)不得出现在界面上
+    expect(document.body.textContent).not.toContain('alice')
+    expect(document.body.textContent).not.toContain('secret')
   })
 
   it('keeps remote label and select on the same row, separate from the bottom push row', () => {

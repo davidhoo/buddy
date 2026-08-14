@@ -16,6 +16,13 @@ export interface CommitFeedback {
   repoRoot: string
 }
 
+// 仅用于显示：移除 HTTP(S) URL authority 中的 userinfo(user:token@)，
+// 避免凭据进入 UI。SSH/scp 风格 git@host:path 原样返回。
+// 不得用于任何写操作、Git 命令、select value 或 localStorage。
+function displayRemoteUrl(url: string): string {
+  return url.replace(/^(https?:\/\/)\S*@/i, '$1')
+}
+
 interface FileStatusProps {
   gitStatus: GitStatusResult | null | undefined
   isLoading: boolean
@@ -615,9 +622,10 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
                 >
                   {gitStatus.remotes.map((r: GitRemote) => {
                     const upstream = gitStatus.upstream
-                    const label = upstream && upstream.remote === r.name
+                    const remoteLabel = upstream && upstream.remote === r.name
                       ? `${r.name} (${upstream.remote}/${upstream.branch})`
                       : r.name
+                    const label = `${remoteLabel}  ${displayRemoteUrl(r.url)}`
                     return <option key={r.name} value={r.name}>{label}</option>
                   })}
                 </select>
