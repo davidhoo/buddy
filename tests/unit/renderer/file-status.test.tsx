@@ -774,6 +774,30 @@ describe('FileStatus pending-push entry', () => {
     expect(commitBtn.disabled).toBe(false)
   })
 
+  it('keeps hook order stable when Git status finishes loading', () => {
+    const { rerender } = render(
+      <FileStatus
+        gitStatus={undefined}
+        isLoading={true}
+        repoRoot="/tmp/repo"
+        onOpenCommit={vi.fn()}
+        onOpenPush={vi.fn()}
+      />
+    )
+
+    expect(() => {
+      rerender(
+        <FileStatus
+          gitStatus={makeCleanGitStatus()}
+          isLoading={false}
+          repoRoot="/tmp/repo"
+          onOpenCommit={vi.fn()}
+          onOpenPush={vi.fn()}
+        />
+      )
+    }).not.toThrow()
+  })
+
   it('shows push entry with ahead count when clean and ahead; click carries detect remote', () => {
     pushAvailData = makeAvail({ ahead: 3 })
     const { onOpenPush } = renderFileStatus()

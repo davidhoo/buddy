@@ -63,6 +63,35 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, onOpe
     return () => clearTimeout(timer)
   }, [activeFeedback, onDismissFeedback])
 
+  const remotes = gitStatus?.remotes ?? []
+  const repoRootStr = repoRoot ?? ''
+  const branch = gitStatus?.branch ?? null
+  const totalFiles = (gitStatus?.files ?? []).length || ((gitStatus?.diff?.filesChanged ?? 0) + (gitStatus?.staged?.filesChanged ?? 0) + (gitStatus?.untracked ?? 0))
+  const hasChanges = totalFiles > 0
+  // 检测远端优先级: 有效 upstream.remote → 项目级 localStorage 记忆 → remotes[0]。
+  // 不读取/写入/排序 Git 配置。
+  const detectRemote = useMemo(() => {
+    if (remotes.length === 0 || !repoRootStr) return ''
+    const names = remotes.map(r => r.name)
+    const up = gitStatus?.upstream
+    if (up && names.includes(up.remote)) return up.remote
+    try {
+      const stored = localStorage.getItem(`buddy.lastRemote.${repoRootStr}`)
+      if (stored && names.includes(stored)) return stored
+    } catch { /* localStorage unavailable */ }
+    return names[0] ?? ''
+  }, [remotes, gitStatus?.upstream, repoRootStr])
+  // 只在干净、非分离 HEAD、有远端、有检测远端时启用 push-status 查询。
+  const pushCheckEnabled = !!gitStatus && !hasChanges && !!branch && branch !== 'HEAD' && remotes.length > 0 && !!detectRemote
+  const availability = useGitPushAvailability(
+    repoRootStr || null,
+    pushCheckEnabled ? detectRemote : null,
+    branch,
+    pushCheckEnabled
+  )
+  const avail = availability.data
+  const canPush = avail?.state === 'ahead' || avail?.state === 'new_branch'
+
   if (!repoRoot) return null
 
   if (isLoading || !gitStatus) {
@@ -91,35 +120,6 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, onOpe
 
   const totalInsertions = (gitStatus.files ?? []).reduce((s, f) => s + f.insertions, 0)
   const totalDeletions = (gitStatus.files ?? []).reduce((s, f) => s + f.deletions, 0)
-  const totalFiles = (gitStatus.files ?? []).length || ((gitStatus.diff?.filesChanged ?? 0) + (gitStatus.staged?.filesChanged ?? 0) + gitStatus.untracked)
-  const hasChanges = totalFiles > 0
-
-  const branch = gitStatus.branch
-  const remotes = gitStatus.remotes ?? []
-  const repoRootStr = repoRoot ?? ''
-  // 检测远端优先级: 有效 upstream.remote → 项目级 localStorage 记忆 → remotes[0]。
-  // 不读取/写入/排序 Git 配置。
-  const detectRemote = useMemo(() => {
-    if (remotes.length === 0 || !repoRootStr) return ''
-    const names = remotes.map(r => r.name)
-    const up = gitStatus.upstream
-    if (up && names.includes(up.remote)) return up.remote
-    try {
-      const stored = localStorage.getItem(`buddy.lastRemote.${repoRootStr}`)
-      if (stored && names.includes(stored)) return stored
-    } catch { /* localStorage unavailable */ }
-    return names[0] ?? ''
-  }, [remotes, gitStatus.upstream, repoRootStr])
-  // 只在干净、非分离 HEAD、有远端、有检测远端时启用 push-status 查询。
-  const pushCheckEnabled = !hasChanges && !!branch && branch !== 'HEAD' && remotes.length > 0 && !!detectRemote
-  const availability = useGitPushAvailability(
-    repoRootStr || null,
-    pushCheckEnabled ? detectRemote : null,
-    branch,
-    pushCheckEnabled
-  )
-  const avail = availability.data
-  const canPush = avail?.state === 'ahead' || avail?.state === 'new_branch'
 
   return (
     <>

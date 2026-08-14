@@ -11,7 +11,8 @@ import { eventTypeLabel } from '../../../src/renderer/lib/format'
 import type { Language } from '../../../src/renderer/lib/i18n'
 
 vi.mock('../../../src/renderer/hooks/useBuddy', () => ({
-  useGitStatus: () => ({ data: null, isLoading: false })
+  useGitStatus: () => ({ data: null, isLoading: false }),
+  useGitPushAvailability: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() })
 }))
 
 type StatusBarProps = Parameters<typeof StatusBar>[0]

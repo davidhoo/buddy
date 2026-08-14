@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.21] - 2026-08-14
+
+### Fixed
+- 修复 Git 状态从加载中变为已加载时，`FileStatus` 条件调用 hooks 导致 React #310、整个界面无法渲染的问题
+
+---
+
 ## [1.2.20] - 2026-08-14
 
 ### Added
