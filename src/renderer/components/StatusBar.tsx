@@ -3,6 +3,7 @@ import { Check, Copy, Play, RotateCw } from 'lucide-react'
 import { TaskState, TaskSettings, TaskStatus, Event, Failure, GlobalSettings } from '../../shared/types'
 import { ResizeHandle } from './ResizeHandle'
 import { FileStatus as FileStatusSection, CommitModal, type CommitFeedback } from './FileStatus'
+import { PushModal } from './PushModal'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { useGitStatus, type GitStatusResult } from '../hooks/useBuddy'
 import {
@@ -223,6 +224,24 @@ export function StatusBar({
             })
           }}
           onSuccess={(msg) => { setCommitFeedback({ type: 'success', message: msg, repoRoot: repoRoot || '' }); setShowCommitModal(false) }}
+         onError={(msg) => { setCommitFeedback({ type: 'error', message: msg, repoRoot: repoRoot || '' }) }}
+       />
+     )}
+      {showPushModal && gitStatus && repoRoot && (
+        <PushModal
+          gitStatus={gitStatus}
+          repoRoot={repoRoot}
+          initialRemote={pushRemote}
+          onClose={() => {
+            setShowPushModal(false)
+            requestAnimationFrame(() => {
+              const active = document.activeElement
+              if (active instanceof HTMLElement && active.closest('details')) {
+                active.blur()
+              }
+            })
+          }}
+          onSuccess={(msg) => { setCommitFeedback({ type: 'success', message: msg, repoRoot: repoRoot || '' }); setShowPushModal(false) }}
           onError={(msg) => { setCommitFeedback({ type: 'error', message: msg, repoRoot: repoRoot || '' }) }}
         />
       )}
