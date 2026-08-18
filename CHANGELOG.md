@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.22] - 2026-08-18
+
+### Added
+- 推送弹窗新增「待推送提交列表」：检测到本地领先远端时，弹窗内按从旧到新展示各待推送提交的短 SHA 与标题，推送前即可看清本次实际会推上去哪些提交
+- 主进程基于同一远端快照获取 `pendingCommits`，与 push 可用性判定共用一次快照，不额外触发 fetch、不改写 push 与 Git 配置行为
+
+### Fixed
+- 收紧 `parsePendingCommits` 对截断/不成对 `git log` 输出的校验：遇到孤立 `hash\0` 或缺结尾 NUL 的 `hash\0subject` 时直接拒绝，不再静默生成 `{ hash, subject: '' }` 蒙混过计数检查；抽为可导出纯函数并补充回归测试
+
+---
+
 ## [1.2.21] - 2026-08-14
 
 ### Fixed
@@ -545,6 +556,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.22]: https://github.com/davidhoo/buddy/releases/tag/v1.2.22
 [1.2.21]: https://github.com/davidhoo/buddy/releases/tag/v1.2.21
 [1.2.20]: https://github.com/davidhoo/buddy/releases/tag/v1.2.20
 [1.2.19]: https://github.com/davidhoo/buddy/releases/tag/v1.2.19
