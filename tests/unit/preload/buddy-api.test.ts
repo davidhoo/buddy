@@ -48,6 +48,7 @@ describe('createBuddyPreloadApi', () => {
       branch: 'main',
       ahead: 1,
       behind: 0,
+      pendingCommits: [],
       upstreamCreatedOnPush: false
     })
     const api = createBuddyPreloadApi({ invoke, on: vi.fn(), removeListener: vi.fn() })

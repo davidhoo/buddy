@@ -386,12 +386,24 @@ export type GitPushAvailabilityState =
   | 'new_branch'
   | 'unavailable'
 
+/** 一条尚未推送的本地提交: 7 位短 SHA 与完整标题 (subject)。 */
+export interface GitPendingCommit {
+  hash: string
+  subject: string
+}
+
 export interface GitPushAvailability {
   state: GitPushAvailabilityState
   remote: string
   branch: string
   ahead: number
   behind: number
+  /**
+   * 仅 ahead 时为 `<remote-ref>..HEAD` 范围内、从旧到新的本地独有提交;
+   * 其余状态 (含 new_branch/同步/落后/分叉/不可用) 一律为 []。
+   * 解析失败时让 getGitPushAvailability() 抛错, 不返回部分列表。
+   */
+  pendingCommits: GitPendingCommit[]
   /** 本次推送是否会在成功后建立 upstream (仅无 upstream 的非分离 HEAD 首次推送为 true)。 */
   upstreamCreatedOnPush: boolean
 }

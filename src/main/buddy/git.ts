@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { gitDiffForSelectedFiles } from './commit-message'
-import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream } from '../../shared/types'
+import type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPendingCommit, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream } from '../../shared/types'
 
-export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream }
+export type { GitCommitPushResult, GitDiffStats, GitFileStatus, GitFileStatusCode, GitPendingCommit, GitPushAvailability, GitPushAvailabilityState, GitPushResult, GitRemote, GitStatusResult, GitUpstream }
 
 function removeStaleIndexLock(cwd: string, maxAgeMs = 10_000): void {
   const lockPath = join(cwd, '.git', 'index.lock')
@@ -380,7 +380,7 @@ async function resolvePushArgs(cwd: string, remote: string): Promise<ResolvedPus
 export async function getGitPushAvailability(cwd: string, remote: string): Promise<GitPushAvailability> {
   const branch = await getGitBranch(cwd)
   if (!branch || branch === 'HEAD') {
-    return { state: 'unavailable', remote, branch: '', ahead: 0, behind: 0, upstreamCreatedOnPush: false }
+    return { state: 'unavailable', remote, branch: '', ahead: 0, behind: 0, pendingCommits: [], upstreamCreatedOnPush: false }
   }
   const upstream = await getGitUpstream(cwd, branch)
   // 非分离 HEAD 时, upstreamCreatedOnPush 与 resolvePushArgs 等价 (= !upstream)。
@@ -409,6 +409,7 @@ export async function getGitPushAvailability(cwd: string, remote: string): Promi
       branch: targetBranch,
       ahead: hasHead ? 1 : 0,
       behind: 0,
+      pendingCommits: [],
       upstreamCreatedOnPush
     }
   }
@@ -423,7 +424,38 @@ export async function getGitPushAvailability(cwd: string, remote: string): Promi
   else if (ahead > 0) state = 'ahead'
   else if (behind > 0) state = 'behind'
   else state = 'up_to_date'
-  return { state, remote, branch: targetBranch, ahead, behind, upstreamCreatedOnPush }
+
+  // 仅在纯 ahead (无分叉) 时取得待推送提交; 分叉直接推送会丢远端提交, 不应诱导核对。
+  // 复用同一 remoteRef/HEAD, 与计数来自同一远端快照。
+  // --reverse 让最旧提交先出现; 不用 --first-parent, 以与 rev-list 计数保持一致。
+  const pendingCommits = state === 'ahead' ? await getPendingCommits(cwd, remoteRef, ahead) : []
+  return { state, remote, branch: targetBranch, ahead, behind, pendingCommits, upstreamCreatedOnPush }
+}
+
+/**
+ * 解析 `<remote-ref>..HEAD` 范围内、从旧到新的本地独有提交为 { hash, subject }。
+ * 用 NUL 分隔成对解析, 避免提交标题里的空格/制表符/竖线破坏字段拆分。
+ * 输出不完整或条数与 ahead 不符时抛错, 不返回部分列表, 以免 UI 误显示已核对完整。
+ */
+async function getPendingCommits(cwd: string, remoteRef: string, expected: number): Promise<GitPendingCommit[]> {
+  // %s 只含提交首行标题, 不含换行; 每条提交输出 <hash>\0<subject>\0 后接一个换行。
+  const output = await execGit(['log', '--reverse', `--format=%h%x00%s%x00`, `${remoteRef}..HEAD`], cwd)
+  const NUL = '\x00'
+  const tokens = output.split(NUL)
+  const commits: GitPendingCommit[] = []
+  for (let i = 0; i + 1 < tokens.length; i += 2) {
+    const hash = tokens[i].replace(/\n/g, '').trim()
+    const subject = tokens[i + 1].replace(/\n$/, '')
+    // 末尾会多出一个空 token (来自最后的 NUL); 跳过无 hash 的尾段。
+    if (!hash) continue
+    commits.push({ hash, subject })
+  }
+  if (commits.length !== expected) {
+    throw new Error(
+      `git log ${remoteRef}..HEAD parsed ${commits.length} commits but ahead count is ${expected}`
+    )
+  }
+  return commits
 }
 
 /**

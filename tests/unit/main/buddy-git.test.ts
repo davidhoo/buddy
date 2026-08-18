@@ -503,6 +503,63 @@ describe('getGitPushAvailability', () => {
       expect(avail.remote).toBe('origin')
       expect(avail.branch).toBe('main')
       expect(avail.upstreamCreatedOnPush).toBe(false)
+      expect(avail.pendingCommits).toEqual([
+        { hash: expect.stringMatching(/^[0-9a-f]{7}$/), subject: 'ahead' }
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('lists pending commits oldest-first with 7-char hashes when local is 2 commits ahead', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+
+      writeFileSync(join(dir, 'file.txt'), 'a\n')
+      execSync('git add -A && git commit -m "first local"', { cwd: dir })
+      writeFileSync(join(dir, 'file.txt'), 'b\n')
+      execSync('git add -A && git commit -m "second local"', { cwd: dir })
+
+      const avail = await getGitPushAvailability(dir, 'origin')
+      expect(avail.state).toBe('ahead')
+      expect(avail.ahead).toBe(2)
+      expect(avail.pendingCommits).toEqual([
+        { hash: expect.stringMatching(/^[0-9a-f]{7}$/), subject: 'first local' },
+        { hash: expect.stringMatching(/^[0-9a-f]{7}$/), subject: 'second local' }
+      ])
+      // 顺序与 git log --reverse 一致: 最旧在前
+      const expected = execSync('git log --reverse --format=%h origin/main..HEAD', { cwd: dir })
+        .toString().trim().split('\n')
+      expect(avail.pendingCommits.map(c => c.hash)).toEqual(expected)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('parses pending commit subjects containing spaces, tabs and pipes without truncation', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+
+      // 标题里同时含空格、制表符和竖线, 证明不靠这些字符拆分字段
+      const subject = 'fix: spaces | pipe\ttab char'
+      execSync('git commit -m "second" --allow-empty', { cwd: dir })
+      execSync(`git commit -m "${subject}" --allow-empty`, { cwd: dir })
+
+      const avail = await getGitPushAvailability(dir, 'origin')
+      expect(avail.state).toBe('ahead')
+      expect(avail.ahead).toBe(2)
+      expect(avail.pendingCommits[1].subject).toBe(subject)
+      expect(avail.pendingCommits[0].subject).toBe('second')
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bare, { recursive: true, force: true })
@@ -533,6 +590,7 @@ describe('getGitPushAvailability', () => {
       expect(behind.state).toBe('behind')
       expect(behind.ahead).toBe(0)
       expect(behind.behind).toBe(1)
+      expect(behind.pendingCommits).toEqual([])
 
       // now dir also adds a local commit → diverged
       writeFileSync(join(dir, 'other.txt'), 'local\n')
@@ -541,6 +599,8 @@ describe('getGitPushAvailability', () => {
       expect(diverged.state).toBe('diverged')
       expect(diverged.ahead).toBe(1)
       expect(diverged.behind).toBe(1)
+      // 分叉时 (ahead>0 && behind>0) 不列出待推送提交: 直接推送会丢弃远端提交, 不应诱导用户核对
+      expect(diverged.pendingCommits).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bare, { recursive: true, force: true })
@@ -561,6 +621,8 @@ describe('getGitPushAvailability', () => {
       expect(avail.ahead).toBe(1)
       expect(avail.behind).toBe(0)
       expect(avail.upstreamCreatedOnPush).toBe(true)
+      // 远端尚无目标分支: 不以 HEAD 全历史冒充待推送提交
+      expect(avail.pendingCommits).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bare, { recursive: true, force: true })
@@ -585,6 +647,10 @@ describe('getGitPushAvailability', () => {
       expect(avail.branch).toBe('main')
       expect(avail.ahead).toBe(1)
       expect(avail.behind).toBe(0)
+      // 提交列表相对 backup/main 计算
+      expect(avail.pendingCommits).toEqual([
+        { hash: expect.stringMatching(/^[0-9a-f]{7}$/), subject: 'local' }
+      ])
 
       // origin upstream untouched
       const upstream = execSync('git rev-parse --abbrev-ref main@{upstream}', { cwd: dir }).toString().trim()
@@ -608,6 +674,7 @@ describe('getGitPushAvailability', () => {
       expect(avail.state).toBe('up_to_date')
       expect(avail.ahead).toBe(0)
       expect(avail.behind).toBe(0)
+      expect(avail.pendingCommits).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bare, { recursive: true, force: true })
@@ -626,6 +693,7 @@ describe('getGitPushAvailability', () => {
       const avail = await getGitPushAvailability(dir, 'origin')
       expect(avail.state).toBe('unavailable')
       expect(avail.branch).toBe('')
+      expect(avail.pendingCommits).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bare, { recursive: true, force: true })
