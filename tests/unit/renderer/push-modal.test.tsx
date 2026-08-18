@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitStatusResult, GitPushAvailability, GitPushResult } from '../../../src/shared/types'
 
@@ -61,6 +61,7 @@ function makeAvail(overrides: Partial<GitPushAvailability> = {}): GitPushAvailab
     branch: 'main',
     ahead: 1,
     behind: 0,
+    pendingCommits: [],
     upstreamCreatedOnPush: false,
     ...overrides,
   }
@@ -255,5 +256,97 @@ describe('PushModal', () => {
     const { onClose } = renderModal()
     fireEvent.click(screen.getByText(/common\.cancel/))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders pending commits oldest-first under the target ref when ahead', () => {
+    pushAvailData = makeAvail({
+      ahead: 2,
+      pendingCommits: [
+        { hash: 'e4e8330', subject: 'fix: prevent editor bottom scroll jitter' },
+        { hash: '972b677', subject: "Merge branch 'codex/editor-bottom-scroll-fix'" }
+      ]
+    })
+    renderModal()
+    // 领先数量文案与可推送保持
+    expect(screen.getByText(/git\.pushAhead/).textContent).toContain('2')
+    const pushBtn = screen.getByText('git.pushNow').closest('button') as HTMLButtonElement
+    expect(pushBtn.disabled).toBe(false)
+
+    // 目标引用之后, 按 DOM 顺序出现两个短 SHA 与完整标题
+    const list = document.querySelector('ul[data-buddy-pending-commits]')
+    expect(list).not.toBeNull()
+    const items = within(list as HTMLElement).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent('e4e8330')
+    expect(items[0]).toHaveTextContent('fix: prevent editor bottom scroll jitter')
+    expect(items[1]).toHaveTextContent('972b677')
+    expect(items[1]).toHaveTextContent("Merge branch 'codex/editor-bottom-scroll-fix'")
+
+    // 长标题不以省略号截断
+    expect(items[0].textContent).not.toContain('…')
+  })
+
+  it('wraps long commit subjects instead of truncating', () => {
+    const longSubject = 'feat: a very long commit subject that should wrap onto multiple lines rather than being truncated with an ellipsis'
+    pushAvailData = makeAvail({
+      ahead: 1,
+      pendingCommits: [{ hash: 'abc1234', subject: longSubject }]
+    })
+    renderModal()
+    const list = document.querySelector('ul[data-buddy-pending-commits]')
+    const item = within(list as HTMLElement).getByRole('listitem')
+    expect(item).toHaveTextContent(longSubject)
+    // 不使用 truncate / ellipsis
+    expect(item.className).not.toMatch(/truncate/)
+    expect(item.textContent).not.toContain('…')
+  })
+
+  for (const state of ['new_branch', 'up_to_date', 'behind', 'diverged', 'unavailable'] as const) {
+    it('does not render pending commit list when state is ' + state, () => {
+      pushAvailData = makeAvail({ state, pendingCommits: [] })
+      renderModal()
+      expect(document.querySelector('ul[data-buddy-pending-commits]')).toBeNull()
+    })
+  }
+
+  it('does not render pending commit list on fetch error', () => {
+    pushAvailData = undefined
+    pushAvailError = true
+    renderModal()
+    expect(document.querySelector('ul[data-buddy-pending-commits]')).toBeNull()
+  })
+
+  it('clears the previous remote pending commits after switching to a remote with none', () => {
+    // 先以 origin ahead + 提交渲染
+    pushAvailData = makeAvail({
+      remote: 'origin',
+      ahead: 1,
+      pendingCommits: [{ hash: 'e4e8330', subject: 'fix: prevent editor bottom scroll jitter' }]
+    })
+    renderModal({
+      gitStatus: makeGitStatus({
+        remotes: [
+          { name: 'origin', url: 'u1' },
+          { name: 'backup', url: 'u2' },
+        ],
+      }),
+    })
+    expect(document.querySelector('ul[data-buddy-pending-commits]')).not.toBeNull()
+
+    // 切到 backup 后, hook 返回 up_to_date 且无提交: 旧 origin 提交文本不残留
+    pushAvailData = makeAvail({ remote: 'backup', state: 'up_to_date', ahead: 0, pendingCommits: [] })
+    const select = screen.getAllByRole('combobox')[0] as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'backup' } })
+    renderModal({
+      gitStatus: makeGitStatus({
+        remotes: [
+          { name: 'origin', url: 'u1' },
+          { name: 'backup', url: 'u2' },
+        ],
+      }),
+    })
+    expect(document.querySelector('ul[data-buddy-pending-commits]')).toBeNull()
+    expect(screen.queryByText('e4e8330')).toBeNull()
+    expect(screen.queryByText('fix: prevent editor bottom scroll jitter')).toBeNull()
   })
 })

@@ -717,6 +717,7 @@ function makeAvail(overrides: Partial<GitPushAvailability> = {}): GitPushAvailab
     branch: 'main',
     ahead: 1,
     behind: 0,
+    pendingCommits: [],
     upstreamCreatedOnPush: false,
     ...overrides,
   }

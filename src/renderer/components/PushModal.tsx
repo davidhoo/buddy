@@ -207,6 +207,16 @@ export function PushModal({ gitStatus, repoRoot, initialRemote, onClose, onSucce
                 {avail.branch && (
                   <div className="text-fg-muted pl-6">{avail.remote}/{avail.branch}</div>
                 )}
+                {avail.state === 'ahead' && avail.pendingCommits.length > 0 && (
+                  <ul data-buddy-pending-commits className="pl-6 mt-1 space-y-0.5">
+                    {avail.pendingCommits.map(commit => (
+                      <li key={commit.hash} className="flex gap-2 min-w-0">
+                        <code className="font-mono text-fg-muted flex-shrink-0">{commit.hash}</code>
+                        <span className="min-w-0 break-words">{commit.subject}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 
