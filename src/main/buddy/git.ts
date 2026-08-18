@@ -435,19 +435,47 @@ export async function getGitPushAvailability(cwd: string, remote: string): Promi
 /**
  * 解析 `<remote-ref>..HEAD` 范围内、从旧到新的本地独有提交为 { hash, subject }。
  * 用 NUL 分隔成对解析, 避免提交标题里的空格/制表符/竖线破坏字段拆分。
- * 输出不完整或条数与 ahead 不符时抛错, 不返回部分列表, 以免 UI 误显示已核对完整。
+ * 输出格式不完整或条数与 ahead 不符时抛错, 不返回部分列表, 以免 UI 误显示已核对完整。
  */
 async function getPendingCommits(cwd: string, remoteRef: string, expected: number): Promise<GitPendingCommit[]> {
-  // %s 只含提交首行标题, 不含换行; 每条提交输出 <hash>\0<subject>\0 后接一个换行。
   const output = await execGit(['log', '--reverse', `--format=%h%x00%s%x00`, `${remoteRef}..HEAD`], cwd)
+  return parsePendingCommits(output, remoteRef, expected)
+}
+
+/**
+ * 纯解析: 把 `git log --format=%h%x00%s%x00` 的输出切成 { hash, subject }。
+ * 抽出为独立函数以便对截断/不完整输出做单元测试。
+ *
+ * 完整输出形如 `hash\0subject\0\nhash\0subject\0\n` (每条两个 NUL 后接换行),
+ * split(NUL) 后得到 `2N+1` 个 token: N 个 hash、N 个 subject、末尾一个空串。
+ * 缺任一 NUL (如输出被截断成 `hash\0`) 会破坏该结构, 必须抛错而非吞掉。
+ */
+export function parsePendingCommits(output: string, remoteRef: string, expected: number): GitPendingCommit[] {
   const NUL = '\x00'
-  const tokens = output.split(NUL)
+  if (!output) {
+    throw new Error(`git log ${remoteRef}..HEAD produced empty output`)
+  }
+  // execGit 会 trim 掉 stdout 末尾换行, 但记录间的换行 (非首条 hash 前) 仍在。
+  // 先归一化末尾换行, 再按 NUL 切分: 完整 N 条 → 2N 个 token + 末尾空串。
+  const tokens = output.replace(/\n+$/, '').split(NUL)
+  const last = tokens[tokens.length - 1]
+  if (last !== '') {
+    // 末尾非空说明最后一条记录缺结尾 NUL (如截断成 `hash\0subject`)。
+    throw new Error(`git log ${remoteRef}..HEAD produced malformed output: ${JSON.stringify(output)}`)
+  }
+  const pairs = tokens.length - 1 // 去掉末尾空 token
+  if (pairs % 2 !== 0) {
+    // 奇数: 某条记录缺了 subject NUL (如截断成 `hash\0`)。
+    throw new Error(`git log ${remoteRef}..HEAD produced unpaired fields: ${JSON.stringify(output)}`)
+  }
   const commits: GitPendingCommit[] = []
-  for (let i = 0; i + 1 < tokens.length; i += 2) {
+  for (let i = 0; i < pairs; i += 2) {
+    // 记录间的换行残留在非首条 hash 前部; 清掉后 hash 须非空 (7 位短 SHA)。
     const hash = tokens[i].replace(/\n/g, '').trim()
-    const subject = tokens[i + 1].replace(/\n$/, '')
-    // 末尾会多出一个空 token (来自最后的 NUL); 跳过无 hash 的尾段。
-    if (!hash) continue
+    const subject = tokens[i + 1]
+    if (!hash) {
+      throw new Error(`git log ${remoteRef}..HEAD produced empty hash in record: ${JSON.stringify(tokens[i])}`)
+    }
     commits.push({ hash, subject })
   }
   if (commits.length !== expected) {

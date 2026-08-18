@@ -12,7 +12,8 @@ import {
   gitCommitAndPush,
   gitFileDiff,
   getGitPushAvailability,
-  gitPush
+  gitPush,
+  parsePendingCommits
 } from '../../../src/main/buddy/git'
 
 function createTestRepo(): string {
@@ -566,6 +567,25 @@ describe('getGitPushAvailability', () => {
     }
   })
 
+  it('rejects empty pendingCommits when ahead count mismatches the parsed records', async () => {
+    const dir = createTestRepo()
+    const bare = addBareRemote(dir, 'origin')
+    try {
+      writeFileSync(join(dir, 'file.txt'), 'base\n')
+      execSync('git add -A && git commit -m base', { cwd: dir })
+      execSync('git push -u origin HEAD:refs/heads/main', { cwd: dir })
+      // 两个本地提交, 但下面假装只期望 1 条
+      execSync('git commit -m first --allow-empty', { cwd: dir })
+      execSync('git commit -m second --allow-empty', { cwd: dir })
+      const real = await getGitPushAvailability(dir, 'origin')
+      expect(real.ahead).toBe(2)
+      expect(real.pendingCommits).toHaveLength(2)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
   it('reports behind after the remote advances, then diverged when both sides move', async () => {
     const dir = createTestRepo()
     const bare = addBareRemote(dir, 'origin')
@@ -711,6 +731,73 @@ describe('getGitPushAvailability', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('parsePendingCommits', () => {
+  const NUL = '\x00'
+  const ref = 'refs/remotes/origin/main'
+
+  it('parses complete single-record output (execGit-trimmed form)', () => {
+    // execGit trim 掉末尾换行后的真实形态
+    const output = `3bb3aed${NUL}first local${NUL}`
+    const commits = parsePendingCommits(output, ref, 1)
+    expect(commits).toEqual([{ hash: '3bb3aed', subject: 'first local' }])
+  })
+
+  it('also accepts raw git output with a trailing newline', () => {
+    const output = `3bb3aed${NUL}first local${NUL}\n`
+    expect(parsePendingCommits(output, ref, 1)).toEqual([
+      { hash: '3bb3aed', subject: 'first local' }
+    ])
+  })
+
+  it('parses multiple records oldest-first and strips inter-record newlines', () => {
+    const output = `3bb3aed${NUL}first local${NUL}\n2b3dd5a${NUL}second local${NUL}`
+    const commits = parsePendingCommits(output, ref, 2)
+    expect(commits).toEqual([
+      { hash: '3bb3aed', subject: 'first local' },
+      { hash: '2b3dd5a', subject: 'second local' }
+    ])
+  })
+
+  it('preserves subjects containing spaces, tabs and pipes', () => {
+    const subject = 'fix: spaces | pipe\ttab char'
+    const output = `3bb3aed${NUL}second${NUL}\n2b3dd5a${NUL}${subject}${NUL}`
+    const commits = parsePendingCommits(output, ref, 2)
+    expect(commits[1].subject).toBe(subject)
+  })
+
+  it('preserves a subject that is a single space', () => {
+    const output = `3bb3aed${NUL} ${NUL}`
+    const commits = parsePendingCommits(output, ref, 1)
+    expect(commits[0].subject).toBe(' ')
+  })
+
+  it('throws on truncated single-NUL record (hash only, no subject)', () => {
+    // `hash\0` —— pairs 为奇数, 触发 unpaired。
+    const truncated = `3bb3aed${NUL}`
+    expect(() => parsePendingCommits(truncated, ref, 1)).toThrow(/unpaired fields/)
+  })
+
+  it('throws on truncated record missing the closing NUL', () => {
+    // `hash\0subject` —— 末尾非空, 触发 malformed。
+    const truncated = `3bb3aed${NUL}first local`
+    expect(() => parsePendingCommits(truncated, ref, 1)).toThrow(/malformed output/)
+  })
+
+  it('throws when expected count does not match parsed records', () => {
+    const output = `3bb3aed${NUL}first local${NUL}\n`
+    expect(() => parsePendingCommits(output, ref, 2)).toThrow(/parsed 1 commits but ahead count is 2/)
+  })
+
+  it('throws on empty output when ahead > 0', () => {
+    expect(() => parsePendingCommits('', ref, 1)).toThrow(/empty output/)
+  })
+
+  it('throws on unpaired trailing record (missing subject NUL)', () => {
+    const unpaired = `3bb3aed${NUL}first local${NUL}\n2b3dd5a${NUL}`
+    expect(() => parsePendingCommits(unpaired, ref, 2)).toThrow(/unpaired fields/)
   })
 })
 
