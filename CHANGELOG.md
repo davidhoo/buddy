@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.23] - 2026-08-20
+
+### Fixed
+- Cursor Actor 启动时不再带 `--stream-partial-output`：stream-json 只保留完整文本项，避免逐 token 的部分文本增量干扰解析与展示
+
+---
+
 ## [1.2.22] - 2026-08-18
 
 ### Added
@@ -556,6 +563,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.23]: https://github.com/davidhoo/buddy/releases/tag/v1.2.23
 [1.2.22]: https://github.com/davidhoo/buddy/releases/tag/v1.2.22
 [1.2.21]: https://github.com/davidhoo/buddy/releases/tag/v1.2.21
 [1.2.20]: https://github.com/davidhoo/buddy/releases/tag/v1.2.20
