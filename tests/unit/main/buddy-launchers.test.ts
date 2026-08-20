@@ -81,7 +81,7 @@ describe('launcher command builder', () => {
     })
   })
 
-  it('builds Cursor CLI stream-json command with force and session resume', () => {
+  it('builds Cursor CLI stream-json command without partial text deltas', () => {
     expect(buildLauncherCommand({
       actor: 'cursor',
       command: 'cursor-agent --model gpt-5',
@@ -97,7 +97,6 @@ describe('launcher command builder', () => {
         '--force',
         '--output-format',
         'stream-json',
-        '--stream-partial-output',
         '--resume',
         'cursor-chat',
         'hello from prompt'

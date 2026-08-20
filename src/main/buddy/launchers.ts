@@ -195,7 +195,6 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
         '--force',
         '--output-format',
         'stream-json',
-        '--stream-partial-output',
         ...(input.sessionId ? ['--resume', input.sessionId] : []),
         promptText
       ],
