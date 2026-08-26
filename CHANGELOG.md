@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.24] - 2026-08-26
+
+### Fixed
+- 运行中任务点击停止（以及「打断并插入」）时，会真正向当前 actor launcher 发送 `SIGTERM` 并结束该轮执行；此前只把状态改成 `PAUSED`，子进程仍可能在后台继续跑，也不再因此误记失败、自动重试或交接下一轮
+
+---
+
 ## [1.2.23] - 2026-08-20
 
 ### Fixed
@@ -563,6 +570,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.24]: https://github.com/davidhoo/buddy/releases/tag/v1.2.24
 [1.2.23]: https://github.com/davidhoo/buddy/releases/tag/v1.2.23
 [1.2.22]: https://github.com/davidhoo/buddy/releases/tag/v1.2.22
 [1.2.21]: https://github.com/davidhoo/buddy/releases/tag/v1.2.21
