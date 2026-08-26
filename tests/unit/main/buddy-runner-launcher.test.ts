@@ -1,9 +1,27 @@
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { BuddyRunner } from '../../../src/main/buddy/runner'
 import { BuddyStore } from '../../../src/main/buddy/store'
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
+}
+
+async function killIfAlive(pid: number | null): Promise<void> {
+  if (pid == null || !Number.isFinite(pid)) return
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    /* already gone */
+  }
+}
 
 describe('BuddyRunner with fake launcher', () => {
   it('records actor output and enters READY after successful run', async () => {
@@ -277,6 +295,166 @@ describe('BuddyRunner with fake launcher', () => {
       expect.objectContaining({ role: 'cursor', content: 'cursor final' })
     ]))
   })
+
+  it('terminates the live launcher process when interrupt is called', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-interrupt-'))
+    const readyFile = join(root, 'ready.pid')
+    const fake = join(root, 'long-actor.js')
+    await writeFile(fake, [
+      "const fs = require('node:fs')",
+      'fs.writeFileSync(process.env.BUDDY_READY_FILE, String(process.pid))',
+      'setInterval(() => {}, 1_000)'
+    ].join('\n'))
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          claude: {
+            command: `${process.execPath} ${fake}`,
+            env: { BUDDY_READY_FILE: readyFile },
+            timeout_seconds: 30
+          }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+    let pid: number | null = null
+
+    try {
+      const startPromise = runner.startTask('demo', {
+        workspace_key: created.workspace_key,
+        actor: 'claude'
+      })
+      await vi.waitFor(async () => {
+        await expect(access(readyFile)).resolves.toBeUndefined()
+      })
+      pid = Number(await readFile(readyFile, 'utf8'))
+      expect(pid).toBeGreaterThan(0)
+
+      await runner.interrupt('demo', created.workspace_key)
+      const { run_id: runId } = await startPromise
+      expect(runId).toMatch(/^run_/)
+
+      await vi.waitFor(() => {
+        expect(() => process.kill(pid!, 0)).toThrow(/ESRCH|No such process/)
+      })
+
+      const detail = await store.getTaskDetail('demo', created.workspace_key)
+      expect(detail.state.status).toBe('PAUSED')
+      expect(detail.state.active_run).toBeNull()
+      expect(detail.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'actor.interrupted',
+          payload: expect.objectContaining({ run_id: runId })
+        })
+      ]))
+      expect(detail.events).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'actor.failed' }),
+        expect.objectContaining({ type: 'actor.completed' }),
+        expect.objectContaining({ type: 'actor.finished' })
+      ]))
+    } finally {
+      await killIfAlive(pid)
+    }
+  }, 10_000)
+
+  it('terminates the replaced launcher before interrupt-and-insert starts a new run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-interrupt-insert-'))
+    const readyFile = join(root, 'ready.pid')
+    const invokeFile = join(root, 'invoke.count')
+    const fake = join(root, 'long-then-chat.js')
+    await writeFile(fake, [
+      "const fs = require('node:fs')",
+      "const n = Number(fs.existsSync(process.env.BUDDY_INVOKE_FILE) ? fs.readFileSync(process.env.BUDDY_INVOKE_FILE, 'utf8') : '0') + 1",
+      'fs.writeFileSync(process.env.BUDDY_INVOKE_FILE, String(n))',
+      'if (n === 1) {',
+      '  fs.writeFileSync(process.env.BUDDY_READY_FILE, String(process.pid))',
+      '  setInterval(() => {}, 1_000)',
+      '} else {',
+      "  fs.writeFileSync(process.env.BUDDY_OUTPUT_FILE, JSON.stringify({ type: 'chat', content: 'after insert' }))",
+      '}'
+    ].join('\n'))
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          claude: {
+            command: `${process.execPath} ${fake}`,
+            env: {
+              BUDDY_READY_FILE: readyFile,
+              BUDDY_INVOKE_FILE: invokeFile
+            },
+            timeout_seconds: 30
+          }
+        }
+      }
+    })
+    const queueItem = await store.enqueueInstruction('demo', created.workspace_key, 'please insert this')
+    // sendMessage (used by interruptAndInsert) omits actor; without a prior health_check
+    // pass, startTask would re-enter connectivity ping and hang this fixture.
+    await store.updateTaskState('demo', created.workspace_key, (state) => ({
+      ...state,
+      health_check: { actors: { claude: 'passed', codex: 'passed' } }
+    }))
+    const runner = new BuddyRunner(store)
+    let pid: number | null = null
+
+    try {
+      const startPromise = runner.startTask('demo', {
+        workspace_key: created.workspace_key,
+        actor: 'claude'
+      })
+      await vi.waitFor(async () => {
+        await expect(access(readyFile)).resolves.toBeUndefined()
+      })
+      pid = Number(await readFile(readyFile, 'utf8'))
+      expect(pid).toBeGreaterThan(0)
+
+      await runner.interruptAndInsert('demo', created.workspace_key, queueItem.id)
+      await expect(startPromise).resolves.toMatchObject({
+        run_id: expect.stringMatching(/^run_/)
+      })
+
+      await vi.waitFor(() => {
+        expect(() => process.kill(pid!, 0)).toThrow(/ESRCH|No such process/)
+      })
+
+      const detail = await store.getTaskDetail('demo', created.workspace_key)
+      const interruptedIdx = detail.events.findIndex((event) => event.type === 'actor.interrupted')
+      const secondStartedIdx = detail.events.findIndex(
+        (event, index) => index > interruptedIdx && event.type === 'actor.started'
+      )
+      expect(interruptedIdx).toBeGreaterThanOrEqual(0)
+      expect(secondStartedIdx).toBeGreaterThan(interruptedIdx)
+      expect(detail.events[interruptedIdx]?.payload).toEqual(expect.objectContaining({
+        reason: 'interrupt_and_insert',
+        instruction_id: queueItem.id,
+        run_id: expect.stringMatching(/^run_/)
+      }))
+      // First run must not complete/fail; second run may complete into PAUSED via max_rounds.
+      const firstRunId = (detail.events[interruptedIdx]?.payload as { run_id?: string } | undefined)?.run_id
+      expect(detail.events.filter((event) =>
+        event.type === 'actor.failed' && (event as { run_id?: string }).run_id === firstRunId
+      )).toHaveLength(0)
+      expect(detail.events.filter((event) =>
+        event.type === 'actor.completed' && (event as { run_id?: string }).run_id === firstRunId
+      )).toHaveLength(0)
+      expect(detail.state.status).toBe('PAUSED')
+      expect(detail.state.active_run).toBeNull()
+    } finally {
+      await killIfAlive(pid)
+      // Second invocation may still be running briefly; sweep by invoke count file only tracks first pid.
+      if (isProcessAlive(pid ?? -1)) await killIfAlive(pid)
+    }
+  }, 10_000)
 
   it('records dual break confirmations in structured transcript', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dual-break-'))

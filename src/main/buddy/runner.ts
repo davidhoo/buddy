@@ -92,6 +92,11 @@ export class BuddyRunner {
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
   private readonly notifier?: TaskNotifier
+  /** In-memory abort handles for live runs; keyed by workspace+task (not runId alone). */
+  private readonly runControllers = new Map<string, {
+    runId: string
+    controller: AbortController
+  }>()
   /** Optional callback invoked after a task reaches a terminal-ish state (DONE/PAUSED/FAILED). */
   onTaskTerminal?: (workspaceKey: string) => void
 
@@ -102,6 +107,34 @@ export class BuddyRunner {
     this.executeLaunchers = options.executeLaunchers ?? true
     this.events = options.events
     this.notifier = options.notifier
+  }
+
+  private runControllerKey(workspaceKey: string, taskId: string): string {
+    return `${workspaceKey}::${taskId}`
+  }
+
+  private registerRunController(
+    workspaceKey: string,
+    taskId: string,
+    runId: string,
+    controller: AbortController
+  ): void {
+    this.runControllers.set(this.runControllerKey(workspaceKey, taskId), { runId, controller })
+  }
+
+  private clearRunController(workspaceKey: string, taskId: string, runId: string): void {
+    const key = this.runControllerKey(workspaceKey, taskId)
+    const entry = this.runControllers.get(key)
+    if (entry?.runId === runId) {
+      this.runControllers.delete(key)
+    }
+  }
+
+  private abortRunController(workspaceKey: string, taskId: string, runId: string): void {
+    const entry = this.runControllers.get(this.runControllerKey(workspaceKey, taskId))
+    if (entry?.runId === runId) {
+      entry.controller.abort()
+    }
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
@@ -204,7 +237,13 @@ export class BuddyRunner {
       return { run_id: runId }
     }
 
-    await this.executeActor(taskId, workspaceKey, actor, runId, input.message ?? '')
+    const controller = new AbortController()
+    this.registerRunController(workspaceKey, taskId, runId, controller)
+    try {
+      await this.executeActor(taskId, workspaceKey, actor, runId, input.message ?? '', controller.signal)
+    } finally {
+      this.clearRunController(workspaceKey, taskId, runId)
+    }
     return { run_id: runId }
   }
 
@@ -277,16 +316,7 @@ export class BuddyRunner {
   }
 
   async interrupt(taskId: string, workspaceKey: string): Promise<void> {
-    await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
-      ...state,
-      status: 'PAUSED',
-      active_run: null,
-      updated_at: new Date().toISOString()
-    }))
-    await this.store.appendTaskEvent(taskId, workspaceKey, {
-      type: 'actor.interrupted',
-      payload: {}
-    })
+    await this.pauseAndAbortRun(taskId, workspaceKey, {})
   }
 
   async interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void> {
@@ -295,16 +325,9 @@ export class BuddyRunner {
     const item = (state.instruction_queue ?? []).find((i) => i.id === queueItemId)
     if (!item) throw new Error('Instruction not found in queue')
     await this.store.dequeueInstruction(taskId, workspaceKey, queueItemId)
-    // Interrupt the current actor
-    await this.store.updateTaskState(taskId, workspaceKey, (s) => ({
-      ...s,
-      status: 'PAUSED',
-      active_run: null,
-      updated_at: new Date().toISOString()
-    }))
-    await this.store.appendTaskEvent(taskId, workspaceKey, {
-      type: 'actor.interrupted',
-      payload: { reason: 'interrupt_and_insert', instruction_id: queueItemId }
+    await this.pauseAndAbortRun(taskId, workspaceKey, {
+      reason: 'interrupt_and_insert',
+      instruction_id: queueItemId
     })
     // Send the instruction as a human message and start the next actor
     await this.sendMessage(taskId, {
@@ -312,6 +335,32 @@ export class BuddyRunner {
       message: item.content,
       attachmentMeta: item.attachments
     })
+  }
+
+  /**
+   * Persist PAUSED + clear active_run, emit actor.interrupted, then abort the matching in-memory controller.
+   * Order matters: state must be paused before SIGTERM callbacks can race markFailed/completeActor.
+   */
+  private async pauseAndAbortRun(
+    taskId: string,
+    workspaceKey: string,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    const state = await this.store.readTaskState(taskId, workspaceKey)
+    const runId = state.active_run?.run_id ?? null
+    await this.store.updateTaskState(taskId, workspaceKey, (current) => ({
+      ...current,
+      status: 'PAUSED',
+      active_run: null,
+      updated_at: new Date().toISOString()
+    }))
+    await this.store.appendTaskEvent(taskId, workspaceKey, {
+      type: 'actor.interrupted',
+      payload: { ...payload, run_id: runId }
+    })
+    if (runId) {
+      this.abortRunController(workspaceKey, taskId, runId)
+    }
   }
 
   async enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {
@@ -340,7 +389,8 @@ export class BuddyRunner {
     taskId: string,
     runId: string,
     outputLines: string[],
-    stderrLines: string[]
+    stderrLines: string[],
+    signal?: AbortSignal
   ): Promise<{ exitCode: number | null; signal: string | null }> {
     const needsPty = kindNeedsPty(command.kind)
     const parserActor = parserActorForKind(actor, command.kind)
@@ -352,6 +402,7 @@ export class BuddyRunner {
         cwd,
         env: { ...env, ...(command.env ?? {}) },
         timeoutMs,
+        signal,
         onData: (data) => {
           for (const line of data.split(/\r?\n/).filter(Boolean)) {
             outputLines.push(line)
@@ -386,6 +437,7 @@ export class BuddyRunner {
       env: { ...env, ...(command.env ?? {}) },
       stdinText: command.stdinText,
       timeoutMs,
+      signal,
       onStdout: (line) => {
         outputLines.push(line)
         if (this.events) {
@@ -720,11 +772,28 @@ export class BuddyRunner {
     })
   }
 
-  private async executeActor(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage = '', compactRetries = 0): Promise<void> {
-    return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, 0)
+  private async executeActor(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    runId: string,
+    userMessage = '',
+    signal: AbortSignal,
+    compactRetries = 0
+  ): Promise<void> {
+    return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries, 0)
   }
 
-  private async executeActorInner(taskId: string, workspaceKey: string, actor: string, runId: string, userMessage: string, compactRetries: number, upgradeRetries: number): Promise<void> {
+  private async executeActorInner(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    runId: string,
+    userMessage: string,
+    signal: AbortSignal,
+    compactRetries: number,
+    upgradeRetries: number
+  ): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
     const launcher = detail.settings.launchers[actor] ?? {
@@ -784,7 +853,7 @@ export class BuddyRunner {
       const result = await this.runActorCommand(
         command, cwd, launcher.env, launcher.timeout_seconds * 1000,
         actor, workspaceKey, taskId, runId,
-        outputLines, stderrLines
+        outputLines, stderrLines, signal
       )
       const elapsedMs = Date.now() - startedAtMs
 
@@ -848,6 +917,10 @@ export class BuddyRunner {
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)
     } catch (error) {
+      // User interrupt: pauseAndAbortRun already cleared active_run and aborted the signal.
+      // Treat SIGTERM / abort as a normal stop — no failure, retry, or handoff.
+      if (signal.aborted) return
+
       const message = error instanceof Error ? error.message : String(error)
       // Prefer the actual error message over stderr; only use stderr as fallback
       // and filter out known CLI warnings that are not real errors
@@ -877,7 +950,7 @@ export class BuddyRunner {
             { kind: 'session_reset', reset_attempt: compactRetries + 1 }
           )
           await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
-          return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries + 1, upgradeRetries)
+          return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries + 1, upgradeRetries)
         }
       }
 
@@ -907,7 +980,7 @@ export class BuddyRunner {
           { kind: 'upgrade_retry', retry_attempt: upgradeRetries + 1 }
         )
         await new Promise((resolve) => setTimeout(resolve, UPGRADE_WAIT_MS))
-        return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, compactRetries, upgradeRetries + 1)
+        return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries, upgradeRetries + 1)
       }
 
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
