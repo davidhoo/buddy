@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { appendActorStreamLine, type ActorStreamLine } from '../lib/actor-stream'
 import type { GlobalSettings, GitCommitPushResult, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats } from '../../shared/types'
 import type { TestLauncherResult } from '../../shared/types'
 import type { GitPushAvailability, GitPushResult } from '../../shared/types'
+
+export type { ActorStreamLine }
 
 export function useHealthCheck() {
   return useQuery({
@@ -304,11 +307,6 @@ export function useTaskStats(taskId: string | null, workspaceKey?: string) {
   })
 }
 
-export interface ActorStreamLine {
-  text: string
-  ts: string
-}
-
 export function useActorStream(taskId: string | null, runId: string | null) {
   const [lines, setLines] = useState<ActorStreamLine[]>([])
   const taskIdRef = useRef(taskId)
@@ -329,7 +327,8 @@ export function useActorStream(taskId: string | null, runId: string | null) {
       if (runIdRef.current && envelope.event.run_id && envelope.event.run_id !== runIdRef.current) return
       const text = envelope.event.payload?.text as string | undefined
       if (!text) return
-      setLines(prev => [...prev, { text, ts: envelope.event.ts }])
+      const mode = envelope.event.payload?.stream === 'delta' ? 'delta' as const : 'line' as const
+      setLines(prev => appendActorStreamLine(prev, { text, ts: envelope.event.ts, mode }))
     })
     return unsub
   }, [taskId, runId])

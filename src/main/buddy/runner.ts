@@ -88,6 +88,24 @@ export function isUpgradeExitError(message: string): boolean {
   return UPGRADE_PATTERNS.some((p) => p.test(message))
 }
 
+/** native_cursor finished without a usable successful result — never auto-retry. */
+export const CURSOR_MISSING_RESULT_CODE = 'CURSOR_MISSING_RESULT' as const
+
+export class CursorMissingResultError extends Error {
+  readonly code = CURSOR_MISSING_RESULT_CODE
+
+  constructor(message = 'Cursor actor exited without a successful result event') {
+    super(message)
+    this.name = 'CursorMissingResultError'
+  }
+}
+
+export function isCursorMissingResultError(error: unknown): boolean {
+  if (error instanceof CursorMissingResultError) return true
+  if (!error || typeof error !== 'object') return false
+  return (error as { code?: unknown }).code === CURSOR_MISSING_RESULT_CODE
+}
+
 export class BuddyRunner {
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
@@ -419,7 +437,10 @@ export class BuddyRunner {
                       actor,
                       ts: new Date().toISOString(),
                       run_id: runId,
-                      payload: { text: parsed.text }
+                      payload: {
+                        text: parsed.text,
+                        stream: parsed.streamMode === 'delta' ? 'delta' : 'line'
+                      }
                     }
                   })
                 }
@@ -453,7 +474,10 @@ export class BuddyRunner {
                   actor,
                   ts: new Date().toISOString(),
                   run_id: runId,
-                  payload: { text: parsed.text }
+                  payload: {
+                    text: parsed.text,
+                    stream: parsed.streamMode === 'delta' ? 'delta' : 'line'
+                  }
                 }
               })
             }
@@ -877,6 +901,20 @@ export class BuddyRunner {
         throw new Error(parts.join('\n\n') || exitErrorMessage(result.exitCode, result.signal))
       }
 
+      // native_cursor: require a successful result event. Never promote streamed
+      // assistant/tool text into a completed round when the CLI did not finish.
+      if (command.kind === 'native_cursor') {
+        const hasSuccessResult = parseJsonlBuffer(rawEvents).some((event) => (
+          event.type === 'result'
+          && event.subtype === 'success'
+          && typeof event.result === 'string'
+          && event.result.trim().length > 0
+        ))
+        if (!hasSuccessResult) {
+          throw new CursorMissingResultError()
+        }
+      }
+
       // Ghost output: raw events exist but nothing was extracted (unrecognized error format)
       // However, if parsedLines contain text (e.g. step_start placeholders), use those instead of throwing
       // Skip noise events (system/hook/step_start) that carry no actor content
@@ -927,12 +965,15 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
+      // Missing/invalid Cursor result must fail immediately. Do not let stdout chatter
+      // (e.g. the words "new version") trip upgrade or context-window retries.
+      const skipAutoRetry = isCursorMissingResultError(error)
 
       // Auto-reset session on context window limit errors
       // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
       // not a slash command. So we skip /compact entirely and go straight to session reset.
       const maxCompactRetries = globalSettings.max_compact_retries ?? DEFAULT_MAX_COMPACT_RETRIES
-      if (isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
+      if (!skipAutoRetry && isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
         const sessionId = sessionIdForActor(actor, detail.state, detail.settings)
         if (sessionId) {
           await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -965,7 +1006,7 @@ export class BuddyRunner {
       // the raw stdout the upgrade exit goes undetected at runtime and the round fails
       // instead of retrying. Mirrors the executePing combined-message fix.
       const combinedMessage = `${failureMessage}\n${stderrText}\n${outputLines.join('\n')}`.trim()
-      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
+      if (!skipAutoRetry && upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'actor.upgrade_detected',
           actor,
@@ -1018,7 +1059,7 @@ export class BuddyRunner {
     // a meaningless "chat" message that would block break requests.
     // Skip this check when outputText itself contains a valid buddy message
     // (e.g. contract launchers write buddy JSON directly to the output file).
-    const hasNonNoiseContent = parsedLines.some((l) => l.text && !l.noise)
+    const hasNonNoiseContent = parsedLines.some((l) => (l.text && !l.noise) || (l.rawType === 'result' && !l.noise))
     const hasBuddyJsonInOutput = message.kind === 'message' ? message.text !== text : true
     const isDegradedResponse = !hasNonNoiseContent && !hasBuddyJsonInOutput && message.kind === 'message'
     if (isDegradedResponse) {

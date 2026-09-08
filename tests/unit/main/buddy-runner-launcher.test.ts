@@ -296,6 +296,148 @@ describe('BuddyRunner with fake launcher', () => {
     ]))
   })
 
+  it('fails Cursor rounds that exit without a successful result event', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-cursor-no-result-'))
+    const fake = join(root, 'cursor-agent')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      "printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"cursor-chat-404\",\"model\":\"GPT-5\"}'",
+      "printf '%s\\n' '{\"type\":\"assistant\",\"session_id\":\"cursor-chat-404\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"type\\\":\\\"chat\\\",\\\"content\\\":\\\"opener only\\\"}\"}]}}'"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          cursor: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'cursor'
+    })).rejects.toThrow(/successful result event/i)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.transcript.some((entry) => entry.role === 'cursor')).toBe(false)
+    expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(false)
+  })
+
+  it('accepts Cursor plain-text successful results and rejects empty or failed results', async () => {
+    async function runCursorFixture(name: string, lines: string[]) {
+      const root = await mkdtemp(join(tmpdir(), `buddy-runner-cursor-${name}-`))
+      const fake = join(root, 'cursor-agent')
+      await writeFile(fake, ['#!/bin/sh', ...lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, `'\\''`)}'`)].join('\n'))
+      await chmod(fake, 0o755)
+      const store = new BuddyStore(root)
+      await store.updateGlobalSettings({ max_rounds: 1 })
+      const created = await store.createTask({
+        task_id: 'demo',
+        repo_root: root,
+        settings: {
+          launchers: {
+            cursor: { command: fake, env: {}, timeout_seconds: 5 }
+          }
+        }
+      })
+      const runner = new BuddyRunner(store)
+      return { store, created, runner }
+    }
+
+    {
+      const { store, created, runner } = await runCursorFixture('plain', [
+        '{"type":"system","subtype":"init","session_id":"c-plain","model":"GPT-5"}',
+        '{"type":"result","subtype":"success","session_id":"c-plain","result":"plain ok"}'
+      ])
+      await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'cursor' })
+      const detail = await store.getTaskDetail('demo', created.workspace_key)
+      expect(detail.transcript).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'cursor', content: 'plain ok' })
+      ]))
+      expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(true)
+    }
+
+    {
+      const { store, created, runner } = await runCursorFixture('empty-result', [
+        '{"type":"system","subtype":"init","session_id":"c-empty","model":"GPT-5"}',
+        '{"type":"result","subtype":"success","session_id":"c-empty","result":""}'
+      ])
+      await expect(runner.startTask('demo', {
+        workspace_key: created.workspace_key,
+        actor: 'cursor'
+      })).rejects.toThrow(/successful result event/i)
+      const detail = await store.getTaskDetail('demo', created.workspace_key)
+      expect(detail.state.status).toBe('FAILED')
+      expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(false)
+      expect(detail.events.some((event) => event.type === 'actor.upgrade_retry')).toBe(false)
+    }
+
+    {
+      const { store, created, runner } = await runCursorFixture('failed-result', [
+        '{"type":"system","subtype":"init","session_id":"c-fail","model":"GPT-5"}',
+        '{"type":"result","subtype":"error","session_id":"c-fail","result":"request timed out"}'
+      ])
+      await expect(runner.startTask('demo', {
+        workspace_key: created.workspace_key,
+        actor: 'cursor'
+      })).rejects.toThrow(/successful result event/i)
+      const detail = await store.getTaskDetail('demo', created.workspace_key)
+      expect(detail.state.status).toBe('FAILED')
+      expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(false)
+      expect(detail.events.some((event) => event.type === 'actor.upgrade_retry')).toBe(false)
+      expect(detail.state.round ?? 0).toBe(0)
+    }
+  })
+
+  it('does not upgrade-retry native_cursor missing result even when stdout mentions new version', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-cursor-no-upgrade-'))
+    const counter = join(root, 'launches.txt')
+    const fake = join(root, 'cursor-agent')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      `echo x >> "${counter}"`,
+      "printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"c-upgrade-trap\",\"model\":\"GPT-5\"}'",
+      "printf '%s\\n' '{\"type\":\"assistant\",\"timestamp_ms\":1,\"session_id\":\"c-upgrade-trap\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"我正在检查 new version 的显示问题\"}]}}'"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1, max_upgrade_retries: 3 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          cursor: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'cursor'
+    })).rejects.toThrow(/successful result event/i)
+
+    const launches = (await readFile(counter, 'utf8')).trim().split('\n').filter(Boolean)
+    expect(launches).toHaveLength(1)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round ?? 0).toBe(0)
+    expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(false)
+    expect(detail.events.some((event) => event.type === 'actor.upgrade_detected')).toBe(false)
+    expect(detail.events.some((event) => event.type === 'actor.upgrade_retry')).toBe(false)
+    expect(detail.transcript.some((entry) => entry.meta && (entry.meta as { kind?: string }).kind === 'upgrade_retry')).toBe(false)
+  })
+
   it('terminates the live launcher process when interrupt is called', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-interrupt-'))
     const readyFile = join(root, 'ready.pid')

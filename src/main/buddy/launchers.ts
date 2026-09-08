@@ -195,6 +195,9 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
         '--force',
         '--output-format',
         'stream-json',
+        // Re-enabled for live progress. Consumers must coalesce deltas (not one
+        // event per UI line) and prefer result.result for the final reply.
+        '--stream-partial-output',
         ...(input.sessionId ? ['--resume', input.sessionId] : []),
         promptText
       ],
@@ -356,12 +359,10 @@ export async function runLauncher(input: {
 
   child.stdout!.setEncoding('utf8')
   child.stderr!.setEncoding('utf8')
-  child.stdout!.on('data', (chunk: string) => {
-    for (const line of chunk.split(/\r?\n/).filter(Boolean)) input.onStdout(line)
-  })
-  child.stderr!.on('data', (chunk: string) => {
-    for (const line of chunk.split(/\r?\n/).filter(Boolean)) input.onStderr(line)
-  })
+  const stdoutLines = createLineSplitter(input.onStdout)
+  const stderrLines = createLineSplitter(input.onStderr)
+  child.stdout!.on('data', (chunk: string) => stdoutLines.push(chunk))
+  child.stderr!.on('data', (chunk: string) => stderrLines.push(chunk))
 
   // Write prompt text to stdin, then close the writable side.
   // The child may exit before we finish writing (e.g. wecode auto-upgrades
@@ -378,12 +379,86 @@ export async function runLauncher(input: {
   }
 
   const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
+  const stdoutClosed = once(child.stdout!, 'close').catch(() => undefined)
+  const stderrClosed = once(child.stderr!, 'close').catch(() => undefined)
   try {
     const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
+    // Bound the drain: grandchildren may keep pipes open after the launcher exits.
+    await drainLauncherStreams(child.stdout!, child.stderr!, stdoutClosed, stderrClosed, streamDrainMs(input.timeoutMs))
+    stdoutLines.flush()
+    stderrLines.flush()
     return { exitCode, signal }
   } finally {
     clearTimeout(timeout)
     if (input.signal) input.signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/** Cap how long we wait for stdout/stderr to close after the child exits. */
+export function streamDrainMs(timeoutMs: number): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return 250
+  return Math.min(500, Math.max(50, timeoutMs))
+}
+
+export async function drainLauncherStreams(
+  stdout: NodeJS.ReadableStream,
+  stderr: NodeJS.ReadableStream,
+  stdoutClosed: Promise<unknown>,
+  stderrClosed: Promise<unknown>,
+  drainMs: number
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      Promise.all([stdoutClosed, stderrClosed]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, drainMs)
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+    destroyStream(stdout)
+    destroyStream(stderr)
+  }
+}
+
+function destroyStream(stream: NodeJS.ReadableStream): void {
+  const readable = stream as NodeJS.ReadableStream & { destroy?: () => void; destroyed?: boolean }
+  if (readable.destroyed) return
+  try {
+    readable.destroy?.()
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Split stdout/stderr chunks into complete lines, keeping a trailing partial
+ * line across chunk boundaries so NDJSON events are not broken mid-object.
+ */
+export function createLineSplitter(onLine: (line: string) => void): {
+  push(chunk: string): void
+  flush(): void
+} {
+  let buffer = ''
+  return {
+    push(chunk: string) {
+      if (!chunk) return
+      buffer += chunk
+      while (true) {
+        const match = /\r?\n/.exec(buffer)
+        if (!match || match.index === undefined) break
+        const line = buffer.slice(0, match.index)
+        buffer = buffer.slice(match.index + match[0].length)
+        if (line) onLine(line)
+      }
+    },
+    flush() {
+      if (!buffer) return
+      const line = buffer
+      buffer = ''
+      if (line) onLine(line)
+    }
   }
 }
 
