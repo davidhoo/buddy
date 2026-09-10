@@ -8,6 +8,7 @@ import {
   parseCursorStreamLine,
   parseJsonlBuffer
 } from '../../../src/main/buddy/parsers'
+import { appendActorStreamLine, type ActorStreamLine } from '../../../src/renderer/lib/actor-stream'
 
 describe('buddy actor parsers', () => {
   it('extracts text from Claude stream-json content blocks', () => {
@@ -56,6 +57,7 @@ describe('buddy actor parsers', () => {
   it('extracts Cursor stream-json text and preserves its session ID', () => {
     const event = parseCursorStreamLine(JSON.stringify({
       type: 'assistant',
+      timestamp_ms: 1000,
       session_id: 'cursor-chat',
       message: {
         role: 'assistant',
@@ -65,18 +67,124 @@ describe('buddy actor parsers', () => {
 
     expect(event).toMatchObject({
       text: '{"type":"chat","content":"done"}',
-      sessionId: 'cursor-chat'
+      sessionId: 'cursor-chat',
+      streamMode: 'delta'
     })
   })
 
   it('uses Cursor result events as the final output instead of concatenated deltas', () => {
     const output = extractActorOutput('cursor', [
-      JSON.stringify({ type: 'assistant', session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'partial ' }] } }),
-      JSON.stringify({ type: 'assistant', session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'output' }] } }),
+      JSON.stringify({ type: 'assistant', timestamp_ms: 1, session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'partial ' }] } }),
+      JSON.stringify({ type: 'assistant', timestamp_ms: 2, session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'output' }] } }),
       JSON.stringify({ type: 'result', subtype: 'success', session_id: 'cursor-chat', result: '{"type":"chat","content":"final output"}' })
     ].join('\n'))
 
     expect(output).toBe('{"type":"chat","content":"final output"}')
+  })
+
+  it('does not treat Cursor assistant text as final output when result is missing', () => {
+    const output = extractActorOutput('cursor', [
+      JSON.stringify({ type: 'assistant', timestamp_ms: 1, session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'Hi — starting work.' }] } }),
+      JSON.stringify({ type: 'assistant', timestamp_ms: 2, session_id: 'cursor-chat', message: { content: [{ type: 'text', text: '{"type":"chat","content":"your response text here"}' }] } })
+    ].join('\n'))
+
+    expect(output).toBe('')
+  })
+
+  it('ignores failed Cursor result events when extracting final output', () => {
+    const output = extractActorOutput('cursor', [
+      JSON.stringify({ type: 'assistant', timestamp_ms: 1, session_id: 'cursor-chat', message: { content: [{ type: 'text', text: 'almost' }] } }),
+      JSON.stringify({ type: 'result', subtype: 'error', session_id: 'cursor-chat', result: 'request failed' })
+    ].join('\n'))
+
+    expect(output).toBe('')
+  })
+
+  it('shows Cursor tool/reconnect events and skips buffered assistant copies', () => {
+    const tool = parseCursorStreamLine(JSON.stringify({
+      type: 'tool_call',
+      subtype: 'started',
+      session_id: 'cursor-chat',
+      tool_call: { readToolCall: { args: { path: '/tmp/a.ts' } } }
+    }))
+    expect(tool).toMatchObject({
+      text: '🔧 read /tmp/a.ts (started)',
+      sessionId: 'cursor-chat',
+      streamMode: 'line'
+    })
+
+    const reconnecting = parseCursorStreamLine(JSON.stringify({
+      type: 'connection',
+      subtype: 'reconnecting',
+      session_id: 'cursor-chat',
+      timestamp_ms: 1776080427217
+    }))
+    expect(reconnecting).toMatchObject({
+      text: '⏳ reconnecting',
+      rawType: 'connection',
+      streamMode: 'line'
+    })
+
+    const retry = parseCursorStreamLine(JSON.stringify({
+      type: 'retry',
+      subtype: 'starting',
+      session_id: 'cursor-chat'
+    }))
+    expect(retry).toMatchObject({
+      text: '⏳ starting',
+      rawType: 'retry',
+      streamMode: 'line'
+    })
+
+    const buffered = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      timestamp_ms: 1,
+      model_call_id: 'call-1',
+      session_id: 'cursor-chat',
+      message: { content: [{ type: 'text', text: 'buffered copy' }] }
+    }))
+    expect(buffered.text).toBeUndefined()
+    expect(buffered.noise).toBe(true)
+
+    const finalFlush = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      session_id: 'cursor-chat',
+      message: { content: [{ type: 'text', text: '前文后文完整副本' }] }
+    }))
+    expect(finalFlush.text).toBeUndefined()
+    expect(finalFlush.noise).toBe(true)
+
+    const delta = parseCursorStreamLine(JSON.stringify({
+      type: 'assistant',
+      timestamp_ms: 2,
+      session_id: 'cursor-chat',
+      message: { content: [{ type: 'text', text: 'Hi' }] }
+    }))
+    expect(delta).toMatchObject({ text: 'Hi', sessionId: 'cursor-chat', streamMode: 'delta' })
+  })
+
+  it('keeps tool-separated Cursor deltas distinct and drops the final flush copy', () => {
+    const events = [
+      { type: 'assistant', timestamp_ms: 1, message: { content: [{ type: 'text', text: '前文' }] } },
+      { type: 'tool_call', subtype: 'started', tool_call: { readToolCall: { args: { path: 'a.ts' } } } },
+      { type: 'assistant', timestamp_ms: 2, message: { content: [{ type: 'text', text: '后文' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '前文后文' }] } }
+    ]
+    let lines: ActorStreamLine[] = []
+    for (const event of events) {
+      const parsed = parseCursorStreamLine(JSON.stringify(event))
+      if (!parsed.text) continue
+      lines = appendActorStreamLine(lines, {
+        text: parsed.text,
+        ts: String(lines.length),
+        mode: parsed.streamMode === 'delta' ? 'delta' : 'line'
+      })
+    }
+    expect(lines.map((line) => line.text)).toEqual([
+      '前文',
+      '🔧 read a.ts (started)',
+      '后文'
+    ])
   })
 
   it('extracts OpenCode session IDs and text chunks while ignoring reasoning', () => {

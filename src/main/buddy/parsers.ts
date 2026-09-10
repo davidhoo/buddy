@@ -5,6 +5,12 @@ export interface ParsedActorLine {
   rawType?: string
   /** True for noise events (e.g. system/hook) that carry no actor content */
   noise?: boolean
+  /**
+   * How the renderer should present this chunk:
+   * - delta: append onto the current live text row (Cursor partial tokens)
+   * - line: always start a new row (tools, reconnect, other actors)
+   */
+  streamMode?: 'delta' | 'line'
 }
 
 export type BuddyMessage =
@@ -66,23 +72,94 @@ export function parseCodexJsonLine(line: string): ParsedActorLine {
 /** Parse Cursor Agent CLI's --output-format stream-json events. */
 export function parseCursorStreamLine(line: string): ParsedActorLine {
   const json = JSON.parse(line)
-  const message = objectValue(json.message)
-  const content = message?.content
-  let text: string | undefined
+  const sessionId = cursorSessionIdFromEvent(json)
+  const rawType = textValue(json.type)
 
-  if (Array.isArray(content)) {
-    text = content.map(textFromContentPart).filter(Boolean).join('') || undefined
+  if (rawType === 'result') {
+    // Final reply is taken from result by extractCursorOutput; do not stream it
+    // as another UI row. Successful results stay non-noise so plain-text replies
+    // are not mistaken for context-exhausted placeholders.
+    const ok = textValue(json.subtype) === 'success' && Boolean(textValue(json.result)?.trim())
+    return { sessionId, rawType, noise: !ok }
   }
 
-  if (!text && json.type === 'result') {
-    text = textValue(json.result)
+  if (rawType === 'tool_call') {
+    const detail = cursorToolCallDetail(json)
+    return {
+      text: detail ? `🔧 ${detail}` : '🔧 tool',
+      sessionId,
+      rawType,
+      streamMode: 'line'
+    }
   }
 
-  return {
-    text,
-    sessionId: cursorSessionIdFromEvent(json),
-    rawType: textValue(json.type)
+  // Real Cursor reconnect/retry events use type=connection|retry, not system.
+  if (rawType === 'connection' || rawType === 'retry') {
+    const subtype = textValue(json.subtype) ?? rawType
+    return {
+      text: `⏳ ${subtype}`,
+      sessionId,
+      rawType,
+      streamMode: 'line'
+    }
   }
+
+  if (rawType === 'system') {
+    const subtype = textValue(json.subtype) ?? ''
+    if (/reconnect/i.test(subtype) || /retry/i.test(subtype)) {
+      return { text: `⏳ ${subtype}`, sessionId, rawType, streamMode: 'line' }
+    }
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (rawType === 'assistant') {
+    // Official consumer rules with --stream-partial-output:
+    // - timestamp_ms present, model_call_id absent → live delta (use)
+    // - timestamp_ms + model_call_id → buffered copy before tool (skip)
+    // - no timestamp_ms → final flush duplicate (skip)
+    const hasTimestamp = json.timestamp_ms != null && json.timestamp_ms !== ''
+    const hasModelCallId = json.model_call_id != null && json.model_call_id !== ''
+    if (!hasTimestamp || hasModelCallId) {
+      return { sessionId, rawType, noise: true }
+    }
+
+    const message = objectValue(json.message)
+    const content = message?.content
+    const text = Array.isArray(content)
+      ? content.map(textFromContentPart).filter(Boolean).join('') || undefined
+      : undefined
+    return { text, sessionId, rawType, streamMode: 'delta' }
+  }
+
+  return { sessionId, rawType, noise: true }
+}
+
+function cursorToolCallDetail(event: Record<string, unknown>): string | undefined {
+  const subtype = textValue(event.subtype)
+  const toolCall = objectValue(event.tool_call)
+  if (!toolCall) {
+    return subtype ? `tool ${subtype}` : undefined
+  }
+  for (const [key, value] of Object.entries(toolCall)) {
+    const name = key.replace(/ToolCall$/, '') || key
+    const args = objectValue(objectValue(value)?.args) ?? objectValue(value)
+    const detail = args ? cursorToolArgsDetail(args) : undefined
+    const label = detail ? `${name} ${detail}` : name
+    return subtype ? `${label} (${subtype})` : label
+  }
+  return subtype ? `tool ${subtype}` : undefined
+}
+
+function cursorToolArgsDetail(args: Record<string, unknown>): string | undefined {
+  const path = textValue(args.path) ?? textValue(args.file_path) ?? textValue(args.file) ?? textValue(args.target_notebook)
+  if (path) return truncate(path, 80)
+  const cmd = textValue(args.command) ?? textValue(args.cmd)
+  if (cmd) return truncate(cmd, 80)
+  for (const v of Object.values(args)) {
+    const s = textValue(v)
+    if (s) return truncate(s, 80)
+  }
+  return undefined
 }
 
 function codexToolDetail(toolName: string, input: unknown): string | undefined {
@@ -434,19 +511,15 @@ function extractClaudeOutput(rawEvents: string): string {
 
 function extractCursorOutput(rawEvents: string): string {
   let result = ''
-  const chunks: string[] = []
   for (const event of parseJsonEvents(rawEvents)) {
-    if (event.type === 'result') {
-      const finalText = textValue(event.result)
-      if (finalText) result = finalText
-    }
-    const message = objectValue(event.message)
-    const content = message?.content
-    if (Array.isArray(content)) {
-      chunks.push(...content.map(textFromContentPart).filter(Boolean))
-    }
+    if (event.type !== 'result') continue
+    // Only a successful, non-empty result is the formal reply. Do not fall back
+    // to concatenating assistant deltas (partial mode would duplicate badly).
+    if (textValue(event.subtype) !== 'success') continue
+    const finalText = textValue(event.result)
+    if (finalText) result = finalText
   }
-  return (result || chunks.join('')).trim()
+  return result.trim()
 }
 
 const BUDDY_JSON_PATTERN = /\{\s*"type"\s*:\s*"(chat|break)"/

@@ -185,7 +185,7 @@ const en = {
   'settings.launcher.kimi.label': 'Kimi Code launch command',
   'settings.launcher.claude.hint': 'Launch command for Claude Code. As implementer, --dangerously-skip-permissions is recommended.',
   'settings.launcher.codex.hint': 'Launch command for Codex. The launcher automatically uses non-interactive exec --dangerously-bypass-approvals-and-sandbox.',
-  'settings.launcher.cursor.hint': 'Launch command for Cursor CLI. The launcher uses --print --force --output-format stream-json and resumes with --resume <chat-id>.',
+  'settings.launcher.cursor.hint': 'Launch command for Cursor CLI. The launcher uses --print --force --output-format stream-json --stream-partial-output and resumes with --resume <chat-id>.',
   'settings.launcher.opencode.hint': 'Launch command for OpenCode. The launcher uses run --format json --dangerously-skip-permissions in non-interactive mode.',
   'settings.launcher.kimi.hint': 'Launch command for Kimi Code. The launcher uses -p <prompt> --output-format stream-json in non-interactive mode. Session resumption uses -S <session-id>.',
 
@@ -633,7 +633,7 @@ const zhCN: typeof en = {
   'settings.launcher.kimi.label': 'Kimi Code 启动命令',
   'settings.launcher.claude.hint': 'Claude Code 的启动命令。作为执行者时推荐使用 --dangerously-skip-permissions。',
   'settings.launcher.codex.hint': 'Codex 的启动命令。launcher 会自动使用 exec --dangerously-bypass-approvals-and-sandbox 非交互模式执行。',
-  'settings.launcher.cursor.hint': 'Cursor CLI 的启动命令。launcher 会自动使用 --print --force --output-format stream-json 执行，并通过 --resume <chat-id> 恢复会话。',
+  'settings.launcher.cursor.hint': 'Cursor CLI 的启动命令。launcher 会自动使用 --print --force --output-format stream-json --stream-partial-output 执行，并通过 --resume <chat-id> 恢复会话。',
   'settings.launcher.opencode.hint': 'OpenCode 的启动命令。launcher 会自动使用 run --format json --dangerously-skip-permissions 非交互模式执行。',
   'settings.launcher.kimi.hint': 'Kimi Code 的启动命令。launcher 会自动使用 -p <prompt> --output-format stream-json 非交互模式执行。会话恢复使用 -S <session-id>。',
 
@@ -1067,7 +1067,7 @@ const zhTW: typeof en = {
   'settings.launcher.kimi.label': 'Kimi Code 啟動指令',
   'settings.launcher.claude.hint': 'Claude Code 的啟動指令。作為執行者時建議使用 --dangerously-skip-permissions。',
   'settings.launcher.codex.hint': 'Codex 的啟動指令。launcher 會自動使用 exec --dangerously-bypass-approvals-and-sandbox 非互動模式執行。',
-  'settings.launcher.cursor.hint': 'Cursor CLI 的啟動指令。launcher 會自動使用 --print --force --output-format stream-json 執行，並透過 --resume <chat-id> 恢復工作階段。',
+  'settings.launcher.cursor.hint': 'Cursor CLI 的啟動指令。launcher 會自動使用 --print --force --output-format stream-json --stream-partial-output 執行，並透過 --resume <chat-id> 恢復工作階段。',
   'settings.launcher.opencode.hint': 'OpenCode 的啟動指令。launcher 會自動使用 run --format json --dangerously-skip-permissions 非互動模式執行。',
   'settings.launcher.kimi.hint': 'Kimi Code 的啟動指令。launcher 會自動使用 -p <prompt> --output-format stream-json 非互動模式執行。工作階段恢復使用 -S <session-id>。',
 

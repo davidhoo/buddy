@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildLauncherCommand, commandKindFor } from '../../../src/main/buddy/launchers'
+import {
+  buildLauncherCommand,
+  commandKindFor,
+  createLineSplitter,
+  drainLauncherStreams,
+  streamDrainMs
+} from '../../../src/main/buddy/launchers'
 
 describe('launcher command builder', () => {
   it('builds Claude non-interactive stream-json command', () => {
@@ -81,7 +87,7 @@ describe('launcher command builder', () => {
     })
   })
 
-  it('builds Cursor CLI stream-json command without partial text deltas', () => {
+  it('builds Cursor CLI stream-json command with partial text deltas', () => {
     expect(buildLauncherCommand({
       actor: 'cursor',
       command: 'cursor-agent --model gpt-5',
@@ -97,6 +103,7 @@ describe('launcher command builder', () => {
         '--force',
         '--output-format',
         'stream-json',
+        '--stream-partial-output',
         '--resume',
         'cursor-chat',
         'hello from prompt'
@@ -108,6 +115,38 @@ describe('launcher command builder', () => {
   it('recognizes both Cursor CLI executable names', () => {
     expect(commandKindFor('cursor', 'cursor-agent')).toBe('native_cursor')
     expect(commandKindFor('cursor', 'agent')).toBe('native_cursor')
+  })
+
+  it('keeps incomplete stdout lines across chunks and flushes the trailing line', () => {
+    const lines: string[] = []
+    const splitter = createLineSplitter((line) => lines.push(line))
+    const event = '{"type":"result","subtype":"success","result":"ok"}'
+    splitter.push(event.slice(0, 12))
+    splitter.push(event.slice(12) + '\n')
+    splitter.push('{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]}}')
+    splitter.flush()
+    expect(lines).toEqual([
+      event,
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]}}'
+    ])
+  })
+
+  it('bounds stream drain so hung pipes cannot block forever', async () => {
+    expect(streamDrainMs(5_000)).toBe(500)
+    expect(streamDrainMs(100)).toBe(100)
+
+    const forever = new Promise(() => {})
+    const started = Date.now()
+    await drainLauncherStreams(
+      { destroy() { /* no-op */ } } as unknown as NodeJS.ReadableStream,
+      { destroy() { /* no-op */ } } as unknown as NodeJS.ReadableStream,
+      forever,
+      forever,
+      80
+    )
+    const elapsed = Date.now() - started
+    expect(elapsed).toBeGreaterThanOrEqual(70)
+    expect(elapsed).toBeLessThan(500)
   })
 
   it('builds OpenCode json run command with prompt as a positional argument', () => {
