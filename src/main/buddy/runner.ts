@@ -969,17 +969,18 @@ export class BuddyRunner {
             if (typeof result.error === 'string' && result.error.trim()) {
               explicitError = result.error.trim()
             }
-            return result.status === 'SUCCESS'
-              && typeof result.response === 'string'
-              && result.response.trim().length > 0
+            // Antigravity CLI sets status: 'SUCCESS' on clean runs. However, when resuming a
+            // conversation where an earlier turn encountered an error (such as a temporary quota
+            // limit), the CLI trajectory metadata retains status: 'ERROR' and the stale error text,
+            // even though the current turn succeeded completely and emitted a valid response.
+            // If a non-empty response was produced, treat the turn as successful.
+            return typeof result.response === 'string' && result.response.trim().length > 0
           }
           // --output-format json fallback (single object)
           if (typeof event.error === 'string' && event.error.trim()) {
             explicitError = event.error.trim()
           }
-          return event.status === 'SUCCESS'
-            && typeof event.response === 'string'
-            && event.response.trim().length > 0
+          return typeof event.response === 'string' && event.response.trim().length > 0
         })
         if (!hasSuccessResult) {
           const eventError = parsedLines.find((l) => l.rawType === 'error' && l.text)?.text

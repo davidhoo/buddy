@@ -621,15 +621,23 @@ function extractAgyOutput(rawEvents: string): string {
     // stream-json: { event: 'result', result: { status, response } }
     if (textValue(event.event) === 'result') {
       const payload = objectValue(event.result)
-      if (textValue(payload?.status) !== 'SUCCESS') continue
       const finalText = textValue(payload?.response)
-      if (finalText) result = finalText
+      if (finalText) {
+        result = finalText
+        continue
+      }
+      if (textValue(payload?.status) !== 'SUCCESS') continue
       continue
     }
     // fallback for --output-format json (single object, no event wrapper)
+    const finalText = textValue(event.response)
+    if (finalText) {
+      result = finalText
+      continue
+    }
     if (textValue(event.status) === 'SUCCESS') {
-      const finalText = textValue(event.response)
-      if (finalText) result = finalText
+      const fallbackText = textValue(event.response)
+      if (fallbackText) result = fallbackText
     }
   }
   return result.trim()

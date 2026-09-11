@@ -80,6 +80,18 @@ describe('agy stream parser', () => {
     }))).toBe('')
   })
 
+  it('extracts non-empty response even if status is ERROR on a resumed session', () => {
+    const output = extractActorOutput('agy', JSON.stringify({
+      event: 'result',
+      result: {
+        status: 'ERROR',
+        error: 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 14m39s.',
+        response: '{"type":"chat","content":"all done"}'
+      }
+    }))
+    expect(output).toBe('{"type":"chat","content":"all done"}')
+  })
+
   it('extracts detail for agy native tools (view_file AbsolutePath, run_command CommandLine)', () => {
     const viewFileLine = parseAgyStreamLine(JSON.stringify({
       event: 'step_update',
