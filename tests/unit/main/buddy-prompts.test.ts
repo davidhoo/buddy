@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { buildActorPrompt } from '../../../src/main/buddy/prompts'
 
 describe('buildActorPrompt', () => {
+  it('explains Cursor service lifetimes on fresh and resumed turns', () => {
+    for (const state of [{}, { cursor_session_id: 'existing-session' }]) {
+      const input = {
+        actor: 'cursor', round: 2, repoRoot: '/tmp/repo', taskText: 'Run a worker',
+        contextText: '', transcript: [], state
+      }
+      const prompt = buildActorPrompt({ ...input, cursorSingleTurn: true })
+      expect(prompt).toContain('Wait for finite work')
+      expect(prompt).toContain('start_new_session=True')
+      expect(prompt).toContain('PID, log path and stop command')
+      expect(buildActorPrompt(input)).not.toContain('## Cursor turn lifecycle')
+    }
+  })
+
   it('includes task, context, actor, round, and repo root', () => {
     const prompt = buildActorPrompt({
       actor: 'claude',

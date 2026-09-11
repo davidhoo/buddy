@@ -46,7 +46,16 @@ export interface BuildActorPromptInput {
   state?: Partial<TaskState>
   globalSettings?: Partial<GlobalSettings>
   userMessage?: string
+  cursorSingleTurn?: boolean
 }
+
+export const CURSOR_SINGLE_TURN_INSTRUCTIONS = `## Cursor turn lifecycle
+
+Buddy runs Cursor with --single-turn and owns the handoff to the next actor. Cursor stops shell jobs it still owns when this turn exits.
+- Wait for finite work (tests, builds, migrations and one-off scripts), read its result, and only then give your final response. Do not leave required checks running in the background at handoff.
+- If a worker or development server must survive this turn, use the project's service manager or start it in a separate OS session with stdin disconnected and stdout/stderr redirected to a log. A trailing & or nohup alone is insufficient.
+- For example, when python3 is available: python3 -c 'import subprocess; log=open("worker.log","ab"); p=subprocess.Popen(["your-service","arg"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT); print(p.pid)'. Replace the command and log path with the actual service; run this launcher as a finite shell command.
+- Check for an existing service before starting another. Verify startup/health and include its PID, log path and stop command in your handoff. Do not start persistent services unless the task needs them.`
 
 export function buildPingPrompt(actor: string): string {
   const parts = [
@@ -125,6 +134,8 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
 
   parts.push('', '## Runtime settings')
   parts.push(...runtimeSettingsLines(settings, state, input.globalSettings, input.actor, input.repoRoot))
+
+  if (input.cursorSingleTurn) parts.push('', CURSOR_SINGLE_TURN_INSTRUCTIONS)
 
   const recent = selectRecentTranscript(input.transcript)
   if (recent.length > 0) {

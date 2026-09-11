@@ -13,7 +13,7 @@ import type {
   TranscriptEntry,
   TaskState
 } from '../../shared/types'
-import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind, type LauncherRunResult } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
@@ -80,12 +80,22 @@ const UPGRADE_PATTERNS = [
   /自动升级/i,
   /升级完成/i,
   /请重启/i,
-  /已更新/i
+  /已更新(?:到|至)(?:最新版本|\s*v?\d)/i
 ]
 
 /** Check if an error/stderr message indicates the child exited for an auto-upgrade */
 export function isUpgradeExitError(message: string): boolean {
-  return UPGRADE_PATTERNS.some((p) => p.test(message))
+  return message.split(/\r?\n/).some((line) => {
+    // CLI upgrade banners are plain diagnostics. Stream-json records contain
+    // prompts, assistant replies and tool output, none of which proves an upgrade.
+    if (line.trimStart().startsWith('{')) return false // also ignore truncated NDJSON
+    try {
+      JSON.parse(line)
+      return false
+    } catch {
+      return UPGRADE_PATTERNS.some((p) => p.test(line))
+    }
+  })
 }
 
 /** native_cursor finished without a usable successful result — never auto-retry. */
@@ -409,7 +419,7 @@ export class BuddyRunner {
     outputLines: string[],
     stderrLines: string[],
     signal?: AbortSignal
-  ): Promise<{ exitCode: number | null; signal: string | null }> {
+  ): Promise<LauncherRunResult> {
     const needsPty = kindNeedsPty(command.kind)
     const parserActor = parserActorForKind(actor, command.kind)
 
@@ -506,8 +516,8 @@ export class BuddyRunner {
       const attempt = await this.executePingAttempt(taskId, workspaceKey, actor)
       if (attempt.success) return attempt
 
-      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}\n${attempt.error ?? ''}`.trim()
-      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
+      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}`.trim()
+      if (!attempt.timedOut && upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
         upgradeRetries++
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'health_check.actor_upgrade_retry',
@@ -532,7 +542,7 @@ export class BuddyRunner {
     taskId: string,
     workspaceKey: string,
     actor: string
-  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string; timedOut?: boolean }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const launcher = detail.settings.launchers[actor] ?? {
       command: actor,
@@ -580,6 +590,10 @@ export class BuddyRunner {
       const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
       const stderrText = stderrLines.join('\n').trim()
+
+      if (result.timedOut) {
+        return { success: false, timedOut: true, error: new LauncherTimeoutError(PING_TIMEOUT_SECONDS * 1000).message, stderr: stderrText, stdout: stdoutText }
+      }
 
       if (result.exitCode !== 0) {
         const error = stderrText || outputText.trim() || exitErrorMessage(result.exitCode, result.signal)
@@ -838,7 +852,8 @@ export class BuddyRunner {
       settings: detail.settings,
       state: detail.state,
       globalSettings,
-      userMessage
+      userMessage,
+      cursorSingleTurn: commandKindFor(actor, launcher.command) === 'native_cursor'
     })
     const promptFile = join(artifactsDir, `${runId}-prompt.md`)
     const outputFile = join(artifactsDir, `${runId}-output.md`)
@@ -885,6 +900,9 @@ export class BuddyRunner {
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      // Persist the raw output above, but never accept partial text or retry a
+      // deadline as an upgrade/context reset, even if the child exits with code 0.
+      if (result.timedOut) throw new LauncherTimeoutError(launcher.timeout_seconds * 1000)
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
       }
@@ -965,9 +983,9 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
-      // Missing/invalid Cursor result must fail immediately. Do not let stdout chatter
+      // Missing/invalid Cursor results and deadlines must fail immediately. Do not let stdout chatter
       // (e.g. the words "new version") trip upgrade or context-window retries.
-      const skipAutoRetry = isCursorMissingResultError(error)
+      const skipAutoRetry = isCursorMissingResultError(error) || error instanceof LauncherTimeoutError
 
       // Auto-reset session on context window limit errors
       // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
@@ -1000,12 +1018,9 @@ export class BuddyRunner {
       // We wait briefly for the upgrade to settle, then retry the same round (keeping
       // the existing session so the conversation continues seamlessly).
       const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
-      // Include raw stdout: wecode prints upgrade progress (e.g. "A new version is
-      // available", "upgrade complete", "Please run your command again with the new
-      // version") to stdout, which extractActorOutput filters out of outputText. Without
-      // the raw stdout the upgrade exit goes undetected at runtime and the round fails
-      // instead of retrying. Mirrors the executePing combined-message fix.
-      const combinedMessage = `${failureMessage}\n${stderrText}\n${outputLines.join('\n')}`.trim()
+      // Inspect CLI diagnostics, filtering stream-json records. failureMessage
+      // contains extracted assistant/tool content and must not be scanned again.
+      const combinedMessage = `${stderrText}\n${outputLines.join('\n')}`.trim()
       if (!skipAutoRetry && upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'actor.upgrade_detected',
