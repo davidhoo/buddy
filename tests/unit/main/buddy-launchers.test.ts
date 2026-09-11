@@ -149,6 +149,16 @@ describe('launcher command builder', () => {
   it('recognizes agy executable and actor fallback', () => {
     expect(commandKindFor('agy', 'agy')).toBe('native_agy')
     expect(commandKindFor('agy', '')).toBe('native_agy')
+    expect(commandKindFor('agy', 'antigravity')).toBe('native_agy')
+    // Unknown wrapper basename must still use native_agy — never contract --actor
+    expect(commandKindFor('agy', 'my-agy-wrapper')).toBe('native_agy')
+    expect(buildLauncherCommand({
+      actor: 'agy',
+      command: 'my-agy-wrapper',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hi',
+      timeoutSeconds: 120
+    }).args).not.toContain('--actor')
   })
 
   it('keeps incomplete stdout lines across chunks and flushes the trailing line', () => {

@@ -330,11 +330,15 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (executable === 'claude' || isWecodeClaudeCommand(baseCmd)) return 'native_claude'
   if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
   if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'
-  if (executable === 'agy') return 'native_agy'
+  if (executable === 'agy' || executable === 'antigravity') return 'native_agy'
   if (executable === 'opencode') return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
-  // Fallback: when no command is specified, infer from actor name
-  if (executable === '' || executable === 'wecode') {
+  // Fallback: when no command is specified, infer from actor name.
+  // Also: the Antigravity settings card always speaks agy's native protocol.
+  // Never fall through to contract flags (--actor, etc.) just because the
+  // command string used a wrapper basename we do not recognize — that is
+  // exactly what produces "flags provided but not defined: -actor".
+  if (executable === '' || executable === 'wecode' || actor === 'agy') {
     if (actor === 'claude') return 'native_claude'
     if (actor === 'codex') return 'native_codex'
     if (actor === 'cursor') return 'native_cursor'
