@@ -960,22 +960,31 @@ export class BuddyRunner {
           }
         }
 
+        let explicitError: string | undefined
         const hasSuccessResult = parseJsonlBuffer(rawEvents).some((event) => {
           if (event.event === 'result') {
             const payload = event.result
             if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
             const result = payload as Record<string, unknown>
+            if (typeof result.error === 'string' && result.error.trim()) {
+              explicitError = result.error.trim()
+            }
             return result.status === 'SUCCESS'
               && typeof result.response === 'string'
               && result.response.trim().length > 0
           }
           // --output-format json fallback (single object)
+          if (typeof event.error === 'string' && event.error.trim()) {
+            explicitError = event.error.trim()
+          }
           return event.status === 'SUCCESS'
             && typeof event.response === 'string'
             && event.response.trim().length > 0
         })
         if (!hasSuccessResult) {
-          throw new AgyMissingResultError()
+          const eventError = parsedLines.find((l) => l.rawType === 'error' && l.text)?.text
+          const detail = explicitError || eventError
+          throw new AgyMissingResultError(detail ? `Antigravity error: ${detail}` : undefined)
         }
       }
 
