@@ -37,6 +37,11 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
 const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'task.created': 'event.task.created',
   'task.done': 'event.task.done',
+  'task.cancelled': 'status.CANCELLED',
+  'service.started': 'event.service.started',
+  'service.stopped': 'event.service.stopped',
+  'service.cleanup_completed': 'event.service.cleanupCompleted',
+  'service.cleanup_failed': 'event.service.cleanupFailed',
   'task.updated': 'event.task.updated',
   'actor.started': 'event.actor.started',
   'actor.completed': 'event.actor.completed',

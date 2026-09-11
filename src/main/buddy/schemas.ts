@@ -1,5 +1,32 @@
 import { z } from 'zod'
 
+const serviceBaseSchema = z.object({
+  id: z.string().uuid(), name: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/),
+  task_id: z.string(), workspace_key: z.string(), created_at: z.string(),
+  keep_reason: z.string().min(1).optional()
+})
+export const taskServiceSchema = z.discriminatedUnion('owner', [
+  serviceBaseSchema.extend({
+    owner: z.literal('buddy'), command: z.array(z.string()).min(1), cwd: z.string(),
+    token: z.string().min(32), socket: z.string(), status_path: z.string(), log_path: z.string()
+  }),
+  serviceBaseSchema.extend({ owner: z.literal('external'), pid: z.number().int().positive() })
+])
+export type TaskServiceRecord = z.infer<typeof taskServiceSchema>
+export const serviceStatusSchema = z.object({
+  status: z.enum(['starting', 'running', 'stopped', 'exited', 'failed', 'cleanup_failed']),
+  supervisor_pid: z.number().int().positive().optional(), pid: z.number().int().positive().nullable().optional(),
+  exit_code: z.number().nullable().optional(), signal: z.string().nullable().optional(),
+  reason: z.string().optional(), error: z.string().optional(), ended_at: z.string().optional()
+})
+export const serviceRequestSchema = z.object({
+  action: z.enum(['start', 'list', 'stop', 'keep', 'external']),
+  name: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/).optional(),
+  command: z.array(z.string()).min(1).optional(), cwd: z.string().optional(),
+  keepReason: z.string().trim().min(1).optional(), pid: z.number().int().positive().optional()
+})
+export const serviceTaskManifestSchema = z.object({ task_id: z.string(), workspace_key: z.string() })
+
 const taskStatusSchema = z.enum([
   'QUEUED',
   'READY',
@@ -12,7 +39,8 @@ const taskStatusSchema = z.enum([
   'COUNTDOWN',
   'PAUSED',
   'FAILED',
-  'DONE'
+  'DONE',
+  'CANCELLED'
 ])
 
 const executionModeSchema = z.enum(['immediate', 'queued'])
@@ -101,7 +129,8 @@ export const taskStateSchema = z.object({
   health_check: healthCheckResultSchema.nullable().optional(),
   compact_retries: z.number().optional(),
   execution_mode: executionModeSchema.optional(),
-  queue: taskQueueInfoSchema.optional()
+  queue: taskQueueInfoSchema.optional(),
+  service_cleanup_pending: z.boolean().optional()
 })
 
 export const launcherSchema = z.object({

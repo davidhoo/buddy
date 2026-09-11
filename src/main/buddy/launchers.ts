@@ -111,9 +111,17 @@ export async function runLauncherWithPty(input: {
 
   let exited = false
   let timedOut = false
+  let forceKill: ReturnType<typeof setTimeout> | undefined
 
   // AbortSignal: kill the child when the signal aborts
-  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  const onAbort = () => {
+    if (exited) return
+    try { child.kill('SIGTERM') } catch { /* already exited */ }
+    forceKill ??= setTimeout(() => {
+      if (!exited) { try { child.kill('SIGKILL') } catch { /* already exited */ } }
+    }, 1500)
+    forceKill.unref()
+  }
   if (input.signal) {
     if (input.signal.aborted) onAbort()
     else input.signal.addEventListener('abort', onAbort, { once: true })
@@ -128,6 +136,7 @@ export async function runLauncherWithPty(input: {
   const exitPromise = new Promise<{ exitCode: number | null; signal?: number }>((resolve) => {
     child.onExit(({ exitCode, signal }) => {
       exited = true
+      clearTimeout(forceKill)
       resolve({ exitCode, signal })
     })
   })
@@ -138,7 +147,7 @@ export async function runLauncherWithPty(input: {
     timeout = setTimeout(() => {
       if (!exited) {
         timedOut = !input.signal?.aborted
-        child.kill('SIGTERM')
+        onAbort()
         resolve({ exitCode: null, signal: 15 })
       }
     }, input.timeoutMs)
@@ -357,8 +366,17 @@ export async function runLauncher(input: {
     throw commandNotFoundError(command, error)
   }
 
-  // AbortSignal: kill the child when the signal aborts
-  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  // Cancellation must settle even when a CLI ignores SIGTERM.
+  let forceKill: ReturnType<typeof setTimeout> | undefined
+  const onAbort = () => {
+    try { child.kill('SIGTERM') } catch { /* already exited */ }
+    forceKill ??= setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }, 1500)
+    forceKill.unref()
+  }
+  child.once('exit', () => clearTimeout(forceKill))
+  child.once('error', () => clearTimeout(forceKill))
   if (input.signal) {
     if (input.signal.aborted) onAbort()
     else input.signal.addEventListener('abort', onAbort, { once: true })
@@ -404,7 +422,7 @@ export async function runLauncher(input: {
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = !input.signal?.aborted
-    child.kill('SIGTERM')
+    onAbort()
   }, input.timeoutMs)
   const stdoutClosed = once(child.stdout!, 'close').catch(() => undefined)
   const stderrClosed = once(child.stderr!, 'close').catch(() => undefined)

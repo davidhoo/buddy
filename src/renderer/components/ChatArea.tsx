@@ -235,8 +235,8 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
             {!hasTranscript && !isRunning && (
               <div className="flex items-center justify-center h-full min-h-[45vh]">
                 <div className="text-center text-fg-muted">
-                  <div className="text-lg font-medium mb-2">{t('chat.created.title')}</div>
-                  <div className="text-sm">{t('chat.created.desc')}</div>
+                  <div className="text-lg font-medium mb-2">{t(status === 'CANCELLED' ? 'status.CANCELLED' : 'chat.created.title')}</div>
+                  {status !== 'CANCELLED' && <div className="text-sm">{t('chat.created.desc')}</div>}
                 </div>
               </div>
             )}
@@ -330,7 +330,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
             </div>
           </div>
         )}
-        <Composer
+        {status !== 'CANCELLED' && <Composer
           onSend={onSendMessage}
           onStart={onStartTask}
           onInterrupt={onInterrupt}
@@ -343,7 +343,7 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
           onDraftChange={onDraftChange}
           attachments={attachments}
           onAttachmentsChange={onAttachmentsChange}
-        />
+        />}
       </div>
       )}
     </div>

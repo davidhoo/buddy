@@ -30,6 +30,8 @@ export const api = {
     buddy().createTask(data),
   deleteTask: (taskId: string, workspaceKey?: string) =>
     buddy().deleteTask(taskId, workspaceKey),
+  cancelTask: (taskId: string, workspaceKey?: string) =>
+    buddy().cancelTask(taskId, workspaceKey),
   startTask: (taskId: string, data: StartTaskInput) =>
     buddy().startTask(taskId, data),
   sendMessage: (taskId: string, data: SendMessageInput) =>

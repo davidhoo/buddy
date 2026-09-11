@@ -8,10 +8,11 @@ describe('buildActorPrompt', () => {
         actor: 'cursor', round: 2, repoRoot: '/tmp/repo', taskText: 'Run a worker',
         contextText: '', transcript: [], state
       }
-      const prompt = buildActorPrompt({ ...input, cursorSingleTurn: true })
+      const prompt = buildActorPrompt({ ...input, cursorSingleTurn: true, managedServices: true })
       expect(prompt).toContain('Wait for finite work')
-      expect(prompt).toContain('start_new_session=True')
-      expect(prompt).toContain('PID, log path and stop command')
+      expect(prompt).toContain('BUDDY_SERVICE_CLI')
+      expect(prompt).toContain('PID, log path and stop_command')
+      expect(prompt).toContain('Only when the user explicitly asks')
       expect(buildActorPrompt(input)).not.toContain('## Cursor turn lifecycle')
     }
   })

@@ -25,6 +25,7 @@ export type TaskStatus =
   | 'PAUSED'
   | 'FAILED'
   | 'DONE'
+  | 'CANCELLED'
 
 /** Per-project FIFO queue metadata attached to queued-execution tasks. */
 export interface TaskQueueInfo {
@@ -92,6 +93,7 @@ export interface TaskState {
   compact_retries?: number
   execution_mode?: ExecutionMode
   queue?: TaskQueueInfo
+  service_cleanup_pending?: boolean
 }
 
 export interface Countdown {

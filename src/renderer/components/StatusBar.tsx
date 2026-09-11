@@ -50,6 +50,7 @@ function compactStatusInfo(status: TaskStatus | null | undefined): CompactStatus
   }
   if (status === 'PAUSED') return { cls: 'paused', labelKey: 'status.PAUSED', pulse: false }
   if (status === 'DONE') return { cls: 'done', labelKey: 'status.DONE', pulse: false }
+  if (status === 'CANCELLED') return { cls: 'paused', labelKey: 'status.CANCELLED', pulse: false }
   if (status === 'FAILED') return { cls: 'danger', labelKey: 'status.FAILED', pulse: false }
   if (status === 'READY') return { cls: 'ready', labelKey: 'status.READY', pulse: false }
   if (status === 'QUEUED') return { cls: 'ready', labelKey: 'status.QUEUED', pulse: false }
