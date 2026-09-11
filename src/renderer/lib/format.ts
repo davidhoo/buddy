@@ -9,6 +9,7 @@ export const ACTOR_LABEL_KEY: Record<string, TranslationKey> = {
   claude: 'actor.claude',
   codex: 'actor.codex',
   cursor: 'actor.cursor',
+  agy: 'actor.agy',
   opencode: 'actor.opencode',
   kimi: 'actor.kimi',
   human: 'actor.human',
@@ -30,6 +31,7 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   cursor: 'Cursor',
+  agy: 'Antigravity',
   opencode: 'OpenCode',
   kimi: 'Kimi Code'
 }
@@ -87,7 +89,7 @@ export function eventTypeLabel(type: string, lang: Language): string {
   return key ? translate(lang, key) : type
 }
 
-export type Actor = 'claude' | 'codex' | 'cursor' | 'opencode' | 'kimi'
+export type Actor = 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi'
 
 export function taskActors(settings: TaskSettings | null | undefined): {
   impl: Actor

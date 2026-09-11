@@ -427,7 +427,9 @@ export class BuddyStore {
         }
       }
 
-      // Antigravity CLI (`agy`) stream-json: { event, result|step_update|init }
+      // Antigravity CLI (`agy`) stream-json shape only: top-level key is `event`
+      // (init|step_update|result), not `type`. Other actors use `type` and will not
+      // hit these branches — keep that invariant if another CLI also emits `event`.
       if (event.event === 'result') {
         const result = objectValue(event.result)
         if (result) {

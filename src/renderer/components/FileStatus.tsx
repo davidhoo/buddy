@@ -301,7 +301,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   const commitAndPush = useGitCommitAndPush()
 
   // Actor selection for commit message generation
-  const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
+  const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
   const resolveDefaultActor = (): string => {
     try {
       const stored = localStorage.getItem('buddy.lastCommitMessageActor')
@@ -652,6 +652,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
                   <option value="claude">Claude</option>
                   <option value="codex">Codex</option>
                   <option value="cursor">Cursor</option>
+                  <option value="agy">Antigravity</option>
                   <option value="opencode">OpenCode</option>
                   <option value="kimi">Kimi</option>
                 </select>

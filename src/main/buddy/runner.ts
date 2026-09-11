@@ -942,6 +942,24 @@ export class BuddyRunner {
         }
       }
       if (command.kind === 'native_agy') {
+        // agy silently opens a new conversation when --conversation id is stale.
+        // Warn before the success gate so failed rounds still surface context loss.
+        if (existingSessionId) {
+          const returnedId = lastValue(parsedLines.map((line) => line.sessionId))
+          if (returnedId && returnedId !== existingSessionId) {
+            await this.store.appendTaskEvent(taskId, workspaceKey, {
+              type: 'session.mismatch',
+              actor,
+              run_id: runId,
+              payload: {
+                requested_session_id: existingSessionId,
+                returned_session_id: returnedId,
+                message: 'agy resumed with a different conversation_id; prior context may be lost'
+              }
+            })
+          }
+        }
+
         const hasSuccessResult = parseJsonlBuffer(rawEvents).some((event) => {
           if (event.event === 'result') {
             const payload = event.result
@@ -958,24 +976,6 @@ export class BuddyRunner {
         })
         if (!hasSuccessResult) {
           throw new AgyMissingResultError()
-        }
-
-        // agy silently opens a new conversation when --conversation id is stale.
-        // Warn (do not fail) so humans know prior dual-agent context was dropped.
-        if (existingSessionId) {
-          const returnedId = lastValue(parsedLines.map((line) => line.sessionId))
-          if (returnedId && returnedId !== existingSessionId) {
-            await this.store.appendTaskEvent(taskId, workspaceKey, {
-              type: 'session.mismatch',
-              actor,
-              run_id: runId,
-              payload: {
-                requested_session_id: existingSessionId,
-                returned_session_id: returnedId,
-                message: 'agy resumed with a different conversation_id; prior context may be lost'
-              }
-            })
-          }
         }
       }
 
