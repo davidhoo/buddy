@@ -7,6 +7,7 @@ export type LauncherCommandKind =
   | 'native_claude'
   | 'native_codex'
   | 'native_cursor'
+  | 'native_agy'
   | 'native_opencode'
   | 'native_kimi'
   | 'contract'
@@ -23,6 +24,8 @@ export interface LauncherCommandInput {
   taskDir?: string
   runId?: string
   sessionId?: string
+  /** Buddy launcher timeout; native_agy maps this to --print-timeout (agy default is only 5m). */
+  timeoutSeconds?: number
 }
 
 export interface LauncherCommand {
@@ -49,6 +52,7 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
   if (kind === 'native_claude') return 'claude'
   if (kind === 'native_codex') return 'codex'
   if (kind === 'native_cursor') return 'cursor'
+  if (kind === 'native_agy') return 'agy'
   return actor
 }
 
@@ -205,6 +209,34 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     }
   }
 
+  if (kind === 'native_agy') {
+    // agy requires the prompt attached to -p= / --print=. Bare --print steals the
+    // next flag as the prompt. Long Buddy prompts go via stdin stream-json instead.
+    // Default print-timeout is only 5m — always override from Buddy's timeout.
+    const timeoutSeconds = Math.max(1, Math.floor(input.timeoutSeconds ?? 7200))
+    const promptText = input.promptText ?? ''
+    const stdinPayload = `${JSON.stringify({
+      event: 'user',
+      message: { content: promptText }
+    })}\n`
+    return {
+      command,
+      args: [
+        ...prefixArgs,
+        '--output-format',
+        'stream-json',
+        '--input-format',
+        'stream-json',
+        '--dangerously-skip-permissions',
+        `--print-timeout=${timeoutSeconds}s`,
+        ...(input.sessionId ? ['--conversation', input.sessionId] : []),
+        '-p='
+      ],
+      kind,
+      stdinText: stdinPayload
+    }
+  }
+
   if (kind === 'native_opencode') {
     const args = [
       ...prefixArgs,
@@ -298,6 +330,7 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (executable === 'claude' || isWecodeClaudeCommand(baseCmd)) return 'native_claude'
   if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
   if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'
+  if (executable === 'agy') return 'native_agy'
   if (executable === 'opencode') return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
   // Fallback: when no command is specified, infer from actor name
@@ -305,6 +338,7 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
     if (actor === 'claude') return 'native_claude'
     if (actor === 'codex') return 'native_codex'
     if (actor === 'cursor') return 'native_cursor'
+    if (actor === 'agy') return 'native_agy'
     if (actor === 'opencode') return 'native_opencode'
     if (actor === 'kimi') return 'native_kimi'
   }

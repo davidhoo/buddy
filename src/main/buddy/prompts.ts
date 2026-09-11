@@ -4,6 +4,7 @@ import type { GlobalSettings, TaskSettings, TaskState, TranscriptEntry } from '.
 const ACTOR_CLAUDE = 'claude'
 const ACTOR_CODEX = 'codex'
 const ACTOR_CURSOR = 'cursor'
+const ACTOR_AGY = 'agy'
 const ACTOR_OPENCODE = 'opencode'
 const ACTOR_KIMI = 'kimi'
 const ROLE_MODE_CODEX_IMPL = 'codex_implements'
@@ -253,6 +254,7 @@ export function actorDisplayName(actor: unknown): string {
   if (actor === ACTOR_KIMI) return 'Kimi Code'
   if (actor === ACTOR_CODEX) return 'Codex'
   if (actor === ACTOR_CURSOR) return 'Cursor'
+  if (actor === ACTOR_AGY) return 'Antigravity'
   return typeof actor === 'string' && actor ? actor : 'Codex'
 }
 

@@ -25,6 +25,7 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
   codex: 'RUNNING_CODEX',
   cursor: 'RUNNING_CURSOR',
+  agy: 'RUNNING_AGY',
   opencode: 'RUNNING_OPENCODE',
   kimi: 'RUNNING_KIMI'
 }
@@ -104,6 +105,28 @@ export function isCursorMissingResultError(error: unknown): boolean {
   if (error instanceof CursorMissingResultError) return true
   if (!error || typeof error !== 'object') return false
   return (error as { code?: unknown }).code === CURSOR_MISSING_RESULT_CODE
+}
+
+/** native_agy finished without a usable SUCCESS result — never auto-retry. */
+export const AGY_MISSING_RESULT_CODE = 'AGY_MISSING_RESULT' as const
+
+export class AgyMissingResultError extends Error {
+  readonly code = AGY_MISSING_RESULT_CODE
+
+  constructor(message = 'Antigravity actor exited without a successful result event') {
+    super(message)
+    this.name = 'AgyMissingResultError'
+  }
+}
+
+export function isAgyMissingResultError(error: unknown): boolean {
+  if (error instanceof AgyMissingResultError) return true
+  if (!error || typeof error !== 'object') return false
+  return (error as { code?: unknown }).code === AGY_MISSING_RESULT_CODE
+}
+
+export function isMissingResultError(error: unknown): boolean {
+  return isCursorMissingResultError(error) || isAgyMissingResultError(error)
 }
 
 export class BuddyRunner {
@@ -562,7 +585,8 @@ export class BuddyRunner {
       outputFile,
       repoRoot: cwd,
       taskDir: taskDirectory,
-      runId
+      runId,
+      timeoutSeconds: launcher.timeout_seconds
     })
 
     const outputLines: string[] = []
@@ -668,6 +692,7 @@ export class BuddyRunner {
         if (actor === 'claude' && sid) sessionUpdates.claude_session_id = sid
         if (actor === 'codex' && (tid ?? sid)) sessionUpdates.codex_thread_id = tid ?? sid
         if (actor === 'cursor' && sid) sessionUpdates.cursor_session_id = sid
+        if (actor === 'agy' && sid) sessionUpdates.agy_session_id = sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
         const displayId = actor === 'codex' ? (tid ?? sid) : sid
@@ -715,8 +740,9 @@ export class BuddyRunner {
             ? (sessionUpdates.codex_thread_id)
             : (a === 'claude' ? sessionUpdates.claude_session_id
               : a === 'cursor' ? sessionUpdates.cursor_session_id
-                : a === 'opencode' ? sessionUpdates.opencode_session_id
-                  : sessionUpdates.kimi_session_id)
+                : a === 'agy' ? sessionUpdates.agy_session_id
+                  : a === 'opencode' ? sessionUpdates.opencode_session_id
+                    : sessionUpdates.kimi_session_id)
           return { actor: a, session_id: (sid as string | undefined) ?? null }
         }) }
       )
@@ -861,7 +887,8 @@ export class BuddyRunner {
       repoRoot: cwd,
       taskDir: taskDirectory,
       runId,
-      sessionId
+      sessionId,
+      timeoutSeconds: launcher.timeout_seconds
     })
     const outputLines: string[] = []
     const stderrLines: string[] = []
@@ -901,8 +928,8 @@ export class BuddyRunner {
         throw new Error(parts.join('\n\n') || exitErrorMessage(result.exitCode, result.signal))
       }
 
-      // native_cursor: require a successful result event. Never promote streamed
-      // assistant/tool text into a completed round when the CLI did not finish.
+      // native_cursor / native_agy: require a successful result event. Never promote
+      // streamed assistant/tool text into a completed round when the CLI did not finish.
       if (command.kind === 'native_cursor') {
         const hasSuccessResult = parseJsonlBuffer(rawEvents).some((event) => (
           event.type === 'result'
@@ -912,6 +939,43 @@ export class BuddyRunner {
         ))
         if (!hasSuccessResult) {
           throw new CursorMissingResultError()
+        }
+      }
+      if (command.kind === 'native_agy') {
+        const hasSuccessResult = parseJsonlBuffer(rawEvents).some((event) => {
+          if (event.event === 'result') {
+            const payload = event.result
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+            const result = payload as Record<string, unknown>
+            return result.status === 'SUCCESS'
+              && typeof result.response === 'string'
+              && result.response.trim().length > 0
+          }
+          // --output-format json fallback (single object)
+          return event.status === 'SUCCESS'
+            && typeof event.response === 'string'
+            && event.response.trim().length > 0
+        })
+        if (!hasSuccessResult) {
+          throw new AgyMissingResultError()
+        }
+
+        // agy silently opens a new conversation when --conversation id is stale.
+        // Warn (do not fail) so humans know prior dual-agent context was dropped.
+        if (existingSessionId) {
+          const returnedId = lastValue(parsedLines.map((line) => line.sessionId))
+          if (returnedId && returnedId !== existingSessionId) {
+            await this.store.appendTaskEvent(taskId, workspaceKey, {
+              type: 'session.mismatch',
+              actor,
+              run_id: runId,
+              payload: {
+                requested_session_id: existingSessionId,
+                returned_session_id: returnedId,
+                message: 'agy resumed with a different conversation_id; prior context may be lost'
+              }
+            })
+          }
         }
       }
 
@@ -967,7 +1031,7 @@ export class BuddyRunner {
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
       // Missing/invalid Cursor result must fail immediately. Do not let stdout chatter
       // (e.g. the words "new version") trip upgrade or context-window retries.
-      const skipAutoRetry = isCursorMissingResultError(error)
+      const skipAutoRetry = isMissingResultError(error)
 
       // Auto-reset session on context window limit errors
       // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
@@ -1115,6 +1179,7 @@ export class BuddyRunner {
       if (actor === 'claude' && sessionId) next.claude_session_id = sessionId
       if (actor === 'codex' && threadId) next.codex_thread_id = threadId
       if (actor === 'cursor' && sessionId) next.cursor_session_id = sessionId
+      if (actor === 'agy' && sessionId) next.agy_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
 
@@ -1395,6 +1460,7 @@ export class BuddyRunner {
     const sessionKey = actor === 'claude' ? 'claude_session_id'
       : actor === 'codex' ? 'codex_thread_id'
       : actor === 'cursor' ? 'cursor_session_id'
+      : actor === 'agy' ? 'agy_session_id'
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'kimi' ? 'kimi_session_id'
       : null
@@ -1509,7 +1575,8 @@ export class BuddyRunner {
       promptFile: summarizePromptFile,
       repoRoot: cwd,
       taskDir: taskDirectory,
-      runId: `summarize_${Date.now()}`
+      runId: `summarize_${Date.now()}`,
+      timeoutSeconds: Math.min(launcher.timeout_seconds, 120)
     })
 
     const outputLines: string[] = []
@@ -1763,6 +1830,7 @@ function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<T
   if (actor === 'claude') return state.claude_session_id ?? stringSetting(settings, 'seed_claude_session_id')
   if (actor === 'codex') return state.codex_thread_id ?? stringSetting(settings, 'seed_codex_thread_id')
   if (actor === 'cursor') return state.cursor_session_id ?? stringSetting(settings, 'seed_cursor_session_id')
+  if (actor === 'agy') return state.agy_session_id ?? stringSetting(settings, 'seed_agy_session_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
   if (actor === 'kimi') return state.kimi_session_id ?? stringSetting(settings, 'seed_kimi_session_id')
   return undefined
@@ -1774,7 +1842,7 @@ function stringSetting(settings: Partial<TaskSettings> | undefined, key: keyof T
 }
 
 function normalizeActorRole(actor: string): TranscriptEntry['role'] {
-  if (actor === 'claude' || actor === 'codex' || actor === 'cursor' || actor === 'opencode' || actor === 'kimi') return actor
+  if (actor === 'claude' || actor === 'codex' || actor === 'cursor' || actor === 'agy' || actor === 'opencode' || actor === 'kimi') return actor
   return 'system'
 }
 
@@ -1848,7 +1916,7 @@ export async function collectOutputText(
   outputFile: string,
   stdoutText: string
 ): Promise<string> {
-  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_opencode' || kind === 'native_kimi') {
+  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_agy' || kind === 'native_opencode' || kind === 'native_kimi') {
     const parserActor = parserActorForKind(actor, kind)
     let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)

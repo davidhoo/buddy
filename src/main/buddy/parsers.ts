@@ -310,10 +310,91 @@ function kimiToolDetail(toolName: string, args: unknown): string | undefined {
   return undefined
 }
 
+/** Parse Antigravity CLI (`agy`) --output-format stream-json events. */
+export function parseAgyStreamLine(line: string): ParsedActorLine {
+  const json = JSON.parse(line)
+  const eventName = textValue(json.event)
+  const sessionId = agySessionIdFromEvent(json)
+  const rawType = eventName ?? textValue(json.type)
+
+  if (eventName === 'init') {
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (eventName === 'result') {
+    const result = objectValue(json.result)
+    const status = textValue(result?.status)
+    const response = textValue(result?.response)?.trim()
+    const errorText = textValue(result?.error)?.trim()
+    // Successful results stay non-noise so plain-text replies are not mistaken
+    // for context-exhausted placeholders. Final reply comes from extractAgyOutput.
+    const ok = status === 'SUCCESS' && Boolean(response)
+    if (!ok && errorText) {
+      return { text: errorText, sessionId, rawType: 'error', streamMode: 'line' }
+    }
+    return { sessionId, rawType, noise: !ok }
+  }
+
+  if (eventName === 'step_update') {
+    const step = objectValue(json.step_update)
+    const stepType = textValue(step?.step_type)
+    if (stepType === 'tool') {
+      const toolName = textValue(step?.tool_name) ?? 'tool'
+      const toolInfo = objectValue(step?.tool_info)
+      const params = objectValue(toolInfo?.parameters) ?? objectValue(toolInfo)
+      const detail = params ? agyToolArgsDetail(params) : undefined
+      return {
+        text: detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`,
+        sessionId,
+        rawType: stepType,
+        streamMode: 'line'
+      }
+    }
+    if (stepType === 'agent_response') {
+      const delta = textValue(step?.text_delta)
+      if (delta) {
+        return { text: delta, sessionId, rawType: stepType, streamMode: 'delta' }
+      }
+      return { sessionId, rawType: stepType, noise: true }
+    }
+    return { sessionId, rawType: stepType ?? rawType, noise: true }
+  }
+
+  return { sessionId, rawType, noise: true }
+}
+
+function agySessionIdFromEvent(event: Record<string, unknown>): string | undefined {
+  const top = textValue(event.conversation_id)
+  if (top) return top
+  const result = objectValue(event.result)
+  const fromResult = textValue(result?.conversation_id)
+  if (fromResult) return fromResult
+  const step = objectValue(event.step_update)
+  return textValue(step?.conversation_id)
+}
+
+function agyToolArgsDetail(args: Record<string, unknown>): string | undefined {
+  const path = textValue(args.DirectoryPath)
+    ?? textValue(args.path)
+    ?? textValue(args.file_path)
+    ?? textValue(args.FilePath)
+    ?? textValue(args.TargetFile)
+    ?? textValue(args.file)
+  if (path) return truncate(path, 80)
+  const cmd = textValue(args.Command) ?? textValue(args.command) ?? textValue(args.cmd)
+  if (cmd) return truncate(cmd, 80)
+  for (const v of Object.values(args)) {
+    const s = textValue(v)
+    if (s) return truncate(s, 80)
+  }
+  return undefined
+}
+
 export function parseActorLine(actor: string, line: string): ParsedActorLine {
   if (actor === 'claude') return parseClaudeStreamLine(line)
   if (actor === 'codex') return parseCodexJsonLine(line)
   if (actor === 'cursor') return parseCursorStreamLine(line)
+  if (actor === 'agy') return parseAgyStreamLine(line)
   if (actor === 'opencode') return parseOpenCodeJsonLine(line)
   if (actor === 'kimi') return parseKimiJSONLine(line)
   return parseCodexJsonLine(line)
@@ -333,6 +414,7 @@ export function parseActorEvents(actor: string, rawEvents: string): ParsedActorL
 export function extractActorOutput(actor: string, rawEvents: string): string {
   if (actor === 'claude') return extractClaudeOutput(rawEvents)
   if (actor === 'cursor') return extractCursorOutput(rawEvents)
+  if (actor === 'agy') return extractAgyOutput(rawEvents)
   if (actor === 'opencode') return extractOpenCodeOutput(rawEvents)
   if (actor === 'kimi') return extractKimiOutput(rawEvents)
   return extractGenericJsonOutput(rawEvents)
@@ -518,6 +600,26 @@ function extractCursorOutput(rawEvents: string): string {
     if (textValue(event.subtype) !== 'success') continue
     const finalText = textValue(event.result)
     if (finalText) result = finalText
+  }
+  return result.trim()
+}
+
+function extractAgyOutput(rawEvents: string): string {
+  let result = ''
+  for (const event of parseJsonEvents(rawEvents)) {
+    // stream-json: { event: 'result', result: { status, response } }
+    if (textValue(event.event) === 'result') {
+      const payload = objectValue(event.result)
+      if (textValue(payload?.status) !== 'SUCCESS') continue
+      const finalText = textValue(payload?.response)
+      if (finalText) result = finalText
+      continue
+    }
+    // fallback for --output-format json (single object, no event wrapper)
+    if (textValue(event.status) === 'SUCCESS') {
+      const finalText = textValue(event.response)
+      if (finalText) result = finalText
+    }
   }
   return result.trim()
 }

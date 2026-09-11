@@ -20,7 +20,7 @@ import { normalizeGlobalSettings, normalizeLauncher } from '../../shared/default
 const COMMIT_MESSAGE_TIMEOUT_MS = 120_000
 const MAX_DIFF_BYTES = 200_000
 
-const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
+const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
 export type CommitMessageActor = typeof SUPPORTED_ACTORS[number]
 
 export function isSupportedActor(actor: string): actor is CommitMessageActor {
@@ -385,6 +385,7 @@ export async function generateCommitMessageWithActor(
     eventFile,
     outputFile,
     repoRoot,
+    timeoutSeconds: Math.ceil(COMMIT_MESSAGE_TIMEOUT_MS / 1000)
   })
 
   const outputLines: string[] = []

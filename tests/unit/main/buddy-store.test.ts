@@ -32,6 +32,7 @@ describe('BuddyStore read model', () => {
       claude: false,
       codex: false,
       cursor: false,
+      agy: false,
       opencode: false,
       kimi: false
     })

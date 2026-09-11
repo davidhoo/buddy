@@ -399,6 +399,7 @@ function isActivelyRunning(status: TaskState['status']): boolean {
     status === 'RUNNING_CLAUDE' ||
     status === 'RUNNING_CODEX' ||
     status === 'RUNNING_CURSOR' ||
+    status === 'RUNNING_AGY' ||
     status === 'RUNNING_OPENCODE' ||
     status === 'RUNNING_KIMI' ||
     status === 'COUNTDOWN'

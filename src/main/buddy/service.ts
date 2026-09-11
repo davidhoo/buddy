@@ -384,7 +384,8 @@ export class BuddyCoreService {
         outputFile,
         repoRoot: testDir,
         taskDir: testDir,
-        runId
+        runId,
+        timeoutSeconds: PING_TIMEOUT_SECONDS
       })
 
       const outputLines: string[] = []
