@@ -79,4 +79,38 @@ describe('agy stream parser', () => {
       result: { status: 'ERROR', response: '', error: 'boom' }
     }))).toBe('')
   })
+
+  it('extracts detail for agy native tools (view_file AbsolutePath, run_command CommandLine)', () => {
+    const viewFileLine = parseAgyStreamLine(JSON.stringify({
+      event: 'step_update',
+      step_update: {
+        step_type: 'tool',
+        tool_name: 'view_file',
+        tool_info: {
+          parameters: {
+            AbsolutePath: '/Users/test/Code/index.ts',
+            toolAction: 'Viewing file',
+            toolSummary: 'File view'
+          }
+        }
+      }
+    }))
+    expect(viewFileLine.text).toBe('🔧 view_file /Users/test/Code/index.ts')
+
+    const runCommandLine = parseAgyStreamLine(JSON.stringify({
+      event: 'step_update',
+      step_update: {
+        step_type: 'tool',
+        tool_name: 'run_command',
+        tool_info: {
+          parameters: {
+            Cwd: '/Users/test/Code',
+            CommandLine: 'pnpm test',
+            toolAction: 'Running tests'
+          }
+        }
+      }
+    }))
+    expect(runCommandLine.text).toBe('🔧 run_command pnpm test')
+  })
 })

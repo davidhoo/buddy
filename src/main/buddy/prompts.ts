@@ -202,7 +202,7 @@ export function selectRecentTranscript(transcript: TranscriptEntry[], window = 6
   const recentKeys = new Set(recent.map(rowKey))
   const earlier = transcript.slice(0, -window)
 
-  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_CURSOR, ACTOR_OPENCODE, ACTOR_KIMI]) {
+  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_CURSOR, ACTOR_AGY, ACTOR_OPENCODE, ACTOR_KIMI]) {
     if (recent.some((item) => item.role === role)) continue
     const last = [...earlier].reverse().find((item) => item.role === role)
     if (last && !recentKeys.has(rowKey(last))) {
