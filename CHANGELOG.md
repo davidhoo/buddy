@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.25] - 2026-09-14
+
+### Fixed
+- Cursor Actor 恢复实时流式输出，直播面板把碎词合并进同一行，不再一字一行刷屏；必须等它交出完整正式结果才进入下一轮，半截输出或中途挂掉不再被当成正常完成
+- 修复 Cursor 当 actor 时启动子进程后整轮结束不了的问题：launcher 退出后不再死等子进程占着的管道
+
+---
+
 ## [1.2.24] - 2026-08-26
 
 ### Fixed
@@ -570,6 +578,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.25]: https://github.com/davidhoo/buddy/releases/tag/v1.2.25
 [1.2.24]: https://github.com/davidhoo/buddy/releases/tag/v1.2.24
 [1.2.23]: https://github.com/davidhoo/buddy/releases/tag/v1.2.23
 [1.2.22]: https://github.com/davidhoo/buddy/releases/tag/v1.2.22
