@@ -4,6 +4,7 @@ import {
   commandKindFor,
   createLineSplitter,
   drainLauncherStreams,
+  runLauncher,
   streamDrainMs
 } from '../../../src/main/buddy/launchers'
 
@@ -104,12 +105,42 @@ describe('launcher command builder', () => {
         '--output-format',
         'stream-json',
         '--stream-partial-output',
+        '--single-turn',
         '--resume',
         'cursor-chat',
         'hello from prompt'
       ],
       kind: 'native_cursor'
     })
+  })
+
+  it('finishes fresh Cursor turns without waiting for background shells', () => {
+    const command = buildLauncherCommand({
+      actor: 'cursor', command: 'agent', promptFile: '/tmp/prompt.md', promptText: 'hello'
+    })
+    expect(command.args).toContain('--single-turn')
+    expect(command.args).not.toContain('--resume')
+  })
+
+  it('records a deadline even when the child handles SIGTERM with exit 0', async () => {
+    const result = await runLauncher({
+      command: process.execPath,
+      args: ['-e', "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)"],
+      cwd: process.cwd(), timeoutMs: 2000,
+      onStdout() {}, onStderr() {}
+    })
+    expect(result).toEqual({ exitCode: 0, signal: null, timedOut: true })
+  })
+
+  it('does not label a user abort as a deadline', async () => {
+    const controller = new AbortController()
+    const result = await runLauncher({
+      command: process.execPath,
+      args: ['-e', "console.log('ready'); setInterval(() => {}, 1000)"],
+      cwd: process.cwd(), timeoutMs: 5000, signal: controller.signal,
+      onStdout() { controller.abort() }, onStderr() {}
+    })
+    expect(result).toEqual({ exitCode: null, signal: 'SIGTERM' })
   })
 
   it('recognizes both Cursor CLI executable names', () => {

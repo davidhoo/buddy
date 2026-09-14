@@ -10,6 +10,8 @@ describe('createBuddyPreloadApi', () => {
 
     await expect(api.bootstrap()).resolves.toEqual({ version: 'native' })
     expect(invoke).toHaveBeenCalledWith('buddy:bootstrap')
+    await api.cancelTask('task', 'workspace')
+    expect(invoke).toHaveBeenCalledWith('buddy:cancelTask', 'task', 'workspace')
   })
 
   it('returns unsubscribe for live task events', () => {

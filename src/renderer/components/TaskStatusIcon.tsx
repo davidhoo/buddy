@@ -8,6 +8,7 @@ export function statusClass(status: TaskStatus): string {
   if (status === 'PINGING') return 'running'
   if (status === 'FAILED') return 'danger'
   if (status === 'PAUSED') return 'paused'
+  if (status === 'CANCELLED') return 'paused'
   if (status === 'DONE') return 'done'
   return 'neutral'
 }

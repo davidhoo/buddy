@@ -26,6 +26,17 @@ describe('isUpgradeExitError', () => {
     expect(isUpgradeExitError('Actor exited with code 1')).toBe(false)
     expect(isUpgradeExitError('Command not found')).toBe(false)
     expect(isUpgradeExitError('')).toBe(false)
+    expect(isUpgradeExitError('last_collect_at 已更新的作者')).toBe(false)
+  })
+
+  it('ignores upgrade words in structured prompts, tools and assistant output', () => {
+    for (const type of ['user', 'assistant', 'tool_call', 'result', 'system']) {
+      expect(isUpgradeExitError(JSON.stringify({
+        type, message: { content: '自动升级完成，请重启; A new version is available' }
+      }))).toBe(false)
+    }
+    expect(isUpgradeExitError('{"type":"user","message":"hello"}\nUpgrade complete, restarting...')).toBe(true)
+    expect(isUpgradeExitError('{"type":"tool_call","result":"new version')).toBe(false)
   })
 })
 

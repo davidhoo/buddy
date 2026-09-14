@@ -24,6 +24,7 @@ export interface BuddyHandlerService {
   skipCountdown(taskId: string, input: CountdownInput): Promise<void>
   pauseCountdown(taskId: string, input: CountdownInput): Promise<void>
   interrupt(taskId: string, workspaceKey?: string): Promise<void>
+  cancelTask(taskId: string, workspaceKey?: string): Promise<void>
   enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<unknown>
   dequeueInstruction(taskId: string, workspaceKey: string, itemId: string): Promise<void>
   clearInstructionQueue(taskId: string, workspaceKey: string): Promise<void>
@@ -79,6 +80,9 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:interrupt', (_event, taskId: string, workspaceKey?: string) =>
     service.interrupt(taskId, workspaceKey)
+  )
+  ipcMain.handle('buddy:cancelTask', (_event, taskId: string, workspaceKey?: string) =>
+    service.cancelTask(taskId, workspaceKey)
   )
   ipcMain.handle('buddy:enqueueInstruction', (_event, taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]) =>
     service.enqueueInstruction(taskId, workspaceKey, content, attachments)

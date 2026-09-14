@@ -55,10 +55,23 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
 /** ANSI escape sequence pattern for stripping TTY output */
 const ANSI_PATTERN = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g
 
-/** Result from a PTY-based launcher run */
-export interface PtyRunResult {
+/** Exit status shared by pipe and PTY launchers. */
+export interface LauncherRunResult {
   exitCode: number | null
   signal: string | null
+  /** Set only when Buddy's deadline fired, not on user abort or external signals. */
+  timedOut?: boolean
+}
+
+export type PtyRunResult = LauncherRunResult
+
+export class LauncherTimeoutError extends Error {
+  readonly code = 'LAUNCHER_TIMEOUT'
+
+  constructor(timeoutMs: number) {
+    super(`Actor timed out after ${timeoutMs / 1000} seconds`)
+    this.name = 'LauncherTimeoutError'
+  }
 }
 
 /**
@@ -97,9 +110,18 @@ export async function runLauncherWithPty(input: {
   })
 
   let exited = false
+  let timedOut = false
+  let forceKill: ReturnType<typeof setTimeout> | undefined
 
   // AbortSignal: kill the child when the signal aborts
-  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  const onAbort = () => {
+    if (exited) return
+    try { child.kill('SIGTERM') } catch { /* already exited */ }
+    forceKill ??= setTimeout(() => {
+      if (!exited) { try { child.kill('SIGKILL') } catch { /* already exited */ } }
+    }, 1500)
+    forceKill.unref()
+  }
   if (input.signal) {
     if (input.signal.aborted) onAbort()
     else input.signal.addEventListener('abort', onAbort, { once: true })
@@ -114,27 +136,32 @@ export async function runLauncherWithPty(input: {
   const exitPromise = new Promise<{ exitCode: number | null; signal?: number }>((resolve) => {
     child.onExit(({ exitCode, signal }) => {
       exited = true
+      clearTimeout(forceKill)
       resolve({ exitCode, signal })
     })
   })
 
   // Set timeout
+  let timeout: ReturnType<typeof setTimeout> | undefined
   const timeoutPromise = new Promise<{ exitCode: number | null; signal?: number }>((resolve) => {
-    setTimeout(() => {
+    timeout = setTimeout(() => {
       if (!exited) {
-        child.kill('SIGTERM')
+        timedOut = !input.signal?.aborted
+        onAbort()
         resolve({ exitCode: null, signal: 15 })
       }
     }, input.timeoutMs)
   })
 
   const result = await Promise.race([exitPromise, timeoutPromise])
+  clearTimeout(timeout)
 
   if (input.signal) input.signal.removeEventListener('abort', onAbort)
 
   return {
     exitCode: result.exitCode,
-    signal: result.signal != null ? String(result.signal) : null
+    signal: result.signal != null ? String(result.signal) : null,
+    ...(timedOut ? { timedOut: true } : {})
   }
 }
 
@@ -198,6 +225,11 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
         // Re-enabled for live progress. Consumers must coalesce deltas (not one
         // event per UI line) and prefer result.result for the final reply.
         '--stream-partial-output',
+        // Buddy owns the next turn. Finish this turn (including subagents)
+        // without waiting for background shells. Persistent services must be
+        // detached as described in the Cursor turn prompt: CLI cleanup stops
+        // shells it still owns on exit.
+        '--single-turn',
         ...(input.sessionId ? ['--resume', input.sessionId] : []),
         promptText
       ],
@@ -321,7 +353,7 @@ export async function runLauncher(input: {
   onStdout(line: string): void
   onStderr(line: string): void
   signal?: AbortSignal
-}): Promise<{ exitCode: number | null; signal: string | null }> {
+}): Promise<LauncherRunResult> {
   const [command, ...prefixArgs] = splitCommand(input.command)
   let child: ReturnType<typeof spawn>
   try {
@@ -334,8 +366,17 @@ export async function runLauncher(input: {
     throw commandNotFoundError(command, error)
   }
 
-  // AbortSignal: kill the child when the signal aborts
-  const onAbort = () => { try { child.kill('SIGTERM') } catch { /* already exited */ } }
+  // Cancellation must settle even when a CLI ignores SIGTERM.
+  let forceKill: ReturnType<typeof setTimeout> | undefined
+  const onAbort = () => {
+    try { child.kill('SIGTERM') } catch { /* already exited */ }
+    forceKill ??= setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }, 1500)
+    forceKill.unref()
+  }
+  child.once('exit', () => clearTimeout(forceKill))
+  child.once('error', () => clearTimeout(forceKill))
   if (input.signal) {
     if (input.signal.aborted) onAbort()
     else input.signal.addEventListener('abort', onAbort, { once: true })
@@ -378,16 +419,22 @@ export async function runLauncher(input: {
     if ((err as NodeJS.ErrnoException).code !== 'EPIPE') throw err
   }
 
-  const timeout = setTimeout(() => child.kill('SIGTERM'), input.timeoutMs)
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = !input.signal?.aborted
+    onAbort()
+  }, input.timeoutMs)
   const stdoutClosed = once(child.stdout!, 'close').catch(() => undefined)
   const stderrClosed = once(child.stderr!, 'close').catch(() => undefined)
   try {
     const [exitCode, signal] = await once(child, 'exit') as [number | null, string | null]
+    // The deadline covers the launcher, not draining inherited pipes after exit.
+    clearTimeout(timeout)
     // Bound the drain: grandchildren may keep pipes open after the launcher exits.
     await drainLauncherStreams(child.stdout!, child.stderr!, stdoutClosed, stderrClosed, streamDrainMs(input.timeoutMs))
     stdoutLines.flush()
     stderrLines.flush()
-    return { exitCode, signal }
+    return { exitCode, signal, ...(timedOut ? { timedOut: true } : {}) }
   } finally {
     clearTimeout(timeout)
     if (input.signal) input.signal.removeEventListener('abort', onAbort)

@@ -16,6 +16,7 @@ describe('registerBuddyHandlers', () => {
       skipCountdown: vi.fn(),
       pauseCountdown: vi.fn(),
       interrupt: vi.fn(),
+      cancelTask: vi.fn(),
       enqueueInstruction: vi.fn(),
       dequeueInstruction: vi.fn(),
       clearInstructionQueue: vi.fn(),
@@ -56,6 +57,9 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
-    expect(handle).toHaveBeenCalledTimes(35)
+    const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
+    cancelHandler({}, 'task', 'workspace')
+    expect(service.cancelTask).toHaveBeenCalledWith('task', 'workspace')
+    expect(handle).toHaveBeenCalledTimes(36)
   })
 })

@@ -155,6 +155,17 @@ export function useInterrupt() {
   })
 }
 
+export function useCancelTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, workspaceKey }: { taskId: string; workspaceKey?: string }) => api.cancelTask(taskId, workspaceKey),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['task'] })
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    }
+  })
+}
+
 export function useEnqueueInstruction() {
   const queryClient = useQueryClient()
 

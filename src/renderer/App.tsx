@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { ChangesModal } from './components/ChangesModal'
+import { useCancelTask } from './hooks/useBuddy'
 import { BranchModal } from './components/BranchModal'
 import { useTheme } from './hooks/useTheme'
 import { useT, useLanguage } from './hooks/useI18n'
@@ -123,6 +124,7 @@ export default function App() {
   const sendMessage = useSendMessage()
   const startTask = useStartTask()
   const interrupt = useInterrupt()
+  const cancelTask = useCancelTask()
   const enqueueInstruction = useEnqueueInstruction()
   const dequeueInstruction = useDequeueInstruction()
   const clearInstructionQueue = useClearInstructionQueue()
@@ -397,6 +399,13 @@ export default function App() {
     })
   }, [selectedTaskId, selectedWorkspaceKey, interrupt])
 
+  const handleCancelTask = useCallback(() => {
+    if (!selectedTaskId) return
+    cancelTask.mutate({ taskId: selectedTaskId, workspaceKey: selectedWorkspaceKey ?? undefined }, {
+      onError: error => window.alert(error instanceof Error ? error.message : String(error))
+    })
+  }, [selectedTaskId, selectedWorkspaceKey, cancelTask])
+
   const handleEnqueueInstruction = useCallback(async (content: string, attachments?: Attachment[]) => {
     if (!selectedTaskId || !selectedWorkspaceKey) return
     setDrafts(prev => ({ ...prev, [selectedTaskId]: '' }))
@@ -668,6 +677,8 @@ export default function App() {
           bare={view === 'settings'}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           onToggleStatusBar={() => setIsStatusBarOpen(!isStatusBarOpen)}
+          onCancelTask={handleCancelTask}
+          isCancelling={cancelTask.isPending}
           onRetry={() => handleStartTask()}
           onResume={() => handleStartTask()}
         />
