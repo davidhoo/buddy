@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.26] - 2026-09-14
+
+### Added
+- 任务级后台服务管理：跨轮 Worker/开发服务器走 Buddy 注入命令启动与复用；任务双方确认完成、取消或删除时自动清理未要求保留的服务；支持登记外部服务与用户明确要求保留的服务
+- 标题栏新增「取消任务」：进入 CANCELLED 终态，清理任务服务，并隐藏继续按钮与输入框；与普通「停止/中断」可恢复暂停区分开
+
+### Fixed
+- Cursor Actor 新会话与恢复会话均加 `--single-turn`，模型回合结束后不再死等后台 shell，可正常交接下一轮；仍要求进程成功退出且有非空正式结果
+- 启动器超时改为明确报错，不再误进升级重试或会话重置；升级关键词检测只看 CLI 纯文本诊断，跳过 JSON 事件与已提取的任务回复
+- 发布校验：公开 `latest-mac.yml` 下载地址不可达时，回退用 `gh` 拉取已确认最新 tag 的资源再比对
+
+---
+
 ## [1.2.25] - 2026-09-14
 
 ### Fixed
@@ -578,6 +591,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.2.26]: https://github.com/davidhoo/buddy/releases/tag/v1.2.26
 [1.2.25]: https://github.com/davidhoo/buddy/releases/tag/v1.2.25
 [1.2.24]: https://github.com/davidhoo/buddy/releases/tag/v1.2.24
 [1.2.23]: https://github.com/davidhoo/buddy/releases/tag/v1.2.23
