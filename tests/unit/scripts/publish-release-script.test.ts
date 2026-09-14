@@ -52,6 +52,24 @@ fi
 if [ "\${1:-}" = "release" ] && [ "\${2:-}" = "edit" ] && [[ " $* " = *" --draft=false "* ]]; then
   exit "\${GH_PUBLISH_EXIT_CODE:-0}"
 fi
+if [ "\${1:-}" = "release" ] && [ "\${2:-}" = "download" ]; then
+  [ "\${GH_DOWNLOAD_EXIT_CODE:-0}" = "0" ] || exit "\${GH_DOWNLOAD_EXIT_CODE}"
+  dir=""
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--dir" ]; then
+      dir="$2"
+      break
+    fi
+    shift
+  done
+  [ -n "$dir" ]
+  if [ "\${FEED_MISMATCH:-0}" = "1" ]; then
+    printf 'mismatched-feed' > "$dir/latest-mac.yml"
+  else
+    cp "$RELEASE_DIR/latest-mac.yml" "$dir/latest-mac.yml"
+  fi
+  exit
+fi
 if [ "\${1:-}" = "api" ]; then
   printf '%s\n' "\${GH_LATEST_TAG:-v9.9.9}"
 fi
@@ -195,6 +213,33 @@ describe('publish-release.sh', () => {
     const events = await eventLines(fixture)
 
     expect(result.status).not.toBe(0)
+    const publishIndex = events.findIndex((line) => line.includes('--draft=false --latest'))
+    const rollbackIndex = events.findLastIndex((line) => line.endsWith('--draft'))
+    expect(publishIndex).toBeGreaterThan(-1)
+    expect(rollbackIndex).toBeGreaterThan(publishIndex)
+  })
+
+  it('falls back to gh download when the public latest feed URL is unreachable', async () => {
+    const fixture = await makeFixture()
+
+    const result = runScript(fixture, { CURL_FAIL: '1' })
+    const events = await eventLines(fixture)
+
+    expect(result.status).toBe(0)
+    expect(events.some((line) => line.includes('release download v9.9.9'))).toBe(true)
+    expect(events.some((line) => line.includes('--draft=false --latest'))).toBe(true)
+    expect(events.findLastIndex((line) => line.endsWith('--draft'))).toBeLessThan(
+      events.findIndex((line) => line.includes('--draft=false --latest'))
+    )
+  })
+
+  it('returns to draft when both public feed curl and gh download fail', async () => {
+    const fixture = await makeFixture()
+
+    const result = runScript(fixture, { CURL_FAIL: '1', GH_DOWNLOAD_EXIT_CODE: '55' })
+    const events = await eventLines(fixture)
+
+    expect(result.status).toBe(55)
     const publishIndex = events.findIndex((line) => line.includes('--draft=false --latest'))
     const rollbackIndex = events.findLastIndex((line) => line.endsWith('--draft'))
     expect(publishIndex).toBeGreaterThan(-1)

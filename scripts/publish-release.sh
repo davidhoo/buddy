@@ -43,15 +43,15 @@ fi
 
 PUBLICATION_ATTEMPTED=false
 FEED_VERIFIED=false
-FEED_FILE=""
+FEED_DIR=""
 rollback_if_needed() {
   local status=$?
   if [ "$PUBLICATION_ATTEMPTED" = "true" ] && [ "$FEED_VERIFIED" != "true" ]; then
     echo "Latest feed verification failed; returning ${VERSION} to Draft" >&2
     gh release edit "$VERSION" --repo "$GITHUB_REPO" --draft >/dev/null 2>&1 || true
   fi
-  if [ -n "$FEED_FILE" ]; then
-    rm -f "$FEED_FILE"
+  if [ -n "$FEED_DIR" ]; then
+    rm -rf "$FEED_DIR"
   fi
   trap - EXIT
   exit "$status"
@@ -80,18 +80,25 @@ if [ "$LATEST_TAG" != "$VERSION" ]; then
   exit 1
 fi
 
-FEED_FILE="$(mktemp "${TMPDIR:-/tmp}/buddy-latest-feed.XXXXXX")"
-curl -fsSL \
+FEED_DIR="$(mktemp -d "${TMPDIR:-/tmp}/buddy-latest-feed.XXXXXX")"
+FEED_FILE="${FEED_DIR}/latest-mac.yml"
+# Prefer the public /releases/latest URL that auto-updaters hit. If github.com is
+# unreachable from the release host, fall back to gh after API confirmed latest tag.
+if ! curl -fsSL --connect-timeout 30 --max-time 120 \
   "https://github.com/${GITHUB_REPO}/releases/latest/download/latest-mac.yml" \
-  -o "$FEED_FILE"
+  -o "$FEED_FILE"; then
+  echo ">> Public latest feed URL unreachable; falling back to gh asset download" >&2
+  gh release download "$VERSION" --repo "$GITHUB_REPO" \
+    --pattern 'latest-mac.yml' --dir "$FEED_DIR" --clobber
+fi
 if ! cmp "$LATEST_MAC_YML" "$FEED_FILE"; then
   echo "Published latest-mac.yml does not match the verified local metadata" >&2
   exit 1
 fi
 
 FEED_VERIFIED=true
-rm -f "$FEED_FILE"
-FEED_FILE=""
+rm -rf "$FEED_DIR"
+FEED_DIR=""
 trap - EXIT
 
 echo ">> Release ${VERSION} published and latest feed verified"
