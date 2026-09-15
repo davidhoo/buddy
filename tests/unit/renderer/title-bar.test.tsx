@@ -22,6 +22,15 @@ function renderTitleBar(overrides: Partial<TitleBarProps> = {}) {
 }
 
 describe('TitleBar compact status', () => {
+  it('offers cancellation for unfinished tasks and hides actions after cancellation', () => {
+    const paused = renderTitleBar({ taskStatus: 'PAUSED', onCancelTask() {} })
+    expect(paused).toContain('Cancel task')
+    const cancelled = renderTitleBar({ taskStatus: 'CANCELLED', onCancelTask() {} })
+    expect(cancelled).toContain('Cancelled')
+    expect(cancelled).not.toContain('Cancel task')
+    expect(cancelled).not.toContain('lucide-play')
+    expect(cancelled).not.toContain('lucide-rotate-cw')
+  })
   it('shows running status when the status bar is hidden', () => {
     const html = renderTitleBar({ taskStatus: 'RUNNING_CODEX', isStatusBarOpen: false })
 

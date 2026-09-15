@@ -47,7 +47,26 @@ export interface BuildActorPromptInput {
   state?: Partial<TaskState>
   globalSettings?: Partial<GlobalSettings>
   userMessage?: string
+  cursorSingleTurn?: boolean
+  managedServices?: boolean
 }
+
+export const CURSOR_SINGLE_TURN_INSTRUCTIONS = `## Cursor turn lifecycle
+
+Buddy runs Cursor with --single-turn and owns the handoff to the next actor. Cursor stops shell jobs it still owns when this turn exits.
+- Wait for finite work (tests, builds, migrations and one-off scripts), read its result, and only then give your final response. Do not leave required checks running in the background at handoff.
+- Use the Buddy service commands below for workers or development servers that must survive this turn. Do not use nohup, trailing &, or unmanaged detached processes to bypass the service registry.`
+
+export const MANAGED_SERVICE_INSTRUCTIONS = `## Task services
+
+For a service needed across turns, invoke this short command in the desired working directory:
+ELECTRON_RUN_AS_NODE=1 "$BUDDY_SERVICE_NODE" "$BUDDY_SERVICE_CLI" start NAME -- COMMAND ARGUMENTS
+
+- Buddy launches and records the service independently of the actor. It preserves services across handoffs, pauses and retries, then stops task-owned services on task completion, cancellation or deletion.
+- Use the same command prefix with list to inspect services before starting another. Starting an identical active name/command reuses it. Check the returned log and application health before claiming readiness; a process being alive is not a health check.
+- Use stop NAME to stop a service created by this task. Never kill processes by a guessed PID, port or command name. Existing user/shared services must be left running; optionally record one with external NAME PID. External records are never stopped by Buddy.
+- Only when the user explicitly asks to retain a service after the task: start NAME --keep 'user request/reason' -- COMMAND ARGUMENTS, or keep NAME 'user request/reason' for an existing owned service. Do not infer retention merely because a server must survive this round.
+- Include the returned PID, log path and stop_command in the handoff. The explicit stop_command also works for retained services after the task ends. Do not edit service registry files or start unmanaged services.`
 
 export function buildPingPrompt(actor: string): string {
   const parts = [
@@ -126,6 +145,9 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
 
   parts.push('', '## Runtime settings')
   parts.push(...runtimeSettingsLines(settings, state, input.globalSettings, input.actor, input.repoRoot))
+
+  if (input.cursorSingleTurn) parts.push('', CURSOR_SINGLE_TURN_INSTRUCTIONS)
+  if (input.managedServices) parts.push('', MANAGED_SERVICE_INSTRUCTIONS)
 
   const recent = selectRecentTranscript(input.transcript)
   if (recent.length > 0) {

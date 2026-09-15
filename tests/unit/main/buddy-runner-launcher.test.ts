@@ -509,6 +509,44 @@ describe('BuddyRunner with fake launcher', () => {
     expect(detail.transcript.some((entry) => entry.meta && (entry.meta as { kind?: string }).kind === 'upgrade_retry')).toBe(false)
   })
 
+  it.each(['timeout', 'nonzero'] as const)('does not retry Cursor %s when task content mentions upgrades', async (mode) => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-cursor-exit-'))
+    const counter = join(root, 'launches.txt')
+    const fake = join(root, 'cursor-agent')
+    await writeFile(fake, [
+      `#!${process.execPath}`,
+      "const fs = require('node:fs')",
+      `fs.appendFileSync(${JSON.stringify(counter)}, 'x\\n')`,
+      "console.log(JSON.stringify({type:'user', message:{content:'Cursor 检测到自动升级，等待重试'}}))",
+      "console.log(JSON.stringify({type:'tool_call', result:'last_collect_at 已更新的作者'}))",
+      "console.log(JSON.stringify({type:'assistant', message:{content:[{type:'text', text:'Review the new version'}]}}))",
+      mode === 'timeout'
+        ? "process.stderr.write('Auto-update in progress\\n'); process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)"
+        : "process.stderr.write('Connection refused\\n'); process.exitCode = 1"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1, max_upgrade_retries: 3 })
+    const created = await store.createTask({
+      task_id: 'demo', repo_root: root,
+      settings: { launchers: { cursor: { command: fake, env: {}, timeout_seconds: 2 } } }
+    })
+    const runner = new BuddyRunner(store)
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'cursor' }))
+      .rejects.toThrow(mode === 'timeout' ? 'Actor timed out after 2 seconds' : 'Connection refused')
+    expect((await readFile(counter, 'utf8')).trim().split('\n')).toHaveLength(1)
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round ?? 0).toBe(0)
+    expect(detail.events.some((e) => ['actor.completed', 'actor.upgrade_detected', 'actor.context_limit_detected'].includes(e.type))).toBe(false)
+    expect(detail.state.latest_failure?.message).toContain(mode === 'timeout' ? 'timed out after 2 seconds' : 'Connection refused')
+    const failed = detail.events.find((e) => e.type === 'actor.failed')!
+    const raw = await readFile(join(store.taskDirectory('demo', created.workspace_key), 'artifacts', `${failed.run_id}-events.jsonl`), 'utf8')
+    expect(raw).toContain('last_collect_at 已更新')
+    const prompt = await readFile(join(store.taskDirectory('demo', created.workspace_key), 'artifacts', `${failed.run_id}-prompt.md`), 'utf8')
+    expect(prompt).toContain('## Cursor turn lifecycle')
+  })
+
   it('terminates the live launcher process when interrupt is called', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-interrupt-'))
     const readyFile = join(root, 'ready.pid')

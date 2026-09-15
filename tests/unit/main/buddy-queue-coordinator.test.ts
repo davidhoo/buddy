@@ -44,6 +44,17 @@ async function setStatus(store: BuddyStore, ws: string, id: string, status: any)
 }
 
 describe('QueueCoordinator', () => {
+  it('advances past cancelled immediate and queued tasks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-queue-cancel-'))
+    const { store, coordinator, startCalls } = makeCoordinator(root)
+    const first = await store.createTask({ task_id: 'immediate', repo_root: '/tmp/repo' })
+    await store.updateTaskState('immediate', first.workspace_key, state => ({ ...state, status: 'CANCELLED' }))
+    await createQueued(store, 'cancelled')
+    await store.updateTaskState('cancelled', first.workspace_key, state => ({ ...state, status: 'CANCELLED' }))
+    await createQueued(store, 'waiting')
+    await coordinator.reconcile(first.workspace_key)
+    expect(startCalls.map(call => call.taskId)).toEqual(['waiting'])
+  })
   it('creates a queued task in QUEUED+waiting and default mode is immediate', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-qc-create-'))
     const { store } = makeCoordinator(root)

@@ -50,6 +50,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:pauseCountdown', taskId, input) as Promise<void>,
     interrupt: (taskId: string, workspaceKey?: string): Promise<void> =>
       ipc.invoke('buddy:interrupt', taskId, workspaceKey) as Promise<void>,
+    cancelTask: (taskId: string, workspaceKey?: string): Promise<void> =>
+      ipc.invoke('buddy:cancelTask', taskId, workspaceKey) as Promise<void>,
     enqueueInstruction: (taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> =>
       ipc.invoke('buddy:enqueueInstruction', taskId, workspaceKey, content, attachments) as Promise<InstructionQueueItem>,
     dequeueInstruction: (taskId: string, workspaceKey: string, itemId: string): Promise<void> =>

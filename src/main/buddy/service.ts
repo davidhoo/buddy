@@ -125,6 +125,7 @@ export class BuddyCoreService {
 
   async deleteTask(taskId: string, workspaceKey?: string): Promise<void> {
     if (!workspaceKey) throw new Error('workspaceKey is required')
+    await this.runner.cancelTask(taskId, workspaceKey)
     await this.store.deleteTask(taskId, workspaceKey)
     // Removing a blocking task may unblock the queue.
     void this.coordinator?.onTaskTerminal(workspaceKey)
@@ -133,6 +134,7 @@ export class BuddyCoreService {
   async startTask(taskId: string, input: StartTaskInput): Promise<void> {
     if (!input.workspace_key) throw new Error('workspace_key is required')
     const state = await this.store.readTaskState(taskId, input.workspace_key).catch(() => null)
+    if (state?.status === 'CANCELLED') throw new Error('Task has been cancelled')
     // A queued task must not be started directly by the renderer via runner.startTask, because
     // runner.canStartFrom('QUEUED') is false. Any manual user start on a queued task — whether
     // waiting, superseded, or a blocked active task (PAUSED/FAILED) — goes through the
@@ -165,6 +167,11 @@ export class BuddyCoreService {
     // A user interrupt moves the task to PAUSED, which may block (queued) or free (immediate)
     // the workspace queue. Re-evaluate once.
     void this.coordinator?.onTaskTerminal(workspaceKey)
+  }
+
+  async cancelTask(taskId: string, workspaceKey?: string): Promise<void> {
+    if (!workspaceKey) throw new Error('workspaceKey is required')
+    await this.runner.cancelTask(taskId, workspaceKey)
   }
 
   enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {
@@ -293,6 +300,7 @@ export class BuddyCoreService {
       }
     }
     // After recovery, rebuild per-workspace queues and run a safe scheduling pass.
+    await this.runner.services.recover()
     // A previously-running queued task is now PAUSED and blocks its queue — no auto-start.
     // Unblocked workspaces with waiting tasks will start their queue head.
     await this.coordinator?.rebuildAndReconcileAll()

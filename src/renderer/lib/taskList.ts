@@ -66,7 +66,7 @@ export function markTaskAsRead(taskId: string) {
 
 export function isTaskUnread(task: Task, selectedTaskId: string | null): boolean {
   if (task.task_id === selectedTaskId) return false
-  if (task.status === 'DONE') return false
+  if (task.status === 'DONE' || task.status === 'CANCELLED') return false
   const state = readTaskReadState()
   const lastRead = state[task.task_id]
   if (!lastRead) return true

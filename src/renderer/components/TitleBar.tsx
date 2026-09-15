@@ -17,6 +17,8 @@ interface TitleBarProps {
   onToggleStatusBar: () => void
   onRetry?: () => void
   onResume?: () => void
+  onCancelTask?: () => void
+  isCancelling?: boolean
 }
 
 interface CompactStatusInfo {
@@ -35,6 +37,7 @@ function compactStatusInfo(status: TaskStatus | null | undefined): CompactStatus
   }
   if (status === 'PAUSED') return { cls: 'paused', labelKey: 'status.PAUSED', pulse: false }
   if (status === 'DONE') return { cls: 'done', labelKey: 'status.DONE', pulse: false }
+  if (status === 'CANCELLED') return { cls: 'paused', labelKey: 'status.CANCELLED', pulse: false }
   if (status === 'FAILED') return { cls: 'danger', labelKey: 'status.FAILED', pulse: false }
   if (status === 'QUEUED') return { cls: 'paused', labelKey: 'status.QUEUED', pulse: false }
   return null
@@ -51,7 +54,9 @@ export function TitleBar({
   onToggleSidebar,
   onToggleStatusBar,
   onRetry,
-  onResume
+  onResume,
+  onCancelTask,
+  isCancelling
 }: TitleBarProps) {
   const t = useT()
   const compact = !isStatusBarOpen ? compactStatusInfo(taskStatus) : null
@@ -90,6 +95,13 @@ export function TitleBar({
       )}
 
       {/* 右侧栏切换按钮（最右侧，右对齐） */}
+      {showToggles && onCancelTask && taskStatus && !['DONE', 'CANCELLED'].includes(taskStatus) && (
+        <button onClick={onCancelTask} disabled={isCancelling}
+          className="mr-3 px-2 py-1 text-xs rounded text-fg-secondary hover:bg-bg-muted disabled:opacity-50 no-drag"
+          title={t('task.cancelHint')}>
+          {t(isCancelling ? 'task.cancelling' : 'task.cancel')}
+        </button>
+      )}
       {showToggles && (
         <button
           onClick={onToggleStatusBar}

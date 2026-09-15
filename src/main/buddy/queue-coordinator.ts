@@ -146,7 +146,7 @@ export class QueueCoordinator {
     const hasActiveQueued = queuedEntries.some((entry) =>
       entry.state.queue?.state !== 'superseded' &&
       entry.state.status !== 'QUEUED' &&
-      entry.state.status !== 'DONE'
+      entry.state.status !== 'DONE' && entry.state.status !== 'CANCELLED'
     )
 
     if (hasIncompleteImmediate || hasActiveQueued) {
@@ -181,7 +181,7 @@ export class QueueCoordinator {
       const active = states.find(
         (e) => effectiveMode(e.state) === 'queued' &&
           e.state.queue?.state !== 'superseded' &&
-          e.state.status !== 'DONE' && e.state.status !== 'QUEUED'
+          e.state.status !== 'DONE' && e.state.status !== 'CANCELLED' && e.state.status !== 'QUEUED'
       )
       if (active) return { task_id: active.task.task_id, reason: 'active_queued_task' }
     }
@@ -275,7 +275,7 @@ export class QueueCoordinator {
         // Only supersede tasks created earlier than the manually-started one.
         if (compareQueueOrder(s, t, state, targetOrderRef) >= 0) continue
         // Skip tasks already DONE (nothing to do) or already superseded (idempotent).
-        if (s.status === 'DONE') continue
+        if (s.status === 'DONE' || s.status === 'CANCELLED') continue
         if (s.queue?.state === 'superseded') continue
         await this.store.updateTaskState(t.task_id, workspaceKey, (st) => ({
           ...st,
@@ -389,7 +389,7 @@ function blocksQueue(state: TaskState): boolean {
   if (state.execution_mode === undefined) {
     return isActivelyRunning(state.status)
   }
-  return state.status !== 'DONE'
+  return state.status !== 'DONE' && state.status !== 'CANCELLED'
 }
 
 /** States where a task is genuinely executing or mid-round, and so genuinely holds the queue. */

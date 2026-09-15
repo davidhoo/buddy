@@ -13,11 +13,12 @@ import type {
   TranscriptEntry,
   TaskState
 } from '../../shared/types'
-import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind, type LauncherRunResult } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
 import { BuddyStore } from './store'
+import { TaskServiceManager, type ServiceRun } from './task-services'
 import { BuddyEventBus } from './events'
 import type { TaskNotifier } from './notifications'
 
@@ -81,12 +82,22 @@ const UPGRADE_PATTERNS = [
   /自动升级/i,
   /升级完成/i,
   /请重启/i,
-  /已更新/i
+  /已更新(?:到|至)(?:最新版本|\s*v?\d)/i
 ]
 
 /** Check if an error/stderr message indicates the child exited for an auto-upgrade */
 export function isUpgradeExitError(message: string): boolean {
-  return UPGRADE_PATTERNS.some((p) => p.test(message))
+  return message.split(/\r?\n/).some((line) => {
+    // CLI upgrade banners are plain diagnostics. Stream-json records contain
+    // prompts, assistant replies and tool output, none of which proves an upgrade.
+    if (line.trimStart().startsWith('{')) return false // also ignore truncated NDJSON
+    try {
+      JSON.parse(line)
+      return false
+    } catch {
+      return UPGRADE_PATTERNS.some((p) => p.test(line))
+    }
+  })
 }
 
 /** native_cursor finished without a usable successful result — never auto-retry. */
@@ -130,6 +141,10 @@ export function isMissingResultError(error: unknown): boolean {
 }
 
 export class BuddyRunner {
+  readonly services: TaskServiceManager
+  private readonly pendingTasks = new Map<string, Set<Promise<unknown>>>()
+  private readonly cancelling = new Set<string>()
+  private readonly healthControllers = new Map<string, AbortController>()
   private readonly executeLaunchers: boolean
   private readonly events?: BuddyEventBus
   private readonly notifier?: TaskNotifier
@@ -145,6 +160,7 @@ export class BuddyRunner {
     private readonly store: BuddyStore,
     options: RunnerOptions = {}
   ) {
+    this.services = new TaskServiceManager(store)
     this.executeLaunchers = options.executeLaunchers ?? true
     this.events = options.events
     this.notifier = options.notifier
@@ -179,10 +195,23 @@ export class BuddyRunner {
   }
 
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
+    const key = this.runControllerKey(input.workspace_key ?? '', taskId)
+    if (this.cancelling.has(key)) throw new Error('Task cancellation is in progress')
+    const promise = this.startTaskInner(taskId, input)
+    const pending = this.pendingTasks.get(key) ?? new Set<Promise<unknown>>()
+    pending.add(promise); this.pendingTasks.set(key, pending)
+    try { return await promise } finally {
+      pending.delete(promise)
+      if (!pending.size) this.pendingTasks.delete(key)
+    }
+  }
+
+  private async startTaskInner(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
     if (!input.workspace_key) throw new Error('workspace_key is required')
     const workspaceKey = input.workspace_key
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
 
+    if (detail.state.status === 'CANCELLED') throw new Error('Task has been cancelled')
     // Health check: on first start (round 0, no sessions, no prior health check), ping both actors.
     // Skip when an explicit actor is requested (caller knows what they want) or in test mode.
     // Also re-run when the previous attempt failed connectivity (FAILED + health_check) so the
@@ -197,8 +226,14 @@ export class BuddyRunner {
         latest_failure: null,
         last_error: null
       }))
-      const healthRunId = await this.runHealthCheck(taskId, workspaceKey, implementer, reviewer)
-      return { run_id: healthRunId }
+      const key = this.runControllerKey(workspaceKey, taskId)
+      const controller = new AbortController()
+      this.healthControllers.set(key, controller)
+      if (this.cancelling.has(key)) controller.abort()
+      try {
+        const healthRunId = await this.runHealthCheck(taskId, workspaceKey, implementer, reviewer, controller.signal)
+        return { run_id: healthRunId }
+      } finally { this.healthControllers.delete(key) }
     }
 
     const globalSettings = await this.store.readGlobalSettings()
@@ -280,6 +315,7 @@ export class BuddyRunner {
 
     const controller = new AbortController()
     this.registerRunController(workspaceKey, taskId, runId, controller)
+    if (this.cancelling.has(this.runControllerKey(workspaceKey, taskId))) controller.abort()
     try {
       await this.executeActor(taskId, workspaceKey, actor, runId, input.message ?? '', controller.signal)
     } finally {
@@ -357,7 +393,42 @@ export class BuddyRunner {
   }
 
   async interrupt(taskId: string, workspaceKey: string): Promise<void> {
+    const state = await this.store.readTaskState(taskId, workspaceKey)
+    if (state.status === 'DONE' || state.status === 'CANCELLED') return
     await this.pauseAndAbortRun(taskId, workspaceKey, {})
+  }
+
+  async cleanupServices(taskId: string, workspaceKey: string): Promise<boolean> {
+    await this.store.updateTaskState(taskId, workspaceKey, state => ({ ...state, service_cleanup_pending: true }))
+    const failures = await this.services.cleanupTask(taskId, workspaceKey).catch(error => [String(error)])
+    await this.store.updateTaskState(taskId, workspaceKey, state => ({ ...state, service_cleanup_pending: failures.length > 0 }))
+    if (failures.length) {
+      await this.store.appendTaskEvent(taskId, workspaceKey, { type: 'service.cleanup_failed', payload: { errors: failures } })
+      await this.store.appendTranscript(taskId, workspaceKey, 'system', `后台服务清理未完成，已暂停，保留记录供重试：${failures.join('; ')}`, { kind: 'service_cleanup_failed' })
+      return false
+    }
+    await this.store.appendTaskEvent(taskId, workspaceKey, { type: 'service.cleanup_completed', payload: { retained: 'external_or_explicitly_kept' } })
+    return true
+  }
+
+  async cancelTask(taskId: string, workspaceKey: string): Promise<void> {
+    const key = this.runControllerKey(workspaceKey, taskId)
+    if (this.cancelling.has(key)) throw new Error('Task cancellation is already in progress')
+    this.cancelling.add(key)
+    try {
+      await this.pauseAndAbortRun(taskId, workspaceKey, { reason: 'task_cancelled' })
+      // Do not delete task files or release its queue slot until live actor writes settle.
+      await Promise.allSettled([...(this.pendingTasks.get(key) ?? [])])
+      const cleaned = await this.cleanupServices(taskId, workspaceKey)
+      await this.store.updateTaskState(taskId, workspaceKey, state => ({
+        ...state, status: cleaned ? 'CANCELLED' : 'PAUSED', active_run: null,
+        countdown: null, pending_break: null, health_check: null, instruction_queue: [],
+        updated_at: new Date().toISOString()
+      }))
+      if (!cleaned) throw new Error('Task services could not be cleaned up; task records were preserved')
+      await this.store.appendTaskEvent(taskId, workspaceKey, { type: 'task.cancelled', payload: {} })
+      this.onTaskTerminal?.(workspaceKey)
+    } finally { this.cancelling.delete(key) }
   }
 
   async interruptAndInsert(taskId: string, workspaceKey: string, queueItemId: string): Promise<void> {
@@ -402,6 +473,7 @@ export class BuddyRunner {
     if (runId) {
       this.abortRunController(workspaceKey, taskId, runId)
     }
+    this.healthControllers.get(this.runControllerKey(workspaceKey, taskId))?.abort()
   }
 
   async enqueueInstruction(taskId: string, workspaceKey: string, content: string, attachments?: AttachmentMeta[]): Promise<InstructionQueueItem> {
@@ -432,7 +504,7 @@ export class BuddyRunner {
     outputLines: string[],
     stderrLines: string[],
     signal?: AbortSignal
-  ): Promise<{ exitCode: number | null; signal: string | null }> {
+  ): Promise<LauncherRunResult> {
     const needsPty = kindNeedsPty(command.kind)
     const parserActor = parserActorForKind(actor, command.kind)
 
@@ -514,7 +586,8 @@ export class BuddyRunner {
   private async executePing(
     taskId: string,
     workspaceKey: string,
-    actor: string
+    actor: string,
+    signal?: AbortSignal
   ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string }> {
     const globalSettings = await this.store.readGlobalSettings()
     const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
@@ -526,11 +599,13 @@ export class BuddyRunner {
     // upgrade exit (across stderr+stdout, since wecode prints upgrade progress to stdout
     // and the failure reason to stderr), wait for it to settle, and retry the ping.
     for (;;) {
-      const attempt = await this.executePingAttempt(taskId, workspaceKey, actor)
+      if (signal?.aborted) return { success: false, error: 'Health check cancelled' }
+      const attempt = await this.executePingAttempt(taskId, workspaceKey, actor, signal)
+      if (signal?.aborted) return { success: false, error: 'Health check cancelled' }
       if (attempt.success) return attempt
 
-      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}\n${attempt.error ?? ''}`.trim()
-      if (upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
+      const combined = `${attempt.stderr ?? ''}\n${attempt.stdout ?? ''}`.trim()
+      if (!attempt.timedOut && upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combined)) {
         upgradeRetries++
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'health_check.actor_upgrade_retry',
@@ -554,8 +629,9 @@ export class BuddyRunner {
   private async executePingAttempt(
     taskId: string,
     workspaceKey: string,
-    actor: string
-  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string }> {
+    actor: string,
+    signal?: AbortSignal
+  ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string; timedOut?: boolean }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const launcher = detail.settings.launchers[actor] ?? {
       command: actor,
@@ -596,7 +672,7 @@ export class BuddyRunner {
       const result = await this.runActorCommand(
         command, cwd, launcher.env, PING_TIMEOUT_SECONDS * 1000,
         actor, workspaceKey, taskId, runId,
-        outputLines, stderrLines
+        outputLines, stderrLines, signal
       )
 
       const stdoutText = outputLines.join('\n')
@@ -604,6 +680,10 @@ export class BuddyRunner {
       const outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
       const stderrText = stderrLines.join('\n').trim()
+
+      if (result.timedOut) {
+        return { success: false, timedOut: true, error: new LauncherTimeoutError(PING_TIMEOUT_SECONDS * 1000).message, stderr: stderrText, stdout: stdoutText }
+      }
 
       if (result.exitCode !== 0) {
         const error = stderrText || outputText.trim() || exitErrorMessage(result.exitCode, result.signal)
@@ -639,7 +719,8 @@ export class BuddyRunner {
     taskId: string,
     workspaceKey: string,
     implementer: string,
-    reviewer: string
+    reviewer: string,
+    signal?: AbortSignal
   ): Promise<string> {
     const actors = [implementer, reviewer]
     const actorResults: Record<string, 'pending' | 'running' | 'passed' | 'failed'> = {}
@@ -673,8 +754,9 @@ export class BuddyRunner {
     }))
 
     const pingResults = await Promise.allSettled(
-      actors.map((actor) => this.executePing(taskId, workspaceKey, actor))
+      actors.map((actor) => this.executePing(taskId, workspaceKey, actor, signal))
     )
+    if (signal?.aborted) return `ping_cancelled_${Date.now()}`
 
     let allPassed = true
     let failedActor: string | undefined
@@ -864,7 +946,9 @@ export class BuddyRunner {
       settings: detail.settings,
       state: detail.state,
       globalSettings,
-      userMessage
+      userMessage,
+      cursorSingleTurn: commandKindFor(actor, launcher.command) === 'native_cursor',
+      managedServices: true
     })
     const promptFile = join(artifactsDir, `${runId}-prompt.md`)
     const outputFile = join(artifactsDir, `${runId}-output.md`)
@@ -899,19 +983,26 @@ export class BuddyRunner {
       pid: process.pid
     })
 
+    let serviceRun: ServiceRun | undefined
     try {
+      if (signal.aborted) return
+      serviceRun = await this.services.openRun(taskId, workspaceKey, runId, launcher.env)
       const startedAtMs = Date.now()
       const result = await this.runActorCommand(
-        command, cwd, launcher.env, launcher.timeout_seconds * 1000,
+        command, cwd, { ...launcher.env, ...serviceRun.env }, launcher.timeout_seconds * 1000,
         actor, workspaceKey, taskId, runId,
         outputLines, stderrLines, signal
       )
+      serviceRun.close()
       const elapsedMs = Date.now() - startedAtMs
 
       const stdoutText = outputLines.join('\n')
       const rawEvents = await collectRawEvents(eventFile, stdoutText, command.kind)
       let outputText = await collectOutputText(actor, command.kind, outputFile, stdoutText)
       const parsedLines = parseActorEvents(parserActorForKind(actor, command.kind), rawEvents)
+      // Persist the raw output above, but never accept partial text or retry a
+      // deadline as an upgrade/context reset, even if the child exits with code 0.
+      if (result.timedOut) throw new LauncherTimeoutError(launcher.timeout_seconds * 1000)
       if (actor === 'kimi' && sessionId && !parsedLines.some((line) => line.sessionId)) {
         parsedLines.push({ sessionId })
       }
@@ -1039,9 +1130,9 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
-      // Missing/invalid Cursor result must fail immediately. Do not let stdout chatter
+      // Missing/invalid Cursor/Agy results and deadlines must fail immediately. Do not let stdout chatter
       // (e.g. the words "new version") trip upgrade or context-window retries.
-      const skipAutoRetry = isMissingResultError(error)
+      const skipAutoRetry = isMissingResultError(error) || error instanceof LauncherTimeoutError
 
       // Auto-reset session on context window limit errors
       // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
@@ -1074,12 +1165,9 @@ export class BuddyRunner {
       // We wait briefly for the upgrade to settle, then retry the same round (keeping
       // the existing session so the conversation continues seamlessly).
       const maxUpgradeRetries = globalSettings.max_upgrade_retries ?? DEFAULT_MAX_UPGRADE_RETRIES
-      // Include raw stdout: wecode prints upgrade progress (e.g. "A new version is
-      // available", "upgrade complete", "Please run your command again with the new
-      // version") to stdout, which extractActorOutput filters out of outputText. Without
-      // the raw stdout the upgrade exit goes undetected at runtime and the round fails
-      // instead of retrying. Mirrors the executePing combined-message fix.
-      const combinedMessage = `${failureMessage}\n${stderrText}\n${outputLines.join('\n')}`.trim()
+      // Inspect CLI diagnostics, filtering stream-json records. failureMessage
+      // contains extracted assistant/tool content and must not be scanned again.
+      const combinedMessage = `${stderrText}\n${outputLines.join('\n')}`.trim()
       if (!skipAutoRetry && upgradeRetries < maxUpgradeRetries && isUpgradeExitError(combinedMessage)) {
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'actor.upgrade_detected',
@@ -1101,6 +1189,7 @@ export class BuddyRunner {
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
       throw error
     } finally {
+      serviceRun?.close()
       await removeRunLock(lockPath)
     }
   }
@@ -1155,6 +1244,7 @@ export class BuddyRunner {
     const breakPending = message.kind === 'break' && !breakConfirmed
     const breakRejected = message.kind !== 'break' && Boolean(pendingBreak?.actor)
     const hasQueuedInstructions = (currentState.instruction_queue?.length ?? 0) > 0
+    const cleaned = !breakConfirmed || hasQueuedInstructions || await this.cleanupServices(taskId, workspaceKey)
 
     await this.store.appendTranscript(taskId, workspaceKey, normalizeActorRole(actor), transcriptContent, {
       round,
@@ -1196,7 +1286,7 @@ export class BuddyRunner {
       if (breakConfirmed) {
         return {
           ...next,
-          status: hasQueuedInstructions ? 'READY' : 'DONE',
+          status: hasQueuedInstructions ? 'READY' : cleaned ? 'DONE' : 'PAUSED',
           countdown: null,
           pending_break: null,
           break_rejected_by: null
@@ -1223,6 +1313,7 @@ export class BuddyRunner {
     })
 
     if (breakConfirmed) {
+      if (!cleaned) { this.onTaskTerminal?.(workspaceKey); return }
       await this.store.appendTaskEvent(taskId, workspaceKey, {
         type: 'actor.finished',
         actor,
@@ -1368,14 +1459,16 @@ export class BuddyRunner {
     const otherActorBreak = pendingBreak?.actor && pendingBreak.actor !== actor ? pendingBreak : null
 
     if (otherActorBreak) {
+      const cleaned = await this.cleanupServices(taskId, workspaceKey)
       const round = stateBefore.round ?? 0
       await this.store.updateTaskState(taskId, workspaceKey, (state) => ({
         ...state,
-        status: 'DONE',
+        status: cleaned ? 'DONE' : 'PAUSED',
         active_run: null,
         pending_break: null,
         updated_at: failure.ts
       }))
+      if (!cleaned) { this.onTaskTerminal?.(workspaceKey); return }
       await this.store.appendTaskEvent(taskId, workspaceKey, {
         type: 'actor.failed',
         actor,
