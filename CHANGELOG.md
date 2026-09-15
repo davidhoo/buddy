@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-09-15
+
+### Fixed
+- 从 Finder/Dock 启动时继承登录 shell 的代理环境（HTTP(S)_PROXY 等），避免 agy 等需网络的 actor 在设置页测试中因无代理而超时
+- 启动器测试超时/信号终止时给出明确诊断，不再显示含糊的 `Process exited with code null`；测试结果持久化 durationMs、timedOut、exitCode、signal
+- 测试错误信息与响应预览脱敏；Settings 测试请求携带 launcher.env
+
+---
+
 ## [1.2.27] - 2026-09-15
 
 ### Added
