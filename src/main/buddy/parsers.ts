@@ -328,7 +328,7 @@ export function parseAgyStreamLine(line: string): ParsedActorLine {
     const errorText = textValue(result?.error)?.trim()
     // Successful results stay non-noise so plain-text replies are not mistaken
     // for context-exhausted placeholders. Final reply comes from extractAgyOutput.
-    const ok = status === 'SUCCESS' && Boolean(response)
+    const ok = Boolean(response) || status === 'SUCCESS'
     if (!ok && errorText) {
       return { text: errorText, sessionId, rawType: 'error', streamMode: 'line' }
     }
