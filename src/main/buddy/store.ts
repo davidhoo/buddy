@@ -41,7 +41,7 @@ interface TaskMeta {
   context_text?: string
 }
 
-const ACTORS = ['claude', 'codex', 'cursor', 'opencode', 'kimi'] as const
+const ACTORS = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
 
 export class BuddyStore {
   constructor(public readonly dataRoot: string) {}
@@ -427,6 +427,56 @@ export class BuddyStore {
         }
       }
 
+      // Antigravity CLI (`agy`) stream-json shape only: top-level key is `event`
+      // (init|step_update|result), not `type`. Other actors use `type` and will not
+      // hit these branches — keep that invariant if another CLI also emits `event`.
+      if (event.event === 'result') {
+        const result = objectValue(event.result)
+        if (result) {
+          const u = objectValue(result.usage)
+          if (u) {
+            inputTokens = (u.input_tokens as number) ?? inputTokens
+            outputTokens = (u.output_tokens as number) ?? outputTokens
+            cacheReadTokens = (u.cache_read_tokens as number) ?? cacheReadTokens
+          }
+          if (typeof result.duration_seconds === 'number') {
+            durationMs = Math.round(result.duration_seconds * 1000)
+          }
+          const response = textValue(result.response)
+          if (response) events.push({ type: 'text', text: response })
+          const errorText = textValue(result.error)
+          if (errorText) events.push({ type: 'text', text: errorText })
+        }
+      }
+      if (event.event === 'step_update') {
+        const step = objectValue(event.step_update)
+        if (step) {
+          const stepType = textValue(step.step_type)
+          if (stepType === 'tool') {
+            const toolName = textValue(step.tool_name) ?? 'tool'
+            const toolInfo = objectValue(step.tool_info)
+            const toolInput = objectValue(toolInfo?.parameters) ?? toolInfo
+            events.push({ type: 'tool_use', toolName, toolInput: toolInput as Record<string, unknown> | undefined })
+            const output = textValue(toolInfo?.output)
+            if (output) {
+              events.push({
+                type: 'tool_result',
+                toolResultPreview: output.slice(0, 200),
+                isError: undefined
+              })
+            }
+          }
+          // Prefer result.response for final text; skip agent_response deltas here
+          // to avoid duplicating the same reply in the round event summary.
+          const u = objectValue(step.usage)
+          if (u) {
+            inputTokens = (u.input_tokens as number) ?? inputTokens
+            outputTokens = (u.output_tokens as number) ?? outputTokens
+            cacheReadTokens = (u.cache_read_tokens as number) ?? cacheReadTokens
+          }
+        }
+      }
+
       // Codex format: content array with tool_call / text
       if (Array.isArray(event.content)) {
         for (const part of event.content as Record<string, unknown>[]) {
@@ -551,6 +601,8 @@ export class BuddyStore {
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'claude' ? 'claude_session_id'
       : actor === 'codex' ? 'codex_thread_id'
+      : actor === 'cursor' ? 'cursor_session_id'
+      : actor === 'agy' ? 'agy_session_id'
       : null
     if (!field) return undefined
     try {
@@ -569,7 +621,7 @@ export class BuddyStore {
     // Collect run_ids grouped by actor, and track elapsed_ms per run
     const actorRuns = new Map<string, { runId: string; elapsedMs: number; endTs: number | undefined }[]>()
 
-    const ACTOR_ROLES = new Set(['claude', 'codex', 'cursor', 'opencode', 'kimi'])
+    const ACTOR_ROLES = new Set(['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'])
     for (const entry of transcript) {
       if (!ACTOR_ROLES.has(entry.role)) continue
       const meta = entry.meta as Record<string, unknown> | undefined
@@ -761,6 +813,7 @@ const TRANSCRIPT_ROLES = new Set<TranscriptEntry['role']>([
   'claude',
   'codex',
   'cursor',
+  'agy',
   'opencode',
   'kimi',
   'system'
@@ -875,6 +928,7 @@ function defaultTaskSettings(
     seed_claude_session_id: normalizedGlobal.seed_claude_session_id ?? '',
     seed_codex_thread_id: normalizedGlobal.seed_codex_thread_id ?? '',
     seed_cursor_session_id: normalizedGlobal.seed_cursor_session_id ?? '',
+    seed_agy_session_id: normalizedGlobal.seed_agy_session_id ?? '',
     seed_opencode_session_id: '',
     seed_kimi_session_id: '',
     ...restOverrides
@@ -945,6 +999,7 @@ function defaultTaskState(
     claude_session_id: null,
     codex_thread_id: null,
     cursor_session_id: null,
+    agy_session_id: null,
     opencode_session_id: null,
     kimi_session_id: null,
     context_hash: sha256Hex(contextText),

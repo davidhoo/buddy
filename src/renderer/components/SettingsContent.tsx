@@ -62,6 +62,13 @@ function launcherInfoFor(actor: string, t: TFunction): LauncherInfo {
         placeholder: 'cursor-agent',
         hint: <HintWithCode template={t('settings.launcher.cursor.hint')} />
       }
+    case 'agy':
+      return {
+        title: t('settings.launcher.agy.title'),
+        label: t('settings.launcher.agy.label'),
+        placeholder: 'agy',
+        hint: <HintWithCode template={t('settings.launcher.agy.hint')} />
+      }
     case 'opencode':
       return {
         title: t('settings.launcher.opencode.title'),
@@ -1226,6 +1233,7 @@ function ActorBadge({ actor }: { actor: string }) {
     claude: 'var(--actor-claude)',
     codex: 'var(--actor-codex)',
     cursor: 'var(--actor-cursor)',
+    agy: 'var(--actor-agy)',
     opencode: 'var(--actor-opencode)',
     kimi: 'var(--actor-kimi)',
   }

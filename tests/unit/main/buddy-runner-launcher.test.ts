@@ -330,6 +330,77 @@ describe('BuddyRunner with fake launcher', () => {
     expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(false)
   })
 
+  it('surfaces explicit Antigravity error from result event on failure', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-agy-error-'))
+    const fake = join(root, 'agy')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      "printf '%s\\n' '{\"event\":\"init\",\"conversation_id\":\"agy-1\"}'",
+      "printf '%s\\n' '{\"event\":\"step_update\",\"step_update\":{\"step_type\":\"agent_response\",\"text_delta\":\"working\"}}'",
+      "printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"Individual quota reached. Please upgrade your subscription.\"}}'"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          agy: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'agy'
+    })).rejects.toThrow(/Individual quota reached/i)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.latest_failure?.message).toContain('Individual quota reached')
+  })
+
+  it('accepts non-empty response even if agy result has status ERROR from resumed session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-agy-resumed-error-'))
+    const fake = join(root, 'agy')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      "printf '%s\\n' '{\"event\":\"init\",\"conversation_id\":\"agy-resumed-1\"}'",
+      "printf '%s\\n' '{\"event\":\"step_update\",\"step_update\":{\"step_type\":\"agent_response\",\"text_delta\":\"working\"}}'",
+      "printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"Individual quota reached. Resets in 14m39s.\",\"response\":\"{\\\"type\\\":\\\"break\\\",\\\"content\\\":\\\"done!\\\"}\"}}'"
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: root,
+      settings: {
+        launchers: {
+          agy: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'agy'
+    })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('PAUSED')
+    expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(true)
+    expect(detail.transcript.some((entry) => entry.role === 'agy')).toBe(true)
+    const agyEntry = detail.transcript.find((entry) => entry.role === 'agy')
+    expect(agyEntry?.content).toContain('done!')
+  })
+
   it('accepts Cursor plain-text successful results and rejects empty or failed results', async () => {
     async function runCursorFixture(name: string, lines: string[]) {
       const root = await mkdtemp(join(tmpdir(), `buddy-runner-cursor-${name}-`))

@@ -116,17 +116,18 @@ describe('buildActorPrompt', () => {
     const transcript = [
       { seq: 1, role: 'claude', content: 'claude earlier', ts: '' },
       { seq: 2, role: 'human', content: 'human earlier', ts: '' },
+      { seq: 3, role: 'agy', content: 'agy earlier', ts: '' },
       ...Array.from({ length: 8 }, (_value, index) => ({
-        seq: index + 3,
+        seq: index + 4,
         role: 'codex' as const,
-        content: `codex ${index + 3}`,
+        content: `codex ${index + 4}`,
         ts: ''
       }))
     ]
 
     const prompt = buildActorPrompt({
       actor: 'codex',
-      round: 10,
+      round: 11,
       repoRoot: '/tmp/repo',
       taskText: 'Build feature',
       contextText: '',
@@ -136,14 +137,15 @@ describe('buildActorPrompt', () => {
         flow_policy: 'claude_then_codex',
         launchers: {}
       },
-      state: { round: 9, rounds_in_window: 9 }
+      state: { round: 10, rounds_in_window: 10 }
     } as any)
 
     expect(prompt).toContain('## Recent transcript')
     expect(prompt).toContain('claude earlier')
     expect(prompt).toContain('human earlier')
-    expect(prompt).toContain('codex 10')
-    expect(prompt).not.toContain('codex 3')
+    expect(prompt).toContain('agy earlier')
+    expect(prompt).toContain('codex 11')
+    expect(prompt).not.toContain('codex 4')
   })
 
   it('places the detected human language rule as the last instruction line', () => {

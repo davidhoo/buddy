@@ -8,6 +8,7 @@ const INSTALL_HINTS: Record<string, string> = {
   codex: 'npm install -g @openai/codex',
   'cursor-agent': 'curl -fsS https://cursor.com/install | bash',
   agent: 'curl -fsS https://cursor.com/install | bash',
+  agy: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
   opencode: 'go install github.com/sst/opencode@latest'
 }
 

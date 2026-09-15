@@ -906,7 +906,7 @@ export function CreateTaskModal({
   // Detect each actor's currently configured model so the dropdowns can show
   // it beside the agent name (e.g. "Codex (gpt-5.6-luna)"). Refetch when the
   // launcher commands change, since the model may be derived from the command.
-  const launcherCommandsKey = (['claude', 'codex', 'opencode', 'kimi'] as const)
+  const launcherCommandsKey = (['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const)
     .map(a => normalizedGlobalSettings.launchers?.[a]?.command ?? '')
     .join('|')
   const [actorModels, setActorModels] = useState<Record<string, string | undefined>>({})
@@ -984,6 +984,7 @@ export function CreateTaskModal({
         claude: launcherFor('claude'),
         codex: launcherFor('codex'),
         cursor: launcherFor('cursor'),
+        agy: launcherFor('agy'),
         opencode: launcherFor('opencode'),
         kimi: launcherFor('kimi')
       },
@@ -1002,7 +1003,7 @@ export function CreateTaskModal({
     }
   }
 
-  const actorOptions: Actor[] = ['claude', 'codex', 'cursor', 'opencode', 'kimi']
+  const actorOptions: Actor[] = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi']
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-buddy-modal onKeyDown={(e) => {

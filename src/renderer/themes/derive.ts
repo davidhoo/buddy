@@ -43,6 +43,7 @@ export interface DerivedTokens {
   '--actor-claude': string
   '--actor-codex': string
   '--actor-cursor': string
+  '--actor-agy': string
   '--actor-opencode': string
   '--actor-kimi': string
 }
@@ -122,6 +123,7 @@ export function deriveTokens(theme: BuddyTheme): DerivedTokens {
     '--actor-claude': '#8b6dba',
     '--actor-codex': '#4a9bb5',
     '--actor-cursor': '#4f8f5f',
+    '--actor-agy': '#c45c26',
     '--actor-opencode': '#d97706',
     '--actor-kimi': '#2e7d32',
   }

@@ -61,6 +61,7 @@ const SESSION_FIELD: Record<Actor, keyof TaskState> = {
   claude: 'claude_session_id',
   codex: 'codex_thread_id',
   cursor: 'cursor_session_id',
+  agy: 'agy_session_id',
   opencode: 'opencode_session_id',
   kimi: 'kimi_session_id'
 }

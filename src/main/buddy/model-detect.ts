@@ -83,6 +83,10 @@ export async function detectModelFromConfig(
     if (kind === 'native_cursor') {
       return await readCursorModel(join(home, '.cursor', 'cli-config.json'))
     }
+    if (kind === 'native_agy') {
+      // agy has no stable model field in settings yet; --model on the command wins above.
+      return undefined
+    }
     // contract: model is not knowable before a run.
   } catch {
     // Config file may not exist or be unreadable — that's fine

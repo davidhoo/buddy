@@ -18,6 +18,7 @@ export type TaskStatus =
   | 'RUNNING_CLAUDE'
   | 'RUNNING_CODEX'
   | 'RUNNING_CURSOR'
+  | 'RUNNING_AGY'
   | 'RUNNING_OPENCODE'
   | 'RUNNING_KIMI'
   | 'PINGING'
@@ -76,6 +77,7 @@ export interface TaskState {
   claude_session_id?: string | null
   codex_thread_id?: string | null
   cursor_session_id?: string | null
+  agy_session_id?: string | null
   opencode_session_id?: string | null
   kimi_session_id?: string | null
   context_hash?: string
@@ -125,6 +127,7 @@ export interface TaskSettings {
   seed_claude_session_id?: string
   seed_codex_thread_id?: string
   seed_cursor_session_id?: string
+  seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
 }
@@ -136,7 +139,7 @@ export interface Launcher {
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'cursor' | 'opencode' | 'kimi' | 'system'
+  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'system'
   content: string
   ts: string
   round?: number
@@ -190,6 +193,7 @@ export interface GlobalSettings {
   seed_claude_session_id?: string
   seed_codex_thread_id?: string
   seed_cursor_session_id?: string
+  seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
   max_compact_retries?: number
