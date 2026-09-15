@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.27] - 2026-09-15
+
+### Added
+- 原生 Antigravity（agy）Actor：主进程 launcher 支持 stream-json、会话恢复、与 Buddy 超时对齐的 print-timeout，并以 SUCCESS 门控完成判定，避免长编码轮次被 CLI 默认 5 分钟截断
+- 渲染层端到端暴露 agy：任务创建、设置、会话状态、主题与 i18n 均可选择；会话 conversation 不一致时先告警再做成功门控
+
+### Fixed
+- 未知 wrapper 仍走 `native_agy`，不再误判为 contract launcher
+- Antigravity 纳入 transcript 保留与 tool detail 解析；显式 result 错误会提示给用户
+- 恢复轮次若状态仍为 ERROR 但已有真实回复，按有效完成处理，避免误杀
+
+---
+
 ## [1.2.26] - 2026-09-14
 
 ### Added
