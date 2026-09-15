@@ -46,12 +46,14 @@ import { createTaskNotifier } from './notifications'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
-import { buildLauncherCommand, commandKindFor, kindNeedsPty, parserActorForKind, runLauncher, runLauncherWithPty } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherRunResult } from './launchers'
 import { detectModelFromConfig } from './model-detect'
 import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings } from '../../shared/defaults'
 import { buildPingPrompt } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
+import { mergeChildEnv } from './shell-path'
+import { redactSensitiveText } from './redact'
 
 export interface BuddyCoreServiceOptions {
   dataRoot?: string
@@ -329,6 +331,7 @@ export class BuddyCoreService {
 
   async testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> {
     const PING_TIMEOUT_SECONDS = 120
+    const startTime = Date.now()
 
     // Phase 1: Tool check - verify the command exists and can be spawned
     try {
@@ -336,7 +339,7 @@ export class BuddyCoreService {
       const baseExecutable = splitCmd[0]?.replace(/^"|"$/g, '') ?? ''
       await new Promise<void>((resolve, reject) => {
         const child = spawn(baseExecutable, ['--version'], {
-          env: { ...process.env, ...env },
+          env: mergeChildEnv(process.env, env),
           stdio: 'pipe',
           timeout: 10000
         })
@@ -362,12 +365,15 @@ export class BuddyCoreService {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      return {
+      const res: TestLauncherResult = {
         actor,
         success: false,
         phase: 'tool_check',
-        error: message.slice(0, 300)
+        error: redactSensitiveText(message).slice(0, 300),
+        durationMs: Date.now() - startTime
       }
+      await this.store.recordLauncherTest(actor, res).catch(() => {})
+      return res
     }
 
     // Phase 2: Ping test - actually invoke the actor with a hello prompt
@@ -401,14 +407,16 @@ export class BuddyCoreService {
 
       try {
         const needsPty = kindNeedsPty(launcherCommand.kind)
-        let result: { exitCode: number | null; signal: string | null }
+        let result: LauncherRunResult
+
+        const mergedEnv = { ...env, ...(launcherCommand.env ?? {}) }
 
         if (needsPty) {
           result = await runLauncherWithPty({
             command: launcherCommand.command,
             args: launcherCommand.args,
             cwd: testDir,
-            env: { ...env, ...(launcherCommand.env ?? {}) },
+            env: mergedEnv,
             timeoutMs: PING_TIMEOUT_SECONDS * 1000,
             onData: (data) => {
               for (const line of data.split(/\r?\n/).filter(Boolean)) {
@@ -421,7 +429,7 @@ export class BuddyCoreService {
             command: launcherCommand.command,
             args: launcherCommand.args,
             cwd: testDir,
-            env: { ...env, ...(launcherCommand.env ?? {}) },
+            env: mergedEnv,
             stdinText: launcherCommand.stdinText,
             timeoutMs: PING_TIMEOUT_SECONDS * 1000,
             onStdout: (line) => outputLines.push(line),
@@ -429,34 +437,79 @@ export class BuddyCoreService {
           })
         }
 
+        // 1. Priority check for timeout without executing unnecessary parsing
+        if (result.timedOut) {
+          const res: TestLauncherResult = {
+            actor,
+            success: false,
+            phase: 'ping',
+            error: new LauncherTimeoutError(PING_TIMEOUT_SECONDS * 1000).message,
+            runId,
+            durationMs: Date.now() - startTime,
+            timedOut: true,
+            exitCode: result.exitCode ?? null,
+            signal: result.signal ?? null
+          }
+          await this.store.recordLauncherTest(actor, res).catch(() => {})
+          return res
+        }
+
+        // 2. Non-zero or signal exit
+        if (result.exitCode !== 0) {
+          const stdoutText = outputLines.join('\n')
+          const outputText = await collectOutputText(actor, launcherCommand.kind, outputFile, stdoutText).catch(() => '')
+          const stderrText = stderrLines.join('\n').trim()
+
+          let exitDesc: string
+          if (result.exitCode !== null && result.exitCode !== undefined) {
+            exitDesc = `Process exited with code ${result.exitCode}`
+          } else if (result.signal) {
+            exitDesc = `Process terminated by signal ${result.signal}`
+          } else {
+            exitDesc = 'Process exited unexpectedly'
+          }
+
+          const rawDetail = stderrText || outputText.trim() || exitDesc
+          const error = redactSensitiveText(rawDetail).slice(0, 300)
+          const res: TestLauncherResult = {
+            actor,
+            success: false,
+            phase: 'ping',
+            error,
+            runId,
+            durationMs: Date.now() - startTime,
+            timedOut: false,
+            exitCode: result.exitCode ?? null,
+            signal: result.signal ?? null
+          }
+          await this.store.recordLauncherTest(actor, res).catch(() => {})
+          return res
+        }
+
+        // 3. Exit 0: collect output and parse buddy message
         const stdoutText = outputLines.join('\n')
         const rawEvents = await collectRawEvents(eventFile, stdoutText, launcherCommand.kind)
         const outputText = await collectOutputText(actor, launcherCommand.kind, outputFile, stdoutText)
         const parsedLines = parseActorEvents(parserActorForKind(actor, launcherCommand.kind), rawEvents)
 
-        if (result.exitCode !== 0) {
-          const stderrText = stderrLines.join('\n').trim()
-          const error = stderrText || outputText.trim() || `Process exited with code ${result.exitCode}`
-          return {
-            actor,
-            success: false,
-            phase: 'ping',
-            error: error.slice(0, 300)
-          }
-        }
-
-        // Verify the actor responded with a valid buddy message
         const message = parseBuddyMessage(outputText)
         const hasContent = message.kind === 'message'
           ? message.text.trim().length > 0
           : message.content.trim().length > 0
         if (!hasContent) {
-          return {
+          const res: TestLauncherResult = {
             actor,
             success: false,
             phase: 'ping',
-            error: 'Actor responded with empty content'
+            error: 'Actor responded with empty content',
+            runId,
+            durationMs: Date.now() - startTime,
+            timedOut: false,
+            exitCode: 0,
+            signal: null
           }
+          await this.store.recordLauncherTest(actor, res).catch(() => {})
+          return res
         }
 
         const sessionId = lastValue(parsedLines.map((line: any) => line.sessionId))
@@ -465,24 +518,39 @@ export class BuddyCoreService {
           ? message.text.slice(0, 200)
           : message.content.slice(0, 200)
 
-        return {
+        const res: TestLauncherResult = {
           actor,
           success: true,
           phase: 'ping',
           sessionId,
           threadId,
-          responsePreview: preview
+          responsePreview: redactSensitiveText(preview),
+          runId,
+          durationMs: Date.now() - startTime,
+          timedOut: false,
+          exitCode: 0,
+          signal: null
         }
+        await this.store.recordLauncherTest(actor, res).catch(() => {})
+        return res
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const stderrText = stderrLines.join('\n').trim()
         const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
-        return {
+        const rawDetail = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
+        const res: TestLauncherResult = {
           actor,
           success: false,
           phase: 'ping',
-          error: (message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')).slice(0, 300)
+          error: redactSensitiveText(rawDetail).slice(0, 300),
+          runId,
+          durationMs: Date.now() - startTime,
+          timedOut: false,
+          exitCode: null,
+          signal: null
         }
+        await this.store.recordLauncherTest(actor, res).catch(() => {})
+        return res
       }
     } finally {
       // Clean up temp directory
@@ -492,5 +560,5 @@ export class BuddyCoreService {
 }
 
 function defaultDataRoot(): string {
-  return join(homedir(), 'Library', 'Application Support', 'buddy')
+  return process.env.BUDDY_DATA_ROOT || join(homedir(), 'Library', 'Application Support', 'buddy')
 }

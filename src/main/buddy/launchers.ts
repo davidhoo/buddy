@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { basename } from 'node:path'
-import { installHintFor } from './shell-path'
+import { installHintFor, mergeChildEnv } from './shell-path'
 
 export type LauncherCommandKind =
   | 'native_claude'
@@ -110,7 +110,7 @@ export async function runLauncherWithPty(input: {
     cols: 200,
     rows: 50,
     cwd: input.cwd,
-    env: { ...process.env, ...input.env }
+    env: mergeChildEnv(process.env, input.env)
   })
 
   let exited = false
@@ -397,7 +397,7 @@ export async function runLauncher(input: {
   try {
     child = spawn(command, [...prefixArgs, ...input.args], {
       cwd: input.cwd,
-      env: { ...process.env, ...input.env },
+      env: mergeChildEnv(process.env, input.env),
       stdio: ['pipe', 'pipe', 'pipe']
     })
   } catch (error) {

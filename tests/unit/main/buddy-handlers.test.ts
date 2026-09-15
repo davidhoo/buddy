@@ -60,6 +60,11 @@ describe('registerBuddyHandlers', () => {
     const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
     cancelHandler({}, 'task', 'workspace')
     expect(service.cancelTask).toHaveBeenCalledWith('task', 'workspace')
+
+    const testLauncherHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:testLauncher')![1]
+    testLauncherHandler({}, 'agy', 'agy', { http_proxy: 'http://custom:7893' })
+    expect(service.testLauncher).toHaveBeenCalledWith('agy', 'agy', { http_proxy: 'http://custom:7893' })
+
     expect(handle).toHaveBeenCalledTimes(36)
   })
 })

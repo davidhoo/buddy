@@ -218,6 +218,11 @@ export interface TestLauncherResult {
   sessionId?: string
   threadId?: string
   responsePreview?: string
+  runId?: string
+  durationMs?: number
+  timedOut?: boolean
+  exitCode?: number | null
+  signal?: string | null
 }
 
 export interface TaskEventEnvelope {

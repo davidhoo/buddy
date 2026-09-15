@@ -17,7 +17,8 @@ describe('renderer api', () => {
         pauseCountdown: vi.fn(),
         interrupt: vi.fn(),
         getEvents: vi.fn(),
-        updateGlobalSettings: vi.fn()
+        updateGlobalSettings: vi.fn(),
+        testLauncher: vi.fn().mockResolvedValue({ actor: 'agy', success: true, phase: 'ping' })
       }
     })
   })
@@ -34,5 +35,16 @@ describe('renderer api', () => {
 
     await expect(api.bootstrap()).resolves.toEqual({ version: 'native', tasks: [] })
     expect(window.buddy.bootstrap).toHaveBeenCalled()
+  })
+
+  it('forwards actor, command, and env to window.buddy.testLauncher', async () => {
+    const { api } = await import('../../../src/renderer/lib/api')
+
+    await expect(
+      api.testLauncher('agy', 'agy', { http_proxy: 'http://127.0.0.1:7893' })
+    ).resolves.toEqual({ actor: 'agy', success: true, phase: 'ping' })
+    expect(window.buddy.testLauncher).toHaveBeenCalledWith('agy', 'agy', {
+      http_proxy: 'http://127.0.0.1:7893'
+    })
   })
 })

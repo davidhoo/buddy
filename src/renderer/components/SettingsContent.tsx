@@ -481,7 +481,7 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
   const handleTest = () => {
     setTestResult(null)
     testLauncherMutation.mutate(
-      { actor, command: saved },
+      { actor, command: saved, env: launcher.env },
       {
         onSuccess: (result) => setTestResult(result),
         onError: (err) => {

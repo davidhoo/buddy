@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,7 @@ vi.mock('../../../src/main/buddy/launchers', async (importOriginal) => {
 import { runLauncher, runLauncherWithPty } from '../../../src/main/buddy/launchers'
 import { BuddyRunner } from '../../../src/main/buddy/runner'
 import { BuddyStore } from '../../../src/main/buddy/store'
+import { BuddyCoreService } from '../../../src/main/buddy/service'
 
 describe('deadline handling across launcher paths', () => {
   beforeEach(() => vi.resetAllMocks())
@@ -50,5 +51,23 @@ describe('deadline handling across launcher paths', () => {
     expect(runLauncherWithPty).toHaveBeenCalledTimes(1)
     const detail = await store.getTaskDetail('demo', created.workspace_key)
     expect(detail.events.some((e) => ['actor.upgrade_detected', 'actor.completed'].includes(e.type))).toBe(false)
+  })
+
+  it('returns explicit timeout error when testLauncher times out', async () => {
+    vi.mocked(runLauncher).mockImplementation(async () => {
+      return { exitCode: null, signal: 'SIGTERM', timedOut: true }
+    })
+    const root = await mkdtemp(join(tmpdir(), 'buddy-service-timeout-'))
+    const fakeScript = join(root, 'fake-agy.sh')
+    await writeFile(fakeScript, '#!/bin/sh\nexit 0\n')
+    await chmod(fakeScript, 0o755)
+
+    const service = new BuddyCoreService({ dataRoot: root })
+    const result = await service.testLauncher('agy', fakeScript)
+    expect(result.success).toBe(false)
+    expect(result.phase).toBe('ping')
+    expect(result.error).toContain('timed out after 120 seconds')
+    expect(result.error).not.toBe('Process exited with code null')
+    await rm(root, { recursive: true, force: true }).catch(() => {})
   })
 })

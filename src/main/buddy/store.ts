@@ -202,6 +202,11 @@ export class BuddyStore {
     }
   }
 
+  async recordLauncherTest(actor: string, report: unknown): Promise<void> {
+    const filePath = join(this.dataRoot, 'diagnostics', `launcher-test-${actor}.json`)
+    await atomicWriteJson(filePath, report)
+  }
+
   async readTaskState(taskId: string, workspaceKey: string): Promise<TaskState> {
     return parseTaskState(await readJson(this.statePath(taskId, workspaceKey))) as TaskState
   }
@@ -887,7 +892,7 @@ async function readOptionalText(path: string): Promise<string> {
   }
 }
 
-async function atomicWriteJson(path: string, value: unknown): Promise<void> {
+export async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   await atomicWriteText(path, stringifyJson(value))
 }
 
