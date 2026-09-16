@@ -1,16 +1,22 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   applyShellProxyEnv,
+  discoverUserBinDirs,
+  envScriptFor,
   extractShellEnv,
+  loginShellArgs,
   mergeChildEnv,
   mergePathEntries,
   parseShellEnvOutput,
   PROXY_PAIRS,
   PROXY_VARS,
-  resolveProxyPairs
+  resolveProxyPairs,
+  resolveUserShell,
+  shellKind
 } from '../../../src/main/buddy/shell-path'
 
 describe('shell-path proxy detection and environment merging', () => {
@@ -79,6 +85,52 @@ describe('shell-path proxy detection and environment merging', () => {
       expect(extracted.proxyEnv.NO_PROXY).toBe(customNoProxy)
       expect(extracted.proxyEnv.https_proxy).toBeUndefined()
     })
+
+    it('extracts custom PATH from bash login rc, not zsh', async () => {
+      if (!existsSync('/bin/bash')) return
+
+      const bashHome = join(tempDir!, 'bash-home')
+      await mkdir(bashHome, { recursive: true })
+      const customPath = '/custom/bash/login/bin'
+      await writeFile(join(bashHome, '.bash_profile'), [
+        `export PATH="${customPath}:$PATH"`,
+        'export http_proxy="http://127.0.0.1:9555"',
+        'unset https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY'
+      ].join('\n'))
+
+      const extracted = extractShellEnv('/bin/bash', {
+        env: {
+          PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+          HOME: bashHome,
+          USER: process.env.USER ?? 'testuser'
+        },
+        timeoutMs: 5000
+      })
+      expect(extracted.path).toContain(customPath)
+      expect(extracted.proxyEnv.http_proxy).toBe('http://127.0.0.1:9555')
+    })
+  })
+
+  describe('user shell resolution', () => {
+    it('prefers $SHELL, then the account login shell, then the OS default', () => {
+      expect(resolveUserShell({ SHELL: '/opt/homebrew/bin/fish' })).toBe('/opt/homebrew/bin/fish')
+      expect(resolveUserShell({ SHELL: '  /bin/bash  ' })).toBe('/bin/bash')
+      expect(resolveUserShell({}, { loginShell: '/usr/local/bin/fish' })).toBe('/usr/local/bin/fish')
+      expect(resolveUserShell({}, { loginShell: '' })).toBe(process.platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
+    })
+
+    it('classifies shells and uses POSIX vs fish vs csh scripts', () => {
+      expect(shellKind('/bin/zsh')).toBe('posix')
+      expect(shellKind('/bin/bash')).toBe('posix')
+      expect(shellKind('/opt/homebrew/bin/fish')).toBe('fish')
+      expect(shellKind('/bin/tcsh')).toBe('csh')
+      expect(envScriptFor('posix')).toContain('${PATH+x}')
+      expect(envScriptFor('fish')).toContain('string join : $PATH')
+      expect(envScriptFor('csh')).toContain('$?PATH')
+      expect(loginShellArgs('posix', 'true')).toEqual(['-il', '-c', 'true'])
+      expect(loginShellArgs('fish', 'true')).toEqual(['-il', '-c', 'true'])
+      expect(loginShellArgs('csh', 'true')).toEqual(['-l', '-c', 'true'])
+    })
   })
 
   describe('PATH handling', () => {
@@ -100,6 +152,19 @@ describe('shell-path proxy detection and environment merging', () => {
       expect(spaceCount).toBe(1)
       const homebrewCount = parts.filter((p) => p === '/opt/homebrew/bin').length
       expect(homebrewCount).toBe(1)
+    })
+
+    it('prefers login-shell PATH over discovered fallbacks when merging that way', () => {
+      const shellPath = '/Users/me/.wecode-cli/bin:/usr/bin:/bin'
+      const fallbacks = ['/opt/homebrew/bin', '/Users/me/.wecode-cli/bin', '/Users/me/.local/bin']
+      const merged = mergePathEntries(fallbacks.join(':'), shellPath.split(':'))
+      expect(merged.split(':')).toEqual([
+        '/Users/me/.wecode-cli/bin',
+        '/usr/bin',
+        '/bin',
+        '/opt/homebrew/bin',
+        '/Users/me/.local/bin'
+      ])
     })
 
     it('preserves original PATH when shell extraction fails', () => {
@@ -132,6 +197,43 @@ describe('shell-path proxy detection and environment merging', () => {
       expect(proxyEnv.all_proxy).toBeUndefined() // unset variable absent
       expect((proxyEnv as Record<string, string>).MALICIOUS_VAR).toBeUndefined()
       expect((proxyEnv as Record<string, string>).OTHER_ENV).toBeUndefined()
+    })
+
+    it('recovers PATH when OSC/CSI decorations share the marker line', () => {
+      const osc = '\u001b]1337;RemoteHost=david@host\u0007\u001b]1337;CurrentDir=/tmp\u0007'
+      const csi = '\u001b[32m'
+      const rawOutput = [
+        `${osc}${csi}__BUDDY_ENV__:PATH=/Users/me/.wecode-cli/bin:/usr/bin`,
+        `${osc}__BUDDY_ENV__:http_proxy=http://127.0.0.1:7893`
+      ].join('\n')
+
+      const { path, proxyEnv } = parseShellEnvOutput(rawOutput)
+      expect(path).toBe('/Users/me/.wecode-cli/bin:/usr/bin')
+      expect(proxyEnv.http_proxy).toBe('http://127.0.0.1:7893')
+    })
+  })
+
+  describe('generic user bin discovery', () => {
+    it('picks existing ~/bin and $HOME/.<name>/bin without hardcoding tool names', async () => {
+      const home = join(tempDir!, 'home')
+      const wecodeBin = join(home, '.wecode-cli', 'bin')
+      const kimiBin = join(home, '.kimi-code', 'bin')
+      const userBin = join(home, 'bin')
+      const noBinDir = join(home, '.ssh')
+      const strayFile = join(home, '.zshrc')
+      await mkdir(wecodeBin, { recursive: true })
+      await mkdir(kimiBin, { recursive: true })
+      await mkdir(userBin, { recursive: true })
+      await mkdir(noBinDir, { recursive: true })
+      await writeFile(strayFile, '')
+
+      const systemBin = join(tempDir!, 'opt-bin')
+      await mkdir(systemBin, { recursive: true })
+
+      const discovered = discoverUserBinDirs(home, [systemBin, join(tempDir!, 'missing-bin')])
+      expect(discovered).toEqual(expect.arrayContaining([wecodeBin, kimiBin, userBin, systemBin]))
+      expect(discovered).not.toContain(noBinDir)
+      expect(discovered.some((dir) => dir.includes('missing-bin'))).toBe(false)
     })
   })
 
