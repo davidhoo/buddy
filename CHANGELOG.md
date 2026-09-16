@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.1] - 2026-09-16
+
+### Fixed
+- 从 Finder/Dock 启动时正确继承用户登录 shell 的 PATH：剥离终端 OSC/CSI 控制序列后再解析，避免设置页测试报「工具未找到 / spawn xxx ENOENT」
+- 按用户真实登录 shell 提取环境，不再假定 zsh；bash / fish / tcsh 使用对应脚本
+- PATH 兜底改为扫描已存在的 `~/bin` 与 `$HOME/.<name>/bin`，不再为单个 CLI 硬编码安装目录
+
+---
+
 ## [1.3.0] - 2026-09-15
 
 ### Fixed
@@ -613,6 +622,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[1.3.1]: https://github.com/davidhoo/buddy/releases/tag/v1.3.1
 [1.2.26]: https://github.com/davidhoo/buddy/releases/tag/v1.2.26
 [1.2.25]: https://github.com/davidhoo/buddy/releases/tag/v1.2.25
 [1.2.24]: https://github.com/davidhoo/buddy/releases/tag/v1.2.24
