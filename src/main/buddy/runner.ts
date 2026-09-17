@@ -21,6 +21,7 @@ import { BuddyStore } from './store'
 import { TaskServiceManager, type ServiceRun } from './task-services'
 import { BuddyEventBus } from './events'
 import type { TaskNotifier } from './notifications'
+import { AcpClient, AcpStdioTransport, defaultAcpArgs } from './acp'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -638,6 +639,28 @@ export class BuddyRunner {
       env: {},
       timeout_seconds: PING_TIMEOUT_SECONDS
     }
+
+    if (launcher.protocol === 'acp') {
+      const cwd = await existingCwd(detail.state.repo_root)
+      const args = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const transport = new AcpStdioTransport({
+        command: launcher.command,
+        args,
+        cwd,
+        env: launcher.env
+      })
+      try {
+        transport.start()
+        const client = new AcpClient(transport, { timeoutMs: launcher.timeout_seconds * 1000 })
+        await client.initialize()
+        await client.close()
+        return { success: true }
+      } catch (err) {
+        await transport.close().catch(() => {})
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
     const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
     const artifactsDir = join(taskDirectory, 'artifacts')
     await mkdir(artifactsDir, { recursive: true })
@@ -913,7 +936,198 @@ export class BuddyRunner {
     signal: AbortSignal,
     compactRetries = 0
   ): Promise<void> {
+    const detail = await this.store.getTaskDetail(taskId, workspaceKey)
+    const launcher = detail.settings.launchers[actor] ?? {
+      command: actor,
+      env: {},
+      timeout_seconds: 600
+    }
+    if (launcher.protocol === 'acp') {
+      return this.executeAcpActor(taskId, workspaceKey, actor, runId, userMessage, signal)
+    }
     return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries, 0)
+  }
+
+  private async executeAcpActor(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    runId: string,
+    userMessage: string,
+    signal: AbortSignal
+  ): Promise<void> {
+    const detail = await this.store.getTaskDetail(taskId, workspaceKey)
+    const globalSettings = await this.store.readGlobalSettings()
+    const launcher = detail.settings.launchers[actor] ?? {
+      command: actor,
+      env: {},
+      timeout_seconds: 600
+    }
+    const cwd = await existingCwd(detail.state.repo_root)
+    const existingSessionId = sessionIdForActor(actor, detail.state, detail.settings)
+    const args = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+
+    const prompt = buildActorPrompt({
+      actor,
+      round: detail.state.round,
+      repoRoot: detail.state.repo_root ?? '',
+      taskText: detail.task_text,
+      contextText: detail.context_text,
+      transcript: detail.transcript,
+      settings: detail.settings,
+      state: detail.state,
+      globalSettings,
+      userMessage,
+      cursorSingleTurn: false,
+      managedServices: true
+    })
+
+    const lockPath = await createRunLock(this.store.dataRoot, {
+      workspace_key: workspaceKey,
+      task_id: taskId,
+      run_id: runId,
+      pid: process.pid
+    })
+
+    let serviceRun: ServiceRun | undefined
+    let client: AcpClient | undefined
+    let transport: AcpStdioTransport | undefined
+
+    try {
+      if (signal.aborted) return
+      serviceRun = await this.services.openRun(taskId, workspaceKey, runId, launcher.env)
+      const startedAtMs = Date.now()
+
+      transport = new AcpStdioTransport({
+        command: launcher.command,
+        args,
+        cwd,
+        env: { ...launcher.env, ...serviceRun.env }
+      })
+      transport.start()
+
+      client = new AcpClient(transport, {
+        timeoutMs: launcher.timeout_seconds * 1000
+      })
+
+      const onAbort = () => {
+        client?.close().catch(() => {})
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+
+      // 1. Initialize
+      await client.initialize()
+
+      // 2. Session
+      let sessionId = existingSessionId
+      if (sessionId) {
+        try {
+          const loaded = await client.loadSession({ sessionId, cwd })
+          sessionId = loaded.sessionId || sessionId
+        } catch {
+          const created = await client.newSession({ cwd })
+          sessionId = created.sessionId
+        }
+      } else {
+        const created = await client.newSession({ cwd })
+        sessionId = created.sessionId
+      }
+
+      // 3. Prompt turn
+      const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
+      const artifactsDir = join(taskDirectory, 'artifacts')
+      await mkdir(artifactsDir, { recursive: true })
+      const promptFile = join(artifactsDir, `${runId}-prompt.md`)
+      const outputFile = join(artifactsDir, `${runId}-output.md`)
+      const eventFile = join(artifactsDir, `${runId}-events.jsonl`)
+      await writeFile(promptFile, prompt)
+
+      let outputText = ''
+      let breakReason: string | undefined
+
+      await client.prompt(
+        { sessionId, prompt },
+        {
+          onContentDelta: (text) => {
+            outputText += text
+            this.events?.publish({
+              workspace_key: workspaceKey,
+              task_id: taskId,
+              event: {
+                seq: 0,
+                type: 'actor.stdout',
+                actor,
+                ts: new Date().toISOString(),
+                run_id: runId,
+                payload: { text, stream: 'delta' }
+              }
+            })
+          },
+          onThinkingDelta: (thinking) => {
+            void appendFile(eventFile, JSON.stringify({ type: 'acp.thinking', thinking }) + '\n').catch(() => {})
+            this.events?.publish({
+              workspace_key: workspaceKey,
+              task_id: taskId,
+              event: {
+                seq: 0,
+                type: 'actor.thinking',
+                actor,
+                ts: new Date().toISOString(),
+                run_id: runId,
+                payload: { thinking }
+              }
+            })
+          },
+          onToolCall: (_id, name, input) => {
+            void appendFile(eventFile, JSON.stringify({ type: 'acp.tool_use', toolName: name, toolInput: input }) + '\n').catch(() => {})
+            this.events?.publish({
+              workspace_key: workspaceKey,
+              task_id: taskId,
+              event: {
+                seq: 0,
+                type: 'actor.stdout',
+                actor,
+                ts: new Date().toISOString(),
+                run_id: runId,
+                payload: { text: `🔧 ${name}\n`, stream: 'line' }
+              }
+            })
+          },
+          onBreak: (reason) => {
+            breakReason = reason || 'Task completed'
+            void appendFile(eventFile, JSON.stringify({ type: 'acp.tool_use', toolName: 'buddy_propose_break', toolInput: { reason: breakReason } }) + '\n').catch(() => {})
+          }
+        }
+      )
+
+      await writeFile(outputFile, outputText)
+
+      signal.removeEventListener('abort', onAbort)
+      const elapsedMs = Date.now() - startedAtMs
+
+      if (breakReason) {
+        outputText = JSON.stringify({ type: 'break', content: breakReason })
+      }
+
+      await this.completeActor(
+        taskId,
+        workspaceKey,
+        actor,
+        runId,
+        outputText,
+        [{ text: outputText, sessionId }],
+        elapsedMs,
+        0
+      )
+    } catch (error) {
+      const failureMessage = error instanceof Error ? error.message : String(error)
+      await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
+      throw error
+    } finally {
+      await client?.close().catch(() => {})
+      serviceRun?.close()
+      await removeRunLock(lockPath)
+    }
   }
 
   private async executeActorInner(
@@ -1276,8 +1490,11 @@ export class BuddyRunner {
         compact_retries: 0,
         updated_at: now
       }
+      if (sessionId) {
+        next.actor_sessions = { ...(next.actor_sessions ?? {}), [actor]: sessionId }
+      }
       if (actor === 'claude' && sessionId) next.claude_session_id = sessionId
-      if (actor === 'codex' && threadId) next.codex_thread_id = threadId
+      if (actor === 'codex' && (threadId || sessionId)) next.codex_thread_id = (threadId || sessionId)
       if (actor === 'cursor' && sessionId) next.cursor_session_id = sessionId
       if (actor === 'agy' && sessionId) next.agy_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
@@ -1930,6 +2147,7 @@ export function needsHealthCheck(state: TaskState, settings: TaskSettings): bool
 }
 
 function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<TaskSettings>): string | undefined {
+  if (state.actor_sessions?.[actor]) return state.actor_sessions[actor]
   if (actor === 'claude') return state.claude_session_id ?? stringSetting(settings, 'seed_claude_session_id')
   if (actor === 'codex') return state.codex_thread_id ?? stringSetting(settings, 'seed_codex_thread_id')
   if (actor === 'cursor') return state.cursor_session_id ?? stringSetting(settings, 'seed_cursor_session_id')

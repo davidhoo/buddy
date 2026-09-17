@@ -1,8 +1,51 @@
-import type { GlobalSettings, Launcher } from './types'
+import type { AcpPreset, GlobalSettings, Launcher } from './types'
 
 export const DEFAULT_LAUNCHER_ORDER = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
 
 export const DEFAULT_LAUNCHER_TIMEOUT_SECONDS = 7200
+
+export const KNOWN_ACP_PRESETS: AcpPreset[] = [
+  {
+    id: 'opencode-acp',
+    name: 'OpenCode ACP',
+    actor: 'opencode',
+    command: 'opencode',
+    args: ['acp'],
+    description: 'OpenCode CLI with native ACP server'
+  },
+  {
+    id: 'wecode-opencode-acp',
+    name: 'WeCode OpenCode ACP',
+    actor: 'opencode',
+    command: 'wecode',
+    args: ['opencode', 'acp'],
+    description: 'WeCode OpenCode native ACP server'
+  },
+  {
+    id: 'codex-acp',
+    name: 'Codex ACP',
+    actor: 'codex',
+    command: 'npx',
+    args: ['-y', '@agentclientprotocol/codex-acp'],
+    description: 'Codex ACP adapter'
+  },
+  {
+    id: 'claude-acp',
+    name: 'Claude ACP',
+    actor: 'claude',
+    command: 'npx',
+    args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+    description: 'Claude Agent ACP adapter'
+  },
+  {
+    id: 'kimi-acp',
+    name: 'Kimi ACP',
+    actor: 'kimi',
+    command: 'kimi',
+    args: ['acp'],
+    description: 'Kimi CLI with native ACP mode'
+  }
+]
 
 const DEFAULT_LAUNCHER_COMMANDS: Record<string, string> = {
   claude: 'claude',
@@ -23,7 +66,7 @@ export function defaultLauncherFor(actor: string): Launcher {
 
 export function normalizeLauncher(actor: string, launcher?: Partial<Launcher> | null): Launcher {
   const fallback = defaultLauncherFor(actor)
-  return {
+  const result: Launcher = {
     command: typeof launcher?.command === 'string' && launcher.command.trim() !== '' ? launcher.command : fallback.command,
     env: launcher?.env ? { ...launcher.env } : { ...fallback.env },
     timeout_seconds:
@@ -31,6 +74,13 @@ export function normalizeLauncher(actor: string, launcher?: Partial<Launcher> | 
         ? launcher.timeout_seconds
         : fallback.timeout_seconds
   }
+  if (launcher?.protocol) {
+    result.protocol = launcher.protocol
+  }
+  if (Array.isArray(launcher?.args) && launcher.args.length > 0) {
+    result.args = [...launcher.args]
+  }
+  return result
 }
 
 export function normalizeLaunchers(

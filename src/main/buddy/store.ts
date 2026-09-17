@@ -565,6 +565,23 @@ export class BuddyStore {
         const itemText = (event.item as Record<string, unknown>).text as string | undefined
         if (itemText) events.push({ type: 'text', text: itemText })
       }
+
+      // ACP format
+      if (event.type === 'acp.thinking') {
+        const len = typeof event.thinking === 'string' ? event.thinking.length : ((event.thinkingLength as number) ?? 0)
+        events.push({ type: 'thinking', thinkingLength: len })
+      }
+      if (event.type === 'acp.tool_use') {
+        const name = (event.toolName ?? event.name) as string
+        const input = (event.toolInput ?? event.input) as Record<string, unknown> | undefined
+        if (name) {
+          events.push({ type: 'tool_use', toolName: name, toolInput: input })
+        }
+      }
+      if (event.type === 'acp.tool_result') {
+        const preview = (event.toolResultPreview ?? event.preview ?? (typeof event.result === 'string' ? event.result : JSON.stringify(event.result))) as string | undefined
+        events.push({ type: 'tool_result', toolResultPreview: preview?.slice(0, 200), isError: event.isError as boolean | undefined })
+      }
     }
 
     // Fallback: compute duration from event timestamps if not provided by actor
@@ -949,11 +966,14 @@ function coerceLauncherOverrides(value: unknown): Record<string, Partial<Launche
   for (const [actor, raw] of Object.entries(value)) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
     const candidate = raw as Partial<Launcher>
-    launchers[actor] = {
+    const obj: Partial<Launcher> = {
       command: candidate.command,
       env: candidate.env,
       timeout_seconds: candidate.timeout_seconds
     }
+    if (candidate.protocol) obj.protocol = candidate.protocol
+    if (candidate.args && candidate.args.length > 0) obj.args = candidate.args
+    launchers[actor] = obj
   }
   return launchers
 }

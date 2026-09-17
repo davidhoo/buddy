@@ -74,6 +74,7 @@ export interface TaskState {
   countdown?: Countdown | null
   active_run?: ActiveRun | null
   instruction_queue?: InstructionQueueItem[]
+  actor_sessions?: Record<string, string>
   claude_session_id?: string | null
   codex_thread_id?: string | null
   cursor_session_id?: string | null
@@ -133,9 +134,20 @@ export interface TaskSettings {
 }
 
 export interface Launcher {
+  protocol?: 'acp' | 'cli'
   command: string
+  args?: string[]
   env: Record<string, string>
   timeout_seconds: number
+}
+
+export interface AcpPreset {
+  id: string
+  name: string
+  actor: string
+  command: string
+  args: string[]
+  description: string
 }
 
 export interface TranscriptEntry {

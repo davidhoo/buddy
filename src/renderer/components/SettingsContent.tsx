@@ -26,7 +26,7 @@ import {
   bindingsEqual,
 } from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
-import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
+import { DEFAULT_LAUNCHER_ORDER, KNOWN_ACP_PRESETS, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
 import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
 import { Switch } from './Switch'
 
@@ -283,6 +283,10 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   const saveLauncher = (actor: string, patch: Partial<Launcher>) => {
     const cur = launchers[actor] ?? defaultLauncherFor(actor)
     const next = { ...cur, ...patch, env: cur.env }
+    if (!patch.protocol) {
+      delete next.protocol
+      delete next.args
+    }
     save({ launchers: { ...launchers, [actor]: next } })
   }
 
@@ -315,7 +319,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
               actor={actor}
               launcher={launcher}
               info={launcherInfoFor(actor, t)}
-              onSaveCommand={(command) => saveLauncher(actor, { command })}
+              onSave={(patch) => saveLauncher(actor, patch)}
             />
           )
         })}
@@ -459,29 +463,59 @@ function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   )
 }
 
-function LauncherSection({ actor, launcher, info, onSaveCommand }: {
+function LauncherSection({ actor, launcher, info, onSave }: {
   actor: string
   launcher: Launcher
   info: LauncherInfo
-  onSaveCommand: (command: string) => void
+  onSave: (patch: Partial<Launcher>) => void
 }) {
   const t = useT()
-  const saved = launcher.command || ''
-  const [draft, setDraft] = useState(saved)
+  const savedProtocol = launcher.protocol === 'acp' ? 'acp' : 'cli'
+  const savedCommand = launcher.command || ''
+  const savedArgs = (launcher.args ?? []).join(' ')
+
+  const [protocol, setProtocol] = useState<'cli' | 'acp'>(savedProtocol)
+  const [commandDraft, setCommandDraft] = useState(savedCommand)
+  const [argsDraft, setArgsDraft] = useState(savedArgs)
 
   useEffect(() => {
-    setDraft(saved)
-  }, [saved])
+    setProtocol(savedProtocol)
+    setCommandDraft(savedCommand)
+    setArgsDraft(savedArgs)
+  }, [savedProtocol, savedCommand, savedArgs])
 
-  const dirty = draft !== saved
+  const dirty =
+    protocol !== savedProtocol ||
+    commandDraft !== savedCommand ||
+    (protocol === 'acp' && argsDraft !== savedArgs)
 
   const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
   const testLauncherMutation = useTestLauncher()
 
+  const actorPresets = KNOWN_ACP_PRESETS.filter((p) => p.actor === actor)
+
+  const handleSave = () => {
+    const trimmedCommand = commandDraft.trim()
+    const trimmedArgs = argsDraft.trim()
+    const patch: Partial<Launcher> = {
+      command: trimmedCommand,
+      protocol: protocol === 'acp' ? 'acp' : undefined,
+      args: protocol === 'acp' && trimmedArgs ? trimmedArgs.split(/\s+/) : undefined
+    }
+    onSave(patch)
+  }
+
   const handleTest = () => {
     setTestResult(null)
+    const trimmedArgs = argsDraft.trim()
     testLauncherMutation.mutate(
-      { actor, command: saved, env: launcher.env },
+      {
+        actor,
+        command: commandDraft.trim(),
+        env: launcher.env,
+        protocol,
+        args: protocol === 'acp' && trimmedArgs ? trimmedArgs.split(/\s+/) : undefined
+      },
       {
         onSuccess: (result) => setTestResult(result),
         onError: (err) => {
@@ -501,49 +535,166 @@ function LauncherSection({ actor, launcher, info, onSaveCommand }: {
       <div className="flex items-center gap-2 mb-1">
         <ActorBadge actor={actor} />
         <h2 className="text-base font-semibold text-fg">{info.title}</h2>
+        {savedProtocol === 'acp' && (
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+            ACP
+          </span>
+        )}
       </div>
-      <p className="text-sm text-fg-secondary mb-3 leading-relaxed">{info.hint}</p>
-      <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={draft}
-          placeholder={info.placeholder}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && dirty) {
-              e.preventDefault()
-              onSaveCommand(draft)
-            }
-            if (e.key === 'Escape') {
-              setDraft(saved)
-            }
-          }}
-          className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-        />
-        <button
-          type="button"
-          onClick={() => onSaveCommand(draft)}
-          disabled={!dirty}
-          className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-        >
-          {t('common.save')}
-        </button>
-        <button
-          type="button"
-          onClick={handleTest}
-          disabled={!saved || testLauncherMutation.isPending}
-          className="px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
-          title={t('settings.launcher.test')}
-        >
-          {testLauncherMutation.isPending ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Zap size={12} />
-          )}
-          {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
-        </button>
+      <p className="text-sm text-fg-secondary mb-3 leading-relaxed">
+        {protocol === 'acp' ? t('settings.launcher.acpHint') : info.hint}
+      </p>
+
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-fg-secondary">{t('settings.launcher.mode')}:</span>
+          <div className="inline-flex rounded-lg p-0.5 bg-bg-muted border border-border">
+            <button
+              type="button"
+              onClick={() => setProtocol('cli')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                protocol === 'cli'
+                  ? 'bg-bg-elevated text-fg shadow-sm'
+                  : 'text-fg-secondary hover:text-fg'
+              }`}
+            >
+              {t('settings.launcher.modeCli')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setProtocol('acp')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                protocol === 'acp'
+                  ? 'bg-bg-elevated text-purple-600 dark:text-purple-400 shadow-sm font-semibold'
+                  : 'text-fg-secondary hover:text-fg'
+              }`}
+            >
+              {t('settings.launcher.modeAcp')}
+            </button>
+          </div>
+        </div>
+
+        {actorPresets.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-fg-muted">{t('settings.launcher.presets')}:</span>
+            {actorPresets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  setProtocol('acp')
+                  setCommandDraft(preset.command)
+                  setArgsDraft(preset.args.join(' '))
+                }}
+                className="px-2 py-0.5 text-[11px] rounded border border-border/80 hover:border-purple-500/50 hover:bg-purple-500/5 text-fg-secondary hover:text-fg transition-colors"
+                title={preset.description}
+              >
+                {preset.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {protocol === 'cli' ? (
+        <>
+          <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={commandDraft}
+              placeholder={info.placeholder}
+              onChange={(e) => setCommandDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && dirty) {
+                  e.preventDefault()
+                  handleSave()
+                }
+                if (e.key === 'Escape') {
+                  setCommandDraft(savedCommand)
+                }
+              }}
+              className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!dirty}
+              className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              {t('common.save')}
+            </button>
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={!commandDraft.trim() || testLauncherMutation.isPending}
+              className="px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
+              title={t('settings.launcher.test')}
+            >
+              {testLauncherMutation.isPending ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Zap size={12} />
+              )}
+              {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <div>
+            <div className="text-xs font-medium text-fg-secondary mb-1.5">{info.label}</div>
+            <input
+              type="text"
+              value={commandDraft}
+              placeholder={info.placeholder}
+              onChange={(e) => setCommandDraft(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-fg-secondary mb-1.5">{t('settings.launcher.args')}</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={argsDraft}
+                placeholder={t('settings.launcher.argsPlaceholder')}
+                onChange={(e) => setArgsDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && dirty) {
+                    e.preventDefault()
+                    handleSave()
+                  }
+                }}
+                className="flex-1 px-3 py-2 text-sm bg-transparent border border-border rounded-lg font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!dirty}
+                className="px-3 py-2 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              >
+                {t('common.save')}
+              </button>
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={!commandDraft.trim() || testLauncherMutation.isPending}
+                className="px-3 py-2 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
+                title={t('settings.launcher.test')}
+              >
+                {testLauncherMutation.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Zap size={12} />
+                )}
+                {testLauncherMutation.isPending ? t('settings.launcher.testing') : t('settings.launcher.test')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {testResult && (
         <div className={`mt-3 px-3 py-2 rounded-lg text-xs leading-relaxed ${
           testResult.success

@@ -111,6 +111,7 @@ export const taskStateSchema = z.object({
   countdown: countdownSchema.nullable().optional(),
   active_run: activeRunSchema.nullable().optional(),
   instruction_queue: z.array(instructionQueueItemSchema).default([]),
+  actor_sessions: z.record(z.string(), z.string()).default({}),
   claude_session_id: z.string().nullable().optional(),
   codex_thread_id: z.string().nullable().optional(),
   cursor_session_id: z.string().nullable().optional(),
@@ -136,7 +137,9 @@ export const taskStateSchema = z.object({
 })
 
 export const launcherSchema = z.object({
+  protocol: z.enum(['acp', 'cli']).optional(),
   command: z.string(),
+  args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).default({}),
   timeout_seconds: z.number().default(600)
 })

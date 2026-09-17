@@ -46,7 +46,7 @@ export interface BuddyHandlerService {
   gitPush(repoRoot: string, remote: string): Promise<import('../../shared/types').GitPushResult>
   generateCommitMessage(input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: unknown }): Promise<{ message: string }>
   cancelGenerateCommitMessage(): void
-  testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult>
+  testLauncher(actor: string, command: string, env?: Record<string, string>, protocol?: 'cli' | 'acp', args?: string[]): Promise<TestLauncherResult>
   detectActorModels(): Promise<Record<string, string | undefined>>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
 }
@@ -147,8 +147,10 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:cancelGenerateCommitMessage', () =>
     service.cancelGenerateCommitMessage()
   )
-  ipcMain.handle('buddy:testLauncher', (_event, actor: string, command: string, env?: Record<string, string>) =>
-    service.testLauncher(actor, command, env)
+  ipcMain.handle(
+    'buddy:testLauncher',
+    (_event, actor: string, command: string, env?: Record<string, string>, ...rest: unknown[]) =>
+      (service.testLauncher as (...args: unknown[]) => Promise<TestLauncherResult>)(actor, command, env, ...rest)
   )
   ipcMain.handle('buddy:detectActorModels', () =>
     service.detectActorModels()

@@ -46,7 +46,8 @@ import { createTaskNotifier } from './notifications'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
-import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherRunResult } from './launchers'
+import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, splitCommand, type LauncherRunResult } from './launchers'
+import { AcpClient, AcpStdioTransport, defaultAcpArgs } from './acp'
 import { detectModelFromConfig } from './model-detect'
 import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings } from '../../shared/defaults'
 import { buildPingPrompt } from './prompts'
@@ -329,14 +330,20 @@ export class BuddyCoreService {
     return result
   }
 
-  async testLauncher(actor: string, command: string, env?: Record<string, string>): Promise<TestLauncherResult> {
+  async testLauncher(
+    actor: string,
+    command: string,
+    env?: Record<string, string>,
+    protocol?: 'cli' | 'acp',
+    args?: string[]
+  ): Promise<TestLauncherResult> {
     const PING_TIMEOUT_SECONDS = 120
     const startTime = Date.now()
 
     // Phase 1: Tool check - verify the command exists and can be spawned
     try {
-      const splitCmd = command.trim().match(/(?:[^\s"]+|"[^"]*")+/g) ?? [command]
-      const baseExecutable = splitCmd[0]?.replace(/^"|"$/g, '') ?? ''
+      const splitCmd = splitCommand(command)
+      const baseExecutable = splitCmd[0] ?? ''
       await new Promise<void>((resolve, reject) => {
         const child = spawn(baseExecutable, ['--version'], {
           env: mergeChildEnv(process.env, env),
@@ -376,10 +383,57 @@ export class BuddyCoreService {
       return res
     }
 
-    // Phase 2: Ping test - actually invoke the actor with a hello prompt
+    // Phase 2: Ping test - actually invoke the actor with a hello prompt (or ACP initialize handshake)
     const testDir = join(tmpdir(), `buddy-test-${actor}-${Date.now()}`)
     try {
       await mkdir(testDir, { recursive: true })
+
+      if (protocol === 'acp') {
+        const acpArgs = args && args.length > 0 ? args : defaultAcpArgs(command, actor)
+        const transport = new AcpStdioTransport({
+          command,
+          args: acpArgs,
+          cwd: testDir,
+          env
+        })
+        try {
+          transport.start()
+          const client = new AcpClient(transport, { timeoutMs: PING_TIMEOUT_SECONDS * 1000 })
+          const initResult = await client.initialize()
+          const info = initResult.agentInfo ?? initResult.serverInfo
+          const serverName = info?.name ?? 'ACP Agent'
+          const serverVersion = info?.version ? ` v${info.version}` : ''
+          await client.close().catch(() => {})
+          const res: TestLauncherResult = {
+            actor,
+            success: true,
+            phase: 'ping',
+            responsePreview: `Connected: ${serverName}${serverVersion}`,
+            durationMs: Date.now() - startTime,
+            timedOut: false,
+            exitCode: 0,
+            signal: null
+          }
+          await this.store.recordLauncherTest(actor, res).catch(() => {})
+          return res
+        } catch (err) {
+          await transport.close().catch(() => {})
+          const message = err instanceof Error ? err.message : String(err)
+          const res: TestLauncherResult = {
+            actor,
+            success: false,
+            phase: 'ping',
+            error: redactSensitiveText(message).slice(0, 300),
+            durationMs: Date.now() - startTime,
+            timedOut: false,
+            exitCode: null,
+            signal: null
+          }
+          await this.store.recordLauncherTest(actor, res).catch(() => {})
+          return res
+        }
+      }
+
       const runId = `test_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
       const prompt = buildPingPrompt(actor)
       const promptFile = join(testDir, `${runId}-prompt.md`)

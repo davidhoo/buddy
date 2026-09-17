@@ -227,8 +227,19 @@ export function useUpdateGlobalSettings() {
 
 export function useTestLauncher() {
   return useMutation({
-    mutationFn: ({ actor, command, env }: { actor: string; command: string; env?: Record<string, string> }) =>
-      api.testLauncher(actor, command, env)
+    mutationFn: ({
+      actor,
+      command,
+      env,
+      protocol,
+      args
+    }: {
+      actor: string
+      command: string
+      env?: Record<string, string>
+      protocol?: 'cli' | 'acp'
+      args?: string[]
+    }) => api.testLauncher(actor, command, env, protocol, args)
   })
 }
 
