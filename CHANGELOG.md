@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.2] - 2026-09-18
+
+### Added
+- 在 Actor 提示词（Prompt）与运行时状态中明确执行者（Implementer）与审查者（Reviewer）身份设定与协作职责，避免双代理交接时角色混淆
+
+---
+
 ## [2.0.1] - 2026-09-18
 
 ### Fixed
@@ -646,6 +653,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[2.0.2]: https://github.com/davidhoo/buddy/releases/tag/v2.0.2
 [2.0.1]: https://github.com/davidhoo/buddy/releases/tag/v2.0.1
 [2.0.0]: https://github.com/davidhoo/buddy/releases/tag/v2.0.0
 [1.3.1]: https://github.com/davidhoo/buddy/releases/tag/v1.3.1
