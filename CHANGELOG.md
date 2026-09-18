@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.1] - 2026-09-18
+
+### Fixed
+- 设置页选择 ACP 协议时自动填入最优预设（全局直连优先，否则 npx），并在全局适配器安装后自动把 npx 草案升级为直连命令，减少冷启动
+- WeCode 演员恢复各自基础演员的品牌色（消息气泡、状态栏、设置页徽标），不再显示为灰色
+- 发布脚本改为从 CHANGELOG.md 提取对应版本段落作为 GitHub Release 说明，缺失或占位符说明将直接阻断发布
+
+---
+
 ## [2.0.0] - 2026-09-18
 
 ### Added
@@ -637,6 +646,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[2.0.1]: https://github.com/davidhoo/buddy/releases/tag/v2.0.1
 [2.0.0]: https://github.com/davidhoo/buddy/releases/tag/v2.0.0
 [1.3.1]: https://github.com/davidhoo/buddy/releases/tag/v1.3.1
 [1.2.26]: https://github.com/davidhoo/buddy/releases/tag/v1.2.26
