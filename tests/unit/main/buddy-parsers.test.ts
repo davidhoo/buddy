@@ -370,13 +370,82 @@ describe('buddy actor parsers', () => {
   })
 
   it('extracts content containing quote-brace pattern inside backticks', () => {
-    const text = '{"type": "chat", "content": "Example closing: `"} at the end"}'
+    // Matched inline-code backticks around `"}` so brace scanning skips them.
+    const text = '{"type": "chat", "content": "Example closing: `"}` at the end"}'
     const message = parseBuddyMessage(text)
 
     expect(message).toEqual({
       kind: 'message',
-      text: 'Example closing: `"} at the end'
+      text: 'Example closing: `"}` at the end'
     })
+  })
+
+  it('ignores trailing model degeneration after a complete buddy JSON envelope', () => {
+    const valid = '{"type":"chat","content":"agy，S3 写完了。commit 等你 approval。"}'
+    const garbage = Array.from({ length: 200 }, () => '\n"\n}\n```').join('')
+    const message = parseBuddyMessage(valid + garbage)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: 'agy，S3 写完了。commit 等你 approval。'
+    })
+    expect((message as { text: string }).text.length).toBeLessThan(100)
+  })
+
+  it('ignores trailing degeneration after a fenced buddy JSON block', () => {
+    const valid = '```json\n{"type":"chat","content":"正常收尾"}\n```'
+    const garbage = Array.from({ length: 200 }, () => '\n"\n}\n```').join('')
+    const message = parseBuddyMessage(valid + garbage)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: '正常收尾'
+    })
+  })
+
+  it('loose-extracts unescaped quotes without swallowing trailing quote-brace loops', () => {
+    const text =
+      '{"type": "chat", "content": "含有"引号"的摘要"}\n"\n}\n```\n"\n}\n```\n"\n}\n```'
+    const message = parseBuddyMessage(text)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: '含有"引号"的摘要'
+    })
+  })
+
+  it('keeps parsed buddy JSON when trailing prose contains quote-brace examples', () => {
+    const text =
+      '{"type":"chat","content":"这是第一段"}\n后面的补充说明：配置形如 {"key": "val"}'
+    const message = parseBuddyMessage(text)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: '这是第一段'
+    })
+  })
+
+  it('loose-extracts unescaped quotes without absorbing trailing prose and noise', () => {
+    const text =
+      '{"type": "chat", "content": "未转义"引号"内容"}\nHere is extra\n"\n}\n```'
+    const message = parseBuddyMessage(text)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: '未转义"引号"内容'
+    })
+  })
+
+  it('ignores trailing noise when content has an unpaired backtick', () => {
+    const valid = '{"type": "chat", "content": "注意：反引号 ` 未闭合"}'
+    const garbage = Array.from({ length: 200 }, () => '\n"\n}\n```').join('')
+    const message = parseBuddyMessage(valid + garbage)
+
+    expect(message).toEqual({
+      kind: 'message',
+      text: '注意：反引号 ` 未闭合'
+    })
+    expect((message as { text: string }).text.includes('```')).toBe(false)
   })
 
   it('extracts buddy JSON from escaped JSON in preamble', () => {
