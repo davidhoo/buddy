@@ -283,7 +283,8 @@ export class BuddyCoreService {
       actor,
       lang: input.lang,
       paths: input.paths,
-      launcher
+      launcher,
+      dataRoot: this.store.dataRoot
     })
     return { message: result.message }
   }

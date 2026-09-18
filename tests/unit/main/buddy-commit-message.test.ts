@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { execSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -71,6 +71,54 @@ describe('resolveLauncher', () => {
   it('falls back to default launcher', () => {
     const launcher = resolveLauncher('kimi', null, null)
     expect(launcher.command).toBe('kimi')
+  })
+
+  it('inherits ACP protocol and model from task launchers', () => {
+    const launcher = resolveLauncher('claude', {
+      launchers: {
+        claude: {
+          protocol: 'acp',
+          command: 'npx',
+          args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+          env: {},
+          timeout_seconds: 7200,
+          model: 'sonnet-4.5'
+        }
+      }
+    } as any, null)
+    expect(launcher.protocol).toBe('acp')
+    expect(launcher.model).toBe('sonnet-4.5')
+    expect(launcher.args).toEqual(['-y', '@agentclientprotocol/claude-agent-acp'])
+  })
+
+  it('inherits ACP protocol from global when task entry omits it', () => {
+    const launcher = resolveLauncher(
+      'claude',
+      {
+        launchers: {
+          claude: {
+            command: 'npx',
+            env: {},
+            timeout_seconds: 7200,
+            model: 'opus-4.6'
+          }
+        }
+      } as any,
+      {
+        launchers: {
+          claude: {
+            protocol: 'acp',
+            command: 'npx',
+            args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+            env: {},
+            timeout_seconds: 7200
+          }
+        }
+      } as any
+    )
+    expect(launcher.protocol).toBe('acp')
+    expect(launcher.model).toBe('opus-4.6')
+    expect(launcher.args).toEqual(['-y', '@agentclientprotocol/claude-agent-acp'])
   })
 })
 
@@ -352,5 +400,270 @@ describe('generateCommitMessageWithActor orchestration', () => {
         launcher: { command: 'opencode', env: {}, timeout_seconds: 120 }
       })
     ).rejects.toThrow('timed out')
+  })
+
+  it('does not invoke the CLI launcher path for ACP actors', async () => {
+    const root = await import('node:fs/promises').then(({ mkdtemp, writeFile }) =>
+      mkdtemp(join(tmpdir(), 'buddy-commit-acp-skip-cli-')).then(async (dir) => {
+        const fake = join(dir, 'fake-acp.js')
+        await writeFile(fake, `
+          const readline = require('readline');
+          const rl = readline.createInterface({ input: process.stdin });
+          rl.on('line', (line) => {
+            const req = JSON.parse(line);
+            if (req.method === 'initialize') {
+              process.stdout.write(JSON.stringify({
+                jsonrpc: '2.0', id: req.id,
+                result: { protocolVersion: '1.0', agentInfo: { name: 'commit-acp' } }
+              }) + '\\n');
+            } else if (req.method === 'session/new') {
+              process.stdout.write(JSON.stringify({
+                jsonrpc: '2.0', id: req.id,
+                result: { sessionId: 'commit_sess' }
+              }) + '\\n');
+            } else if (req.method === 'session/prompt') {
+              process.stdout.write(JSON.stringify({
+                jsonrpc: '2.0', method: 'session/contentDelta',
+                params: { text: '{"type":"commit_message","message":"feat: via acp"}' }
+              }) + '\\n');
+              process.stdout.write(JSON.stringify({
+                jsonrpc: '2.0', id: req.id, result: { status: 'completed' }
+              }) + '\\n');
+            }
+          });
+        `)
+        return { dir, fake }
+      })
+    )
+
+    try {
+      const result = await generateCommitMessageWithActor({
+        repoRoot: tempRepo,
+        actor: 'claude',
+        paths: ['src-app.ts'],
+        launcher: {
+          protocol: 'acp',
+          command: process.execPath,
+          args: [root.fake],
+          env: {},
+          timeout_seconds: 30
+        }
+      })
+      expect(result.message).toBe('feat: via acp')
+      expect(result.log.launcherKind).toBe('acp')
+      expect(runLauncher).not.toHaveBeenCalled()
+      expect(runLauncherWithPty).not.toHaveBeenCalled()
+    } finally {
+      try { rmSync(root.dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+})
+
+describe('generateCommitMessageWithActor ACP short session', () => {
+  let tempRepo: string
+
+  beforeEach(() => {
+    tempRepo = mkdtempSync(join(tmpdir(), 'buddy-commit-acp-repo-'))
+    execSync('git init', { cwd: tempRepo })
+    execSync('git config user.email test@test.com', { cwd: tempRepo })
+    execSync('git config user.name Test', { cwd: tempRepo })
+    writeFileSync(join(tempRepo, 'src-app.ts'), 'initial\n')
+    execSync('git add -A && git commit -m "init"', { cwd: tempRepo })
+    writeFileSync(join(tempRepo, 'src-app.ts'), 'modified\n')
+  })
+
+  afterEach(() => {
+    cancelGenerateCommitMessage()
+    try { rmSync(tempRepo, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('opens session/new with the task model and never session/load', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'buddy-commit-acp-model-'))
+    const fake = join(dir, 'fake-acp.js')
+    const methodsLog = join(dir, 'methods.jsonl')
+    writeFileSync(fake, `
+      const fs = require('fs');
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on('line', (line) => {
+        const req = JSON.parse(line);
+        fs.appendFileSync(${JSON.stringify(methodsLog)}, JSON.stringify({
+          method: req.method,
+          params: req.params
+        }) + '\\n');
+        if (req.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id,
+            result: { protocolVersion: '1.0', agentInfo: { name: 'commit-model' } }
+          }) + '\\n');
+        } else if (req.method === 'session/new') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id,
+            result: {
+              sessionId: 'fresh_sess',
+              models: {
+                currentModelId: 'sonnet-4.5',
+                availableModels: [
+                  { modelId: 'opus-4.6', name: 'Opus' },
+                  { modelId: 'sonnet-4.5', name: 'Sonnet' }
+                ]
+              }
+            }
+          }) + '\\n');
+        } else if (req.method === 'session/set_model') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: {} }) + '\\n');
+        } else if (req.method === 'session/prompt') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', method: 'session/contentDelta',
+            params: { text: '{"type":"commit_message","message":"feat: modeled acp"}' }
+          }) + '\\n');
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id, result: { status: 'completed' }
+          }) + '\\n');
+        }
+      });
+    `)
+
+    try {
+      const result = await generateCommitMessageWithActor({
+        repoRoot: tempRepo,
+        actor: 'claude',
+        paths: ['src-app.ts'],
+        launcher: {
+          protocol: 'acp',
+          command: process.execPath,
+          args: [fake],
+          env: {},
+          timeout_seconds: 30,
+          model: 'opus-4.6'
+        }
+      })
+      expect(result.message).toBe('feat: modeled acp')
+
+      const methods = readFileSync(methodsLog, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+      expect(methods.map((m: { method: string }) => m.method)).toContain('session/new')
+      expect(methods.map((m: { method: string }) => m.method)).not.toContain('session/load')
+      expect(methods.some((m: { method: string }) => m.method === 'session/set_model')).toBe(true)
+      const setModel = methods.find((m: { method: string }) => m.method === 'session/set_model')
+      expect(setModel.params).toEqual({ sessionId: 'fresh_sess', modelId: 'opus-4.6' })
+      // No CLI contract flags
+      expect(methods.every((m: { method: string }) => !String(m.method).includes('stream-json'))).toBe(true)
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it('falls back to session currentModelId when launcher.model is absent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'buddy-commit-acp-default-model-'))
+    const fake = join(dir, 'fake-acp.js')
+    const methodsLog = join(dir, 'methods.jsonl')
+    writeFileSync(fake, `
+      const fs = require('fs');
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on('line', (line) => {
+        const req = JSON.parse(line);
+        fs.appendFileSync(${JSON.stringify(methodsLog)}, JSON.stringify({
+          method: req.method, params: req.params
+        }) + '\\n');
+        if (req.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id,
+            result: { protocolVersion: '1.0' }
+          }) + '\\n');
+        } else if (req.method === 'session/new') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id,
+            result: {
+              sessionId: 'sess_default',
+              models: {
+                currentModelId: 'sonnet-4.5',
+                availableModels: [{ modelId: 'sonnet-4.5', name: 'Sonnet' }]
+              }
+            }
+          }) + '\\n');
+        } else if (req.method === 'session/set_model') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: {} }) + '\\n');
+        } else if (req.method === 'session/prompt') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', method: 'session/contentDelta',
+            params: { text: '{"type":"commit_message","message":"feat: default model"}' }
+          }) + '\\n');
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id, result: { status: 'completed' }
+          }) + '\\n');
+        }
+      });
+    `)
+
+    try {
+      await generateCommitMessageWithActor({
+        repoRoot: tempRepo,
+        actor: 'claude',
+        paths: ['src-app.ts'],
+        launcher: {
+          protocol: 'acp',
+          command: process.execPath,
+          args: [fake],
+          env: {},
+          timeout_seconds: 30
+        }
+      })
+      // currentModelId already matches — applyAcpSessionModel skips the round-trip
+      const methods = readFileSync(methodsLog, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+      expect(methods.map((m: { method: string }) => m.method)).toContain('session/new')
+      expect(methods.map((m: { method: string }) => m.method)).not.toContain('session/load')
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it('cancels an in-flight ACP generation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'buddy-commit-acp-cancel-'))
+    const fake = join(dir, 'fake-acp.js')
+    writeFileSync(fake, `
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on('line', (line) => {
+        const req = JSON.parse(line);
+        if (req.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id, result: { protocolVersion: '1.0' }
+          }) + '\\n');
+        } else if (req.method === 'session/new') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', id: req.id, result: { sessionId: 'sess_hang' }
+          }) + '\\n');
+        } else if (req.method === 'session/prompt') {
+          // Never respond — wait for cancel
+        }
+      });
+    `)
+
+    const controller = new AbortController()
+    const pending = generateCommitMessageWithActor({
+      repoRoot: tempRepo,
+      actor: 'claude',
+      paths: ['src-app.ts'],
+      launcher: {
+        protocol: 'acp',
+        command: process.execPath,
+        args: [fake],
+        env: {},
+        timeout_seconds: 30
+      },
+      signal: controller.signal
+    })
+    setTimeout(() => controller.abort(), 50)
+    await expect(pending).rejects.toThrow(/cancell?ed/i)
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 })

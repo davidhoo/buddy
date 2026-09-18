@@ -189,6 +189,12 @@ describe('CommitModal actor selection', () => {
         clear: vi.fn(() => store.clear()),
       },
     })
+    Object.defineProperty(window, 'buddy', {
+      configurable: true,
+      value: {
+        detectActorModels: vi.fn().mockResolvedValue({}),
+      },
+    })
   })
 
   afterEach(() => {
@@ -198,37 +204,90 @@ describe('CommitModal actor selection', () => {
   })
 
   it('defaults to task implementer when no stored actor', () => {
-    const { props } = renderModal({ taskSettings: { implementer_actor: 'codex' } })
-    const select = screen.getByDisplayValue('Codex') as HTMLSelectElement
+    const { props } = renderModal({
+      taskSettings: { implementer_actor: 'codex', reviewer_actor: 'claude' }
+    })
+    const select = screen.getByDisplayValue('actor.codex') as HTMLSelectElement
     expect(select.value).toBe('codex')
   })
 
   it('uses stored actor from localStorage when valid', () => {
     localStorage.setItem('buddy.lastCommitMessageActor', 'cursor')
-    renderModal({ taskSettings: { implementer_actor: 'codex' } })
-    const select = screen.getByDisplayValue('Cursor') as HTMLSelectElement
+    renderModal({
+      taskSettings: { implementer_actor: 'codex', reviewer_actor: 'claude' }
+    })
+    const select = screen.getByDisplayValue('actor.cursor') as HTMLSelectElement
     expect(select.value).toBe('cursor')
   })
 
   it('falls back to task implementer when stored actor is invalid', () => {
     localStorage.setItem('buddy.lastCommitMessageActor', 'invalid_actor')
-    renderModal({ taskSettings: { implementer_actor: 'kimi' } })
-    const select = screen.getByDisplayValue('Kimi') as HTMLSelectElement
+    renderModal({
+      taskSettings: { implementer_actor: 'kimi', reviewer_actor: 'claude' }
+    })
+    const select = screen.getByDisplayValue('actor.kimi') as HTMLSelectElement
     expect(select.value).toBe('kimi')
   })
 
   it('falls back to claude when both stored and implementer are invalid', () => {
     localStorage.setItem('buddy.lastCommitMessageActor', 'invalid')
     renderModal({ taskSettings: null })
-    const select = screen.getByDisplayValue('Claude') as HTMLSelectElement
+    const select = screen.getByDisplayValue('actor.claude') as HTMLSelectElement
     expect(select.value).toBe('claude')
+  })
+
+  it('lists all configured actors including WeCode', () => {
+    renderModal({
+      taskSettings: {
+        implementer_actor: 'wecode_claude',
+        reviewer_actor: 'wecode_codex'
+      }
+    })
+    const select = screen.getByTitle('git.commitMessageActor') as HTMLSelectElement
+    const values = [...select.options].map((o) => o.value)
+    expect(values).toEqual([
+      'claude',
+      'codex',
+      'cursor',
+      'agy',
+      'opencode',
+      'kimi',
+      'wecode_claude',
+      'wecode_codex',
+      'wecode_opencode'
+    ])
+  })
+
+  it('annotates ACP actors with the launcher model without a commit model picker', async () => {
+    renderModal({
+      taskSettings: {
+        implementer_actor: 'claude',
+        reviewer_actor: 'codex',
+        launchers: {
+          claude: {
+            protocol: 'acp',
+            command: 'npx',
+            args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+            env: {},
+            timeout_seconds: 7200,
+            model: 'sonnet-4.5'
+          }
+        }
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'actor.claude · sonnet-4.5' })).toBeInTheDocument()
+    })
+    expect(screen.queryByLabelText(/modal\.create\.model/)).not.toBeInTheDocument()
   })
 
   it('generates commit message with correct actor', async () => {
     const mockGenerate = vi.mocked(api.generateCommitMessage)
     mockGenerate.mockResolvedValue({ message: 'feat: test message' })
 
-    renderModal({ taskSettings: { implementer_actor: 'codex' } })
+    renderModal({
+      taskSettings: { implementer_actor: 'codex', reviewer_actor: 'claude' }
+    })
 
     // Find and click the generate button
     const generateBtn = screen.getByText(/git\.generateMessage/)
@@ -247,19 +306,39 @@ describe('CommitModal actor selection', () => {
     })
   })
 
+  it('surfaces a clear error when generation fails, without switching actor', async () => {
+    const mockGenerate = vi.mocked(api.generateCommitMessage)
+    mockGenerate.mockRejectedValue(new Error('ACP Error -32603: boom'))
+
+    renderModal({
+      taskSettings: { implementer_actor: 'claude', reviewer_actor: 'codex' },
+      globalSettings: makeSettings(false)
+    })
+
+    fireEvent.click(screen.getByText(/git\.generateMessage/))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/git\.generateFailedDetail/)).toBeInTheDocument()
+    })
+    expect(screen.getByDisplayValue('actor.claude')).toHaveValue('claude')
+  })
+
   it('cancels old generation when switching actor', () => {
     const mockCancel = vi.mocked(api.cancelGenerateCommitMessage)
     const mockGenerate = vi.mocked(api.generateCommitMessage)
     mockGenerate.mockReturnValue(new Promise(() => {})) // never resolves
 
-    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+    renderModal({
+      taskSettings: { implementer_actor: 'codex', reviewer_actor: 'claude' },
+      globalSettings: makeSettings(false)
+    })
 
     // Start generation
     const generateBtn = screen.getByText(/git\.generateMessage/)
     fireEvent.click(generateBtn)
 
     // Switch actor while generating
-    const select = screen.getByDisplayValue('Codex') as HTMLSelectElement
+    const select = screen.getByDisplayValue('actor.codex') as HTMLSelectElement
     fireEvent.change(select, { target: { value: 'claude' } })
 
     expect(mockCancel).toHaveBeenCalled()
@@ -270,7 +349,10 @@ describe('CommitModal actor selection', () => {
     const mockGenerate = vi.mocked(api.generateCommitMessage)
     mockGenerate.mockReturnValue(new Promise(() => {}))
 
-    renderModal({ taskSettings: { implementer_actor: 'codex' }, globalSettings: makeSettings(false) })
+    renderModal({
+      taskSettings: { implementer_actor: 'codex', reviewer_actor: 'claude' },
+      globalSettings: makeSettings(false)
+    })
 
     const generateBtn = screen.getByText(/git\.generateMessage/)
     fireEvent.click(generateBtn)

@@ -9,6 +9,8 @@ import { formatBinding, loadBindings } from '../lib/keyboard'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChangesModal } from './ChangesModal'
 import { BranchModal } from './BranchModal'
+import { ACTOR_LABEL_KEY } from '../lib/format'
+import { DEFAULT_LAUNCHER_ORDER, normalizeLauncher, normalizeGlobalSettings } from '../../shared/defaults'
 
 export interface CommitFeedback {
   type: 'success' | 'error'
@@ -292,6 +294,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   const [message, setMessage] = useState('')
   const [isGenerating, setIsGenerating] = useState(autoGenerate)
   const [generateFailed, setGenerateFailed] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [isStaging, setIsStaging] = useState(false)
   const [isCommitting, setIsCommitting] = useState(false)
   const allFiles = gitStatus?.files ?? []
@@ -313,18 +316,70 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   const stageAll = useGitStageAll()
   const commitAndPush = useGitCommitAndPush()
 
-  // Actor selection for commit message generation
-  const SUPPORTED_ACTORS = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
+  // Actor selection for commit message generation — all configured actors.
+  // Models are display-only (CLI config / task-or-global launcher.model); the
+  // commit modal never offers a separate model picker.
+  const commitActors = useMemo(() => [...DEFAULT_LAUNCHER_ORDER], [])
+
   const resolveDefaultActor = (): string => {
     try {
       const stored = localStorage.getItem('buddy.lastCommitMessageActor')
-      if (stored && SUPPORTED_ACTORS.includes(stored as typeof SUPPORTED_ACTORS[number])) return stored
+      if (stored && commitActors.includes(stored as typeof DEFAULT_LAUNCHER_ORDER[number])) return stored
     } catch { /* localStorage not available */ }
     const impl = taskSettings?.implementer_actor
-    if (impl && SUPPORTED_ACTORS.includes(impl as typeof SUPPORTED_ACTORS[number])) return impl
+    if (impl && commitActors.includes(impl as typeof DEFAULT_LAUNCHER_ORDER[number])) return impl
     return 'claude'
   }
   const [selectedActor, setSelectedActor] = useState<string>(resolveDefaultActor)
+
+  const normalizedGlobals = useMemo(
+    () => normalizeGlobalSettings(globalSettings),
+    [globalSettings]
+  )
+
+  const resolveLauncherForActor = useCallback((actor: string) => {
+    const fromTask = taskSettings?.launchers?.[actor]
+    const fromGlobal = normalizedGlobals.launchers?.[actor]
+    const base = fromTask
+      ? normalizeLauncher(actor, {
+          ...fromTask,
+          // Preserve ACP when the task snapshot omitted protocol but still
+          // points at the same global ACP launcher / npx adapter.
+          protocol:
+            fromTask.protocol
+            ?? (fromGlobal?.protocol === 'acp'
+              && (fromTask.command === fromGlobal.command || fromTask.command === 'npx')
+              ? 'acp'
+              : undefined),
+          args: fromTask.args ?? (fromGlobal?.protocol === 'acp' ? fromGlobal.args : undefined),
+          model: fromTask.model ?? fromGlobal?.model
+        })
+      : normalizeLauncher(actor, fromGlobal)
+    return base
+  }, [taskSettings?.launchers, normalizedGlobals.launchers])
+
+  const [cliModels, setCliModels] = useState<Record<string, string | undefined>>({})
+  useEffect(() => {
+    let cancelled = false
+    window.buddy?.detectActorModels?.()
+      .then((models) => { if (!cancelled) setCliModels(models ?? {}) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [normalizedGlobals.launchers])
+
+  const actorOptionLabel = useCallback((actor: string): string => {
+    const nameKey = ACTOR_LABEL_KEY[actor]
+    const name = nameKey ? t(nameKey) : actor
+    const launcher = resolveLauncherForActor(actor)
+    if (launcher.protocol === 'acp') {
+      // Prefer the model already chosen for this task / global launcher —
+      // never a commit-modal override.
+      const model = launcher.model?.trim()
+      return model ? `${name} · ${model}` : name
+    }
+    const model = cliModels[actor]
+    return model ? `${name} (${model})` : name
+  }, [t, resolveLauncherForActor, cliModels])
 
   const handleActorChange = useCallback((actor: string) => {
     setSelectedActor(actor)
@@ -390,6 +445,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
     const seq = ++generateSeq.current
     setIsGenerating(true)
     setGenerateFailed(false)
+    setGenerateError(null)
     try {
       const result = await api.generateCommitMessage({
         repoRoot,
@@ -403,10 +459,19 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
         setMessage(result.message)
       } else {
         setGenerateFailed(true)
+        setGenerateError(null)
       }
-    } catch {
+    } catch (e) {
       if (seq !== generateSeq.current) return
       setGenerateFailed(true)
+      const detail = e instanceof Error ? e.message : String(e)
+      // Cancelled by user/actor-switch should not look like a hard failure.
+      if (/cancell?ed/i.test(detail)) {
+        setGenerateFailed(false)
+        setGenerateError(null)
+      } else {
+        setGenerateError(detail)
+      }
     } finally {
       if (seq === generateSeq.current) setIsGenerating(false)
     }
@@ -660,14 +725,11 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
                   onChange={(e) => handleActorChange(e.target.value)}
                   disabled={false}
                   title={t('git.commitMessageActor')}
-                  className="appearance-none px-2 py-0.5 text-xs border border-border rounded focus:outline-none focus:border-accent bg-bg"
+                  className="appearance-none px-2 py-0.5 text-xs border border-border rounded focus:outline-none focus:border-accent bg-bg max-w-[220px]"
                 >
-                  <option value="claude">Claude</option>
-                  <option value="codex">Codex</option>
-                  <option value="cursor">Cursor</option>
-                  <option value="agy">Antigravity</option>
-                  <option value="opencode">OpenCode</option>
-                  <option value="kimi">Kimi</option>
+                  {commitActors.map((actor) => (
+                    <option key={actor} value={actor}>{actorOptionLabel(actor)}</option>
+                  ))}
                 </select>
                 <button
                   onClick={isGenerating ? handleCancelGenerate : () => void handleGenerate([...selectedPaths])}
@@ -703,7 +765,15 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
                 }
               }}
               rows={6}
-              placeholder={isGenerating ? t('git.generating') : generateFailed ? t('git.generateFailed') : t('git.commitMessagePlaceholder')}
+              placeholder={
+                isGenerating
+                  ? t('git.generating')
+                  : generateFailed
+                    ? (generateError
+                      ? t('git.generateFailedDetail', { message: generateError })
+                      : t('git.generateFailed'))
+                    : t('git.commitMessagePlaceholder')
+              }
               disabled={isGenerating}
               className={`w-full px-3 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg font-mono text-xs resize-none ${isGenerating ? 'opacity-60' : ''}`}
             />

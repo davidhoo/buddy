@@ -13,9 +13,18 @@ import {
   runLauncherWithPty,
   type LauncherCommandKind
 } from './launchers'
+import {
+  AcpClient,
+  AcpStdioTransport,
+  applyAcpSessionModel,
+  defaultAcpArgs,
+  extractAcpSessionModels,
+  prepareAcpEnvironment,
+  resolveAcpBinary
+} from './acp'
 import { extractActorOutput } from './parsers'
 import type { Launcher, TaskSettings, GlobalSettings } from '../../shared/types'
-import { normalizeGlobalSettings, normalizeLauncher } from '../../shared/defaults'
+import { defaultLauncherFor, normalizeGlobalSettings, normalizeLauncher } from '../../shared/defaults'
 
 const COMMIT_MESSAGE_TIMEOUT_MS = 120_000
 const MAX_DIFF_BYTES = 200_000
@@ -270,20 +279,15 @@ function hasInvalidMarkers(text: string): boolean {
 }
 
 /**
- * Parse the actor's final output to extract the commit message.
- * 1. Use existing Actor parser to extract final assistant/result output.
- * 2. Try JSON with type=commit_message and message field.
- * 3. Fallback: accept plain text only if the entire output is a valid Conventional Commit.
- * 4. Validate: reject outputs with think tags, tool calls, code fences, etc.
+ * Parse already-extracted assistant text into a commit message.
+ * Used by both CLI stream parsers and ACP content deltas.
  */
-export function parseCommitMessageOutput(actor: string, kind: LauncherCommandKind, rawEvents: string): string | null {
-  const parserActor = parserActorForKind(actor, kind)
-  const finalText = extractActorOutput(parserActor, rawEvents).trim()
-
-  if (!finalText) return null
+export function parseCommitMessageText(finalText: string): string | null {
+  const text = finalText.trim()
+  if (!text) return null
 
   // Try JSON parse first
-  const jsonMatch = finalText.match(/\{[\s\S]*"type"\s*:\s*"commit_message"[\s\S]*\}/)
+  const jsonMatch = text.match(/\{[\s\S]*"type"\s*:\s*"commit_message"[\s\S]*\}/)
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0])
@@ -298,16 +302,29 @@ export function parseCommitMessageOutput(actor: string, kind: LauncherCommandKin
   }
 
   // Fallback: accept plain text only if it looks like a valid Conventional Commit
-  const firstLine = finalText.split('\n')[0]?.trim() ?? ''
+  const firstLine = text.split('\n')[0]?.trim() ?? ''
   if (
-    !hasInvalidMarkers(finalText) &&
+    !hasInvalidMarkers(text) &&
     CONVENTIONAL_COMMIT_RE.test(firstLine) &&
-    !finalText.startsWith('{')
+    !text.startsWith('{')
   ) {
-    return normalizeNewlines(finalText)
+    return normalizeNewlines(text)
   }
 
   return null
+}
+
+/**
+ * Parse the actor's final output to extract the commit message.
+ * 1. Use existing Actor parser to extract final assistant/result output.
+ * 2. Try JSON with type=commit_message and message field.
+ * 3. Fallback: accept plain text only if the entire output is a valid Conventional Commit.
+ * 4. Validate: reject outputs with think tags, tool calls, code fences, etc.
+ */
+export function parseCommitMessageOutput(actor: string, kind: LauncherCommandKind, rawEvents: string): string | null {
+  const parserActor = parserActorForKind(actor, kind)
+  const finalText = extractActorOutput(parserActor, rawEvents).trim()
+  return parseCommitMessageText(finalText)
 }
 
 function normalizeNewlines(text: string): string {
@@ -322,6 +339,8 @@ export interface GenerateCommitMessageInput {
   lang?: string
   paths: string[]
   launcher: Launcher
+  /** Buddy data root — needed for WeCode ACP env wrappers. */
+  dataRoot?: string
   signal?: AbortSignal
 }
 
@@ -332,7 +351,7 @@ export interface GenerateCommitMessageResult {
 
 export interface CommitMessageLog {
   actor: string
-  launcherKind: LauncherCommandKind
+  launcherKind: LauncherCommandKind | 'acp'
   fileCount: number
   diffBytes: number
   diffTruncated: boolean
@@ -378,6 +397,151 @@ export async function generateCommitMessageWithActor(
     lang
   })
 
+  let message = ''
+  let valid = false
+  let timedOut = false
+  let cancelled = false
+  let exitCode: number | null = null
+  let launcherKind: LauncherCommandKind | 'acp' = 'contract'
+
+  try {
+    if (launcher.protocol === 'acp') {
+      launcherKind = 'acp'
+      const acpResult = await generateViaAcp({
+        actor,
+        launcher,
+        repoRoot,
+        promptText,
+        dataRoot: input.dataRoot,
+        signal
+      })
+      exitCode = acpResult.exitCode
+      timedOut = acpResult.timedOut
+      cancelled = acpResult.cancelled
+      if (!cancelled && !timedOut && exitCode === 0) {
+        message = parseCommitMessageText(acpResult.outputText) ?? ''
+        valid = !!message
+      }
+    } else {
+      const cliResult = await generateViaCli({
+        actor,
+        launcher,
+        repoRoot,
+        promptText,
+        signal
+      })
+      launcherKind = cliResult.kind
+      exitCode = cliResult.exitCode
+      timedOut = cliResult.timedOut
+      cancelled = cliResult.cancelled
+      if (!cancelled && !timedOut && exitCode === 0) {
+        message = parseCommitMessageOutput(actor, cliResult.kind, cliResult.stdoutText) ?? ''
+        valid = !!message
+      }
+      if (!cancelled && !timedOut && exitCode !== null && exitCode !== 0) {
+        const log = buildLog({
+          actor,
+          launcherKind,
+          paths,
+          diffResult,
+          startTime,
+          startMs,
+          exitCode,
+          timedOut,
+          cancelled,
+          valid
+        })
+        console.error('[commit-message]', JSON.stringify(log))
+        if (activeController === controller) activeController = null
+        throw new CommitMessageProcessError(log, exitCode, cliResult.stderrText)
+      }
+    }
+  } catch (err) {
+    if (activeController === controller) activeController = null
+    if (err instanceof CommitMessageCancelledError
+      || err instanceof CommitMessageTimeoutError
+      || err instanceof CommitMessageProcessError
+      || err instanceof CommitMessageInvalidOutputError) {
+      throw err
+    }
+    if (signal.aborted) {
+      cancelled = true
+    } else {
+      throw err
+    }
+  }
+
+  if (signal.aborted) cancelled = true
+
+  const log = buildLog({
+    actor,
+    launcherKind,
+    paths,
+    diffResult,
+    startTime,
+    startMs,
+    exitCode,
+    timedOut,
+    cancelled,
+    valid
+  })
+
+  // 第七节：日志只记录元信息，不记录 diff/提交信息/思考过程/密钥
+  console.error('[commit-message]', JSON.stringify(log))
+
+  if (activeController === controller) activeController = null
+
+  if (cancelled) throw new CommitMessageCancelledError(log)
+  if (timedOut) throw new CommitMessageTimeoutError(log)
+  if (!valid || !message) throw new CommitMessageInvalidOutputError(log)
+
+  return { message, log }
+}
+
+function buildLog(input: {
+  actor: string
+  launcherKind: LauncherCommandKind | 'acp'
+  paths: string[]
+  diffResult: SelectedDiffResult
+  startTime: Date
+  startMs: number
+  exitCode: number | null
+  timedOut: boolean
+  cancelled: boolean
+  valid: boolean
+}): CommitMessageLog {
+  const endTime = new Date()
+  return {
+    actor: input.actor,
+    launcherKind: input.launcherKind,
+    fileCount: input.paths.length,
+    diffBytes: input.diffResult.totalBytes,
+    diffTruncated: input.diffResult.truncated,
+    startTime: input.startTime.toISOString(),
+    endTime: endTime.toISOString(),
+    durationMs: Date.now() - input.startMs,
+    exitCode: input.exitCode,
+    timedOut: input.timedOut,
+    cancelled: input.cancelled,
+    valid: input.valid
+  }
+}
+
+async function generateViaCli(input: {
+  actor: string
+  launcher: Launcher
+  repoRoot: string
+  promptText: string
+  signal: AbortSignal
+}): Promise<{
+  kind: LauncherCommandKind
+  stdoutText: string
+  stderrText: string
+  exitCode: number | null
+  timedOut: boolean
+  cancelled: boolean
+}> {
+  const { actor, launcher, repoRoot, promptText, signal } = input
   const tempDir = await mkdtemp(join(tmpdir(), 'buddy-commit-'))
   const runId = `commit_${Date.now()}`
   const eventFile = join(tempDir, `${runId}-events.jsonl`)
@@ -440,62 +604,127 @@ export async function generateCommitMessageWithActor(
     if (signal.aborted) {
       cancelled = true
     } else {
+      try { await rm(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
       throw err
     }
   }
 
-  const endTime = new Date()
-  const durationMs = Date.now() - startMs
-
-  // 显式检查 signal.aborted — runLauncher/runLauncherWithPty abort 后
-  // 正常 resolve（不 throw），所以必须在这里判
   if (signal.aborted) {
     cancelled = true
   } else if (
     (exitSignal === 'SIGTERM' || exitSignal === '15') &&
     exitCode === null
   ) {
-    // 非 abort 的 SIGTERM 且无 exit code = 超时 kill
     timedOut = true
   }
 
-  const stdoutText = outputLines.join('\n')
-  let message = ''
-  let valid = false
-  if (!cancelled && !timedOut && exitCode === 0) {
-    message = parseCommitMessageOutput(actor, launcherCommand.kind, stdoutText) ?? ''
-    valid = !!message
-  }
+  try { await rm(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
 
-  const log: CommitMessageLog = {
-    actor,
-    launcherKind: launcherCommand.kind,
-    fileCount: paths.length,
-    diffBytes: diffResult.totalBytes,
-    diffTruncated: diffResult.truncated,
-    startTime: startTime.toISOString(),
-    endTime: endTime.toISOString(),
-    durationMs,
+  return {
+    kind: launcherCommand.kind,
+    stdoutText: outputLines.join('\n'),
+    stderrText: stderrLines.join('\n').trim(),
     exitCode,
     timedOut,
-    cancelled,
-    valid
+    cancelled
+  }
+}
+
+/**
+ * One-shot ACP session for commit-message generation.
+ * Never resumes a task session — always session/new, then close.
+ * Model priority: launcher.model → session currentModelId → adapter default.
+ */
+async function generateViaAcp(input: {
+  actor: string
+  launcher: Launcher
+  repoRoot: string
+  promptText: string
+  dataRoot?: string
+  signal: AbortSignal
+}): Promise<{
+  outputText: string
+  exitCode: number | null
+  timedOut: boolean
+  cancelled: boolean
+}> {
+  const { actor, launcher, repoRoot, promptText, dataRoot, signal } = input
+  if (signal.aborted) {
+    return { outputText: '', exitCode: null, timedOut: false, cancelled: true }
   }
 
-  // 第七节：日志只记录元信息，不记录 diff/提交信息/思考过程/密钥
-  console.error('[commit-message]', JSON.stringify(log))
+  const baseArgs = launcher.args && launcher.args.length > 0
+    ? launcher.args
+    : defaultAcpArgs(launcher.command, actor)
+  const resolved = resolveAcpBinary(launcher.command, baseArgs)
+  const acpEnv = await prepareAcpEnvironment(actor, launcher.env, dataRoot)
 
-  try { await rm(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
-  if (activeController === controller) activeController = null
+  const transport = new AcpStdioTransport({
+    command: resolved.command,
+    args: resolved.args,
+    cwd: repoRoot,
+    env: acpEnv
+  })
 
-  if (cancelled) throw new CommitMessageCancelledError(log)
-  if (timedOut) throw new CommitMessageTimeoutError(log)
-  if (exitCode !== null && exitCode !== 0) {
-    throw new CommitMessageProcessError(log, exitCode, stderrLines.join('\n').trim())
+  let client: AcpClient | undefined
+  let cancelled = false
+  let outputText = ''
+
+  const onAbort = () => {
+    cancelled = true
+    client?.close().catch(() => {})
   }
-  if (!valid || !message) throw new CommitMessageInvalidOutputError(log)
+  signal.addEventListener('abort', onAbort, { once: true })
 
-  return { message, log }
+  try {
+    transport.start()
+    client = new AcpClient(transport, { timeoutMs: COMMIT_MESSAGE_TIMEOUT_MS })
+    await client.initialize()
+
+    // Always create a fresh session — never session/load a task conversation.
+    const created = await client.newSession({ cwd: repoRoot })
+    const sessionId = created.sessionId
+    if (!sessionId) {
+      throw new Error('ACP session/new returned no sessionId')
+    }
+
+    const extracted = extractAcpSessionModels(created)
+    const modelId = (launcher.model?.trim() || extracted.currentModelId || '').trim()
+    if (modelId) {
+      await applyAcpSessionModel(client, sessionId, modelId, created).catch(() => {})
+    }
+
+    await client.prompt(
+      { sessionId, prompt: promptText },
+      {
+        onContentDelta: (text) => {
+          outputText += text
+        }
+      }
+    )
+
+    await client.close().catch(() => {})
+    signal.removeEventListener('abort', onAbort)
+
+    if (signal.aborted || cancelled) {
+      return { outputText, exitCode: null, timedOut: false, cancelled: true }
+    }
+    return { outputText, exitCode: 0, timedOut: false, cancelled: false }
+  } catch (err) {
+    signal.removeEventListener('abort', onAbort)
+    await client?.close().catch(() => {})
+    await transport.close().catch(() => {})
+
+    if (signal.aborted || cancelled) {
+      return { outputText, exitCode: null, timedOut: false, cancelled: true }
+    }
+
+    const message = err instanceof Error ? err.message : String(err)
+    if (/timeout/i.test(message)) {
+      return { outputText, exitCode: null, timedOut: true, cancelled: false }
+    }
+    throw err
+  }
 }
 
 // ─── Error classes ────────────────────────────────────────────────
@@ -544,9 +773,66 @@ export function resolveLauncher(
   taskSettings?: TaskSettings | null,
   globalSettings?: GlobalSettings | null
 ): Launcher {
-  const taskLauncher = taskSettings?.launchers?.[actor]
-  if (taskLauncher?.command) return normalizeLauncher(actor, taskLauncher)
-  const globalLauncher = normalizeGlobalSettings(globalSettings).launchers?.[actor]
-  if (globalLauncher?.command) return globalLauncher
-  return normalizeLauncher(actor)
+  const fromTask = taskSettings?.launchers?.[actor]
+  const fromGlobal = normalizeGlobalSettings(globalSettings).launchers?.[actor]
+  const fallback = defaultLauncherFor(actor)
+  // Prefer the raw task entry (same as runner.resolveEffectiveLauncher) so an
+  // incomplete task snapshot that still says `npx` can inherit global ACP.
+  const base: Launcher = fromTask
+    ? {
+        command: typeof fromTask.command === 'string' && fromTask.command.trim()
+          ? fromTask.command
+          : fallback.command,
+        env: fromTask.env ? { ...fromTask.env } : { ...fallback.env },
+        timeout_seconds:
+          typeof fromTask.timeout_seconds === 'number'
+            ? fromTask.timeout_seconds
+            : fallback.timeout_seconds,
+        ...(fromTask.protocol ? { protocol: fromTask.protocol } : {}),
+        ...(Array.isArray(fromTask.args) ? { args: [...fromTask.args] } : {}),
+        ...(typeof fromTask.model === 'string' && fromTask.model.trim()
+          ? { model: fromTask.model.trim() }
+          : {})
+      }
+    : fromGlobal ?? fallback
+
+  const isNpxOrAcp =
+    base.command === 'npx' ||
+    (typeof base.command === 'string' && base.command.includes('acp')) ||
+    (Array.isArray(base.args) && base.args.some((a) => a.toLowerCase().includes('acp')))
+
+  const protocol =
+    base.protocol ??
+    (fromGlobal?.protocol === 'acp' && (base.command === fromGlobal.command || isNpxOrAcp)
+      ? 'acp'
+      : isNpxOrAcp
+        ? 'acp'
+        : undefined)
+
+  const args =
+    base.args && base.args.length > 0
+      ? [...base.args]
+      : protocol === 'acp' && fromGlobal?.args && fromGlobal.args.length > 0
+        ? [...fromGlobal.args]
+        : undefined
+
+  // CLI path still goes through normalizeLauncher so empty/`npx` commands
+  // collapse to the actor default; ACP keeps the adapter command intact.
+  if (protocol !== 'acp') {
+    return normalizeLauncher(actor, {
+      command: base.command,
+      env: base.env,
+      timeout_seconds: base.timeout_seconds,
+      ...(base.model ? { model: base.model } : {})
+    })
+  }
+
+  return {
+    command: base.command,
+    env: { ...(base.env ?? {}) },
+    timeout_seconds: base.timeout_seconds ?? fallback.timeout_seconds,
+    protocol: 'acp',
+    ...(args ? { args } : {}),
+    ...(base.model ? { model: base.model } : {})
+  }
 }
