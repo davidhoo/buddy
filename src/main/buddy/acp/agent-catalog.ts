@@ -3,6 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile, chmod } from 'node:fs/promises'
 import { splitCommand } from '../launchers'
+import { codexIsolationWrapper, prepareCodexHome } from './codex-home'
 
 /**
  * Locate the wecode executable on the system.
@@ -47,9 +48,20 @@ exec "$WECODE_BIN" codex "$@"
 export async function prepareAcpEnvironment(
   actor: string,
   baseEnv?: Record<string, string>,
-  dataRoot?: string
+  dataRoot?: string,
+  sessionId?: string
 ): Promise<Record<string, string>> {
   const env: Record<string, string> = { ...(baseEnv ?? {}) }
+  const codexDataRoot = dataRoot || join(homedir(), '.buddy')
+
+  if (actor === 'codex' || actor === 'wecode_codex') {
+    env.CODEX_HOME = await prepareCodexHome(
+      actor, codexDataRoot, env, sessionId
+    )
+    // Desktop can export a separate SQLite root. Do not inherit that shared
+    // index even after isolating the rollout files with CODEX_HOME.
+    env.CODEX_SQLITE_HOME = env.CODEX_SQLITE_HOME || env.CODEX_HOME
+  }
 
   if (actor === 'wecode_claude') {
     if (!env.CLAUDE_CODE_EXECUTABLE) {
@@ -59,6 +71,12 @@ export async function prepareAcpEnvironment(
     if (!env.CODEX_PATH) {
       env.CODEX_PATH = await ensureWecodeCodexWrapper(dataRoot)
     }
+  }
+
+  if (actor === 'codex' || actor === 'wecode_codex') {
+    env.BUDDY_CODEX_EXECUTABLE = env.CODEX_PATH || process.env.CODEX_PATH || 'codex'
+    env.BUDDY_CODEX_SQLITE_CONFIG = `sqlite_home=${JSON.stringify(env.CODEX_SQLITE_HOME)}`
+    env.CODEX_PATH = await codexIsolationWrapper(codexDataRoot)
   }
 
   return env
