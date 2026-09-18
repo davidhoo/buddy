@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.0] - 2026-09-18
+
+### Added
+- Agent Client Protocol（ACP）执行通道：JSON-RPC stdio 传输、会话恢复、设置页 CLI/ACP 协议切换与握手测试；原生 dual-break 经 `buddy_propose_break` 宿主工具协调
+- WeCode 三端演员：`wecode_claude` / `wecode_codex` / `wecode_opencode` 全链路（启动器、会话、状态机、设置与创建任务）
+- 任务级 ACP 模型选择：探测并缓存 agent 模型列表，创建任务与输入框可选模型；上下文溢出时自动重置会话并重试
+- 提交信息生成走独立 ACP 会话（不复用任务对话），提交弹窗列出全部已配置演员并展示 ACP/CLI 模型标签
+
+### Changed
+- Claude / WeCode Claude 启动时自动补齐 `--dangerously-skip-permissions`
+- 优先使用全局 ACP 适配器，减少 npx 冷启动；WeCode 注入专用运行环境
+- Git 工作区干净时隐藏已完成任务的变更入口
+
+---
+
 ## [1.3.1] - 2026-09-16
 
 ### Fixed
@@ -622,6 +637,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[2.0.0]: https://github.com/davidhoo/buddy/releases/tag/v2.0.0
 [1.3.1]: https://github.com/davidhoo/buddy/releases/tag/v1.3.1
 [1.2.26]: https://github.com/davidhoo/buddy/releases/tag/v1.2.26
 [1.2.25]: https://github.com/davidhoo/buddy/releases/tag/v1.2.25
