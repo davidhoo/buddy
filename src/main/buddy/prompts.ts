@@ -98,12 +98,21 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   const contextSent = state.context_sent ?? {}
   const pendingBreak = state.pending_break
   const breakRejectedBy = state.break_rejected_by
+  const implementer = implementerActor(settings)
+  const reviewer = reviewerActor(settings)
+  const isImplementer = input.actor === implementer
+  const otherActor = isImplementer ? reviewer : implementer
 
   const parts = [
     '# buddy actor turn',
     '',
     '## Actor',
     input.actor,
+    '',
+    '## Role',
+    isImplementer
+      ? `- Your role: **Implementer (执行者)**. You are responsible for writing code, executing changes, running tests, and reporting progress.\n- Reviewer: **${otherActor}** (${actorDisplayName(otherActor)}).`
+      : `- Your role: **Reviewer (审查者)**. You inspect the implementer's work, verify tests/changes, and report blocking findings. Do not make direct code changes unless strictly necessary.\n- Implementer: **${otherActor}** (${actorDisplayName(otherActor)}).`,
     '',
     BUDDY_MESSAGE_PROTOCOL,
     '',
@@ -164,16 +173,15 @@ export function buildActorPrompt(input: BuildActorPromptInput): string {
   const humanLang = detectHumanLanguage(input.transcript, input.userMessage ?? '', taskText, contextText)
   if (pendingBreak) {
     const requesterName = actorDisplayName(pendingBreak.actor)
-    parts.push(`${requesterName} has requested to end the task. Confirm with \`type=break\` or continue with \`type=chat\`.`)
+    parts.push(`You are the ${isImplementer ? 'implementer (执行者)' : 'reviewer (审查者)'}. ${requesterName} has requested to end the task. Confirm with \`type=break\` or continue with \`type=chat\`.`)
   } else if (breakRejectedBy && breakRejectedBy.actor !== input.actor) {
     const rejectedName = actorDisplayName(breakRejectedBy.actor)
-    parts.push(`Your previous break request was rejected by ${rejectedName}, who made changes. Review their changes carefully. Only confirm with \`type=break\` if you agree the changes are correct and the task is complete.`)
+    parts.push(`You are the ${isImplementer ? 'implementer (执行者)' : 'reviewer (审查者)'}. Your previous break request was rejected by ${rejectedName}, who made changes. Review their changes carefully. Only confirm with \`type=break\` if you agree the changes are correct and the task is complete.`)
   } else {
-    const implementer = implementerActor(settings)
-    if (input.actor === implementer) {
-      parts.push('Continue the implementation work. Report changed files, what you did, and blockers.')
+    if (isImplementer) {
+      parts.push('You are the implementer (执行者). Continue the implementation work. Report changed files, what you did, and blockers.')
     } else {
-      parts.push('Review the current task state. Report blocking findings first, then concise next action. If you detect that the other actor is making repeated errors or the task is stuck in a circular pattern without progress, signal `type=break` to stop and let a human decide.')
+      parts.push('You are the reviewer (审查者). Review the current task state. Report blocking findings first, then concise next action. If you detect that the other actor is making repeated errors or the task is stuck in a circular pattern without progress, signal `type=break` to stop and let a human decide.')
     }
   }
 
@@ -201,11 +209,14 @@ export function runtimeSettingsLines(
   const maxRounds = numberValue(globalSettings?.max_rounds, 9999)
   const roundsInWindow = numberValue(state.rounds_in_window, 0)
   const remaining = maxRounds === -1 ? 'unlimited' : (maxRounds > 0 ? Math.max(0, maxRounds - roundsInWindow) : 'unlimited')
+  const implementer = implementerActor(settings)
+  const isImplementer = actor === implementer
   const lines = [
     `- Current total round: ${numberValue(state.round, 0)}`,
+    `- Current actor role: ${isImplementer ? 'Implementer (执行者)' : 'Reviewer (审查者)'}`,
     `- Automatic rounds used in this window: ${roundsInWindow}/${maxRounds === -1 ? 'unlimited' : maxRounds}`,
     `- Automatic rounds remaining in this window: ${remaining}`,
-    `- Next actor after this turn: ${nextActor(actor, settings)}`
+    `- Next actor after this turn: ${nextActor(actor, settings)} (${isImplementer ? 'Reviewer' : 'Implementer'})`
   ]
   if (repoRoot) lines.push(`- Repository: ${repoRoot}`)
   if (state.countdown?.deadline) lines.push(`- Active countdown deadline: ${state.countdown.deadline}`)
@@ -263,14 +274,19 @@ export function detectHumanLanguage(
 }
 
 export function nextActor(actor: string, settings: Partial<TaskSettings>): string {
-  const implementer = settings.implementer_actor ?? ACTOR_CLAUDE
-  const reviewer = settings.reviewer_actor ?? ACTOR_CODEX
+  const implementer = implementerActor(settings)
+  const reviewer = reviewerActor(settings)
   return actor === implementer ? reviewer : implementer
 }
 
 export function implementerActor(settings: Partial<TaskSettings>): string {
   return settings.implementer_actor
     ?? (settings.role_mode === ROLE_MODE_CODEX_IMPL ? ACTOR_CODEX : ACTOR_CLAUDE)
+}
+
+export function reviewerActor(settings: Partial<TaskSettings>): string {
+  return settings.reviewer_actor
+    ?? (settings.role_mode === ROLE_MODE_CODEX_IMPL ? ACTOR_CLAUDE : ACTOR_CODEX)
 }
 
 export function actorDisplayName(actor: unknown): string {

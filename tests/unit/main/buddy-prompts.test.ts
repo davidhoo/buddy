@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildActorPrompt } from '../../../src/main/buddy/prompts'
+import { buildActorPrompt, implementerActor, reviewerActor } from '../../../src/main/buddy/prompts'
 
 describe('buildActorPrompt', () => {
   it('explains Cursor service lifetimes on fresh and resumed turns', () => {
@@ -85,6 +85,60 @@ describe('buildActorPrompt', () => {
 
     expect(prompt).toContain('Review the current task state')
     expect(prompt).not.toContain('Continue the implementation work')
+  })
+
+  it('explicitly defines roles for both implementer and reviewer in prompt sections', () => {
+    const settings = {
+      implementer_actor: 'agy',
+      reviewer_actor: 'wecode_codex',
+      role_mode: 'claude_implements',
+      flow_policy: 'claude_then_codex',
+      launchers: {}
+    }
+
+    const implPrompt = buildActorPrompt({
+      actor: 'agy',
+      round: 1,
+      repoRoot: '/tmp/repo',
+      taskText: 'release v2.4.3',
+      contextText: '',
+      transcript: [],
+      settings,
+      state: { round: 0, rounds_in_window: 0 }
+    } as any)
+
+    expect(implPrompt).toContain('## Role')
+    expect(implPrompt).toContain('Your role: **Implementer (执行者)**')
+    expect(implPrompt).toContain('Reviewer: **wecode_codex** (WeCode Codex)')
+    expect(implPrompt).toContain('Current actor role: Implementer (执行者)')
+    expect(implPrompt).toContain('Next actor after this turn: wecode_codex (Reviewer)')
+    expect(implPrompt).toContain('You are the implementer (执行者). Continue the implementation work.')
+
+    const revPrompt = buildActorPrompt({
+      actor: 'wecode_codex',
+      round: 2,
+      repoRoot: '/tmp/repo',
+      taskText: 'release v2.4.3',
+      contextText: '',
+      transcript: [],
+      settings,
+      state: { round: 1, rounds_in_window: 1 }
+    } as any)
+
+    expect(revPrompt).toContain('## Role')
+    expect(revPrompt).toContain('Your role: **Reviewer (审查者)**')
+    expect(revPrompt).toContain('Implementer: **agy** (Antigravity)')
+    expect(revPrompt).toContain('Current actor role: Reviewer (审查者)')
+    expect(revPrompt).toContain('Next actor after this turn: agy (Implementer)')
+    expect(revPrompt).toContain('You are the reviewer (审查者). Review the current task state.')
+  })
+
+  it('resolves reviewerActor correctly based on settings and role_mode fallback', () => {
+    expect(reviewerActor({ reviewer_actor: 'wecode_codex' })).toBe('wecode_codex')
+    expect(reviewerActor({ role_mode: 'claude_implements' } as any)).toBe('codex')
+    expect(reviewerActor({ role_mode: 'codex_implements' } as any)).toBe('claude')
+    expect(reviewerActor({})).toBe('codex')
+    expect(implementerActor({ implementer_actor: 'agy' })).toBe('agy')
   })
 
   it('asks the second actor to confirm or reject pending break', () => {
