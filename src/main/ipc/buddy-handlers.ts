@@ -9,7 +9,8 @@ import type {
   SendMessageInput,
   StartTaskInput,
   TaskStats,
-  TestLauncherResult
+  TestLauncherResult,
+  GlobalAcpAdaptersStatus
 } from '../../shared/types'
 
 export interface BuddyHandlerService {
@@ -49,6 +50,7 @@ export interface BuddyHandlerService {
   testLauncher(actor: string, command: string, env?: Record<string, string>, protocol?: 'cli' | 'acp', args?: string[]): Promise<TestLauncherResult>
   detectActorModels(): Promise<Record<string, string | undefined>>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
+  checkAcpGlobalAdapters(): Promise<GlobalAcpAdaptersStatus> | GlobalAcpAdaptersStatus
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
@@ -157,5 +159,8 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:updateTaskText', (_event, taskId: string, workspaceKey: string, taskText: string) =>
     service.updateTaskText(taskId, workspaceKey, taskText)
+  )
+  ipcMain.handle('buddy:checkAcpGlobalAdapters', () =>
+    service.checkAcpGlobalAdapters()
   )
 }

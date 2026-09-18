@@ -4,6 +4,9 @@ import {
   commandKindFor,
   createLineSplitter,
   drainLauncherStreams,
+  isWecodeClaudeCommand,
+  isWecodeCodexCommand,
+  isWecodeOpenCodeCommand,
   runLauncher,
   streamDrainMs
 } from '../../../src/main/buddy/launchers'
@@ -29,6 +32,40 @@ describe('launcher command builder', () => {
       kind: 'native_claude',
       stdinText: 'hello'
     })
+  })
+
+  it('auto-adds --dangerously-skip-permissions for Claude when the user omitted it', () => {
+    expect(buildLauncherCommand({
+      actor: 'claude',
+      command: 'claude',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'claude',
+      args: [
+        '--dangerously-skip-permissions',
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--input-format',
+        'text'
+      ],
+      kind: 'native_claude',
+      stdinText: 'hello'
+    })
+  })
+
+  it('does not duplicate --dangerously-skip-permissions when Claude already has it', () => {
+    const cmd = buildLauncherCommand({
+      actor: 'claude',
+      command: 'claude --dangerously-skip-permissions --model sonnet',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(cmd.args.filter((arg) => arg === '--dangerously-skip-permissions')).toEqual([
+      '--dangerously-skip-permissions'
+    ])
   })
 
   it('builds Codex exec json command', () => {
@@ -390,5 +427,130 @@ describe('launcher command builder', () => {
         expect(argsStr).not.toContain('-S')
       }
     }
+  })
+
+  it('correctly identifies WeCode subcommands', () => {
+    expect(isWecodeClaudeCommand('wecode')).toBe(true)
+    expect(isWecodeClaudeCommand('wecode --dangerously-skip-permissions')).toBe(true)
+    expect(isWecodeClaudeCommand('wecode codex')).toBe(false)
+    expect(isWecodeClaudeCommand('wecode opencode')).toBe(false)
+    expect(isWecodeClaudeCommand('claude')).toBe(false)
+
+    expect(isWecodeCodexCommand('wecode codex')).toBe(true)
+    expect(isWecodeCodexCommand('wecode codex --full-auto')).toBe(true)
+    expect(isWecodeCodexCommand('wecode')).toBe(false)
+    expect(isWecodeCodexCommand('wecode opencode')).toBe(false)
+
+    expect(isWecodeOpenCodeCommand('wecode opencode')).toBe(true)
+    expect(isWecodeOpenCodeCommand('wecode opencode --session abc')).toBe(true)
+    expect(isWecodeOpenCodeCommand('wecode')).toBe(false)
+    expect(isWecodeOpenCodeCommand('wecode codex')).toBe(false)
+  })
+
+  it('determines commandKindFor for WeCode commands and actors', () => {
+    expect(commandKindFor('wecode_claude', 'wecode')).toBe('native_claude')
+    expect(commandKindFor('wecode_codex', 'wecode codex')).toBe('native_codex')
+    expect(commandKindFor('wecode_opencode', 'wecode opencode')).toBe('native_opencode')
+
+    // Actor fallback when command is empty or default
+    expect(commandKindFor('wecode_claude', '')).toBe('native_claude')
+    expect(commandKindFor('wecode_codex', '')).toBe('native_codex')
+    expect(commandKindFor('wecode_opencode', '')).toBe('native_opencode')
+  })
+
+  it('builds launcher command for WeCode OpenCode', () => {
+    expect(buildLauncherCommand({
+      actor: 'wecode_opencode',
+      command: 'wecode opencode',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'test prompt',
+      sessionId: 'sess-123'
+    })).toEqual({
+      command: 'wecode',
+      args: [
+        'opencode',
+        'run',
+        '--format',
+        'json',
+        '--dangerously-skip-permissions',
+        '--session',
+        'sess-123',
+        'test prompt'
+      ],
+      kind: 'native_opencode'
+    })
+  })
+
+  it('auto-adds --dangerously-skip-permissions for WeCode Claude when omitted', () => {
+    expect(buildLauncherCommand({
+      actor: 'wecode_claude',
+      command: 'wecode',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    }).args).toEqual([
+      '--dangerously-skip-permissions',
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--input-format',
+      'text'
+    ])
+
+    expect(buildLauncherCommand({
+      actor: 'wecode_claude',
+      command: 'wecode claude',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    }).args).toEqual([
+      'claude',
+      '--dangerously-skip-permissions',
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--input-format',
+      'text'
+    ])
+  })
+
+  it('does not duplicate --dangerously-skip-permissions for WeCode Claude', () => {
+    const cmd = buildLauncherCommand({
+      actor: 'wecode_claude',
+      command: 'wecode --dangerously-skip-permissions',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(cmd.args.filter((arg) => arg === '--dangerously-skip-permissions')).toEqual([
+      '--dangerously-skip-permissions'
+    ])
+  })
+
+  it('builds launcher command for WeCode Claude and WeCode Codex', () => {
+    const claudeCmd = buildLauncherCommand({
+      actor: 'wecode_claude',
+      command: 'wecode',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'test prompt',
+      sessionId: 'sess-claude'
+    })
+    expect(claudeCmd.command).toBe('wecode')
+    expect(claudeCmd.kind).toBe('native_claude')
+    expect(claudeCmd.args).toContain('--dangerously-skip-permissions')
+    expect(claudeCmd.args).toContain('--resume')
+    expect(claudeCmd.args).toContain('sess-claude')
+
+    const codexCmd = buildLauncherCommand({
+      actor: 'wecode_codex',
+      command: 'wecode codex',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'test prompt',
+      sessionId: 'sess-codex'
+    })
+    expect(codexCmd.command).toBe('wecode')
+    expect(codexCmd.kind).toBe('native_codex')
+    expect(codexCmd.args).toContain('exec')
+    expect(codexCmd.args).toContain('resume')
+    expect(codexCmd.args).toContain('sess-codex')
   })
 })

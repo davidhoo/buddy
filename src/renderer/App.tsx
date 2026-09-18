@@ -22,9 +22,9 @@ import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart, isTaskQueued, queuedPosition } from './lib/taskState'
 import type { Task } from '../shared/types'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
-import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta } from '../shared/types'
+import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta, Launcher } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
-import { defaultLauncherFor, normalizeGlobalSettings } from '../shared/defaults'
+import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings, normalizeLauncher } from '../shared/defaults'
 import { TASK_ID_MAX_CODE_POINTS, validateTaskId } from '../shared/task-id'
 
 export default function App() {
@@ -906,7 +906,7 @@ export function CreateTaskModal({
   // Detect each actor's currently configured model so the dropdowns can show
   // it beside the agent name (e.g. "Codex (gpt-5.6-luna)"). Refetch when the
   // launcher commands change, since the model may be derived from the command.
-  const launcherCommandsKey = (['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const)
+  const launcherCommandsKey = DEFAULT_LAUNCHER_ORDER
     .map(a => normalizedGlobalSettings.launchers?.[a]?.command ?? '')
     .join('|')
   const [actorModels, setActorModels] = useState<Record<string, string | undefined>>({})
@@ -958,6 +958,7 @@ export function CreateTaskModal({
     const value = session.trim()
     if (!value) return {}
     if (actor === 'codex') return { seed_codex_thread_id: value }
+    if (actor === 'wecode_codex') return { seed_wecode_codex_thread_id: value }
     return { [`seed_${actor}_session_id`]: value }
   }
 
@@ -968,26 +969,15 @@ export function CreateTaskModal({
       localStorage.setItem('buddy.lastReviewer', reviewer)
     } catch {}
     const launchers = normalizedGlobalSettings.launchers ?? {}
-    const launcherFor = (actor: Actor) => ({
-      command: launchers[actor]?.command ?? defaultLauncherFor(actor).command,
-      env: { ...(launchers[actor]?.env ?? {}) },
-      timeout_seconds: launchers[actor]?.timeout_seconds ?? defaultLauncherFor(actor).timeout_seconds
-    })
+    const launcherFor = (actor: Actor): Launcher => normalizeLauncher(actor, launchers[actor])
     const settings: Record<string, unknown> = {
       protocol_version: normalizedGlobalSettings.protocol_version ?? '1',
       flow_policy: 'claude_then_codex',
-      role_mode: implementer === 'codex' ? 'codex_implements' : 'claude_implements',
+      role_mode: implementer === 'codex' || implementer === 'wecode_codex' ? 'codex_implements' : 'claude_implements',
       implementer_actor: implementer,
       reviewer_actor: reviewer,
       max_consecutive_failures: normalizedGlobalSettings.max_consecutive_failures ?? 10,
-      launchers: {
-        claude: launcherFor('claude'),
-        codex: launcherFor('codex'),
-        cursor: launcherFor('cursor'),
-        agy: launcherFor('agy'),
-        opencode: launcherFor('opencode'),
-        kimi: launcherFor('kimi')
-      },
+      launchers: Object.fromEntries(DEFAULT_LAUNCHER_ORDER.map(a => [a, launcherFor(a as Actor)])),
       ...seedFor(implementer, implementerSession),
       ...seedFor(reviewer, reviewerSession)
     }
@@ -1003,7 +993,9 @@ export function CreateTaskModal({
     }
   }
 
-  const actorOptions: Actor[] = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi']
+  const actorOptions: Actor[] = [...DEFAULT_LAUNCHER_ORDER] as Actor[]
+  const standardActors: Actor[] = actorOptions.filter(a => !a.startsWith('wecode_'))
+  const internalActors: Actor[] = actorOptions.filter(a => a.startsWith('wecode_'))
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-buddy-modal onKeyDown={(e) => {
@@ -1183,9 +1175,16 @@ export function CreateTaskModal({
                   onChange={(e) => setImplementer(e.target.value as Actor)}
                   className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
                 >
-                  {actorOptions.map(a => (
-                    <option key={a} value={a}>{actorLabel(a)}</option>
-                  ))}
+                  <optgroup label={t('modal.create.standardAgents')}>
+                    {standardActors.map(a => (
+                      <option key={a} value={a}>{actorLabel(a)}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label={t('modal.create.internalAgents')}>
+                    {internalActors.map(a => (
+                      <option key={a} value={a}>{actorLabel(a)}</option>
+                    ))}
+                  </optgroup>
                 </select>
                 <ChevronDown
                   size={14}
@@ -1201,9 +1200,16 @@ export function CreateTaskModal({
                   onChange={(e) => setReviewer(e.target.value as Actor)}
                   className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
                 >
-                  {actorOptions.map(a => (
-                    <option key={a} value={a}>{actorLabel(a)}</option>
-                  ))}
+                  <optgroup label={t('modal.create.standardAgents')}>
+                    {standardActors.map(a => (
+                      <option key={a} value={a}>{actorLabel(a)}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label={t('modal.create.internalAgents')}>
+                    {internalActors.map(a => (
+                      <option key={a} value={a}>{actorLabel(a)}</option>
+                    ))}
+                  </optgroup>
                 </select>
                 <ChevronDown
                   size={14}

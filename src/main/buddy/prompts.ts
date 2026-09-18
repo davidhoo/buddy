@@ -7,6 +7,9 @@ const ACTOR_CURSOR = 'cursor'
 const ACTOR_AGY = 'agy'
 const ACTOR_OPENCODE = 'opencode'
 const ACTOR_KIMI = 'kimi'
+export const ACTOR_WECODE_CLAUDE = 'wecode_claude'
+export const ACTOR_WECODE_CODEX = 'wecode_codex'
+export const ACTOR_WECODE_OPENCODE = 'wecode_opencode'
 const ROLE_MODE_CODEX_IMPL = 'codex_implements'
 
 export const BUDDY_MESSAGE_PROTOCOL = `## Buddy Message Protocol
@@ -224,7 +227,7 @@ export function selectRecentTranscript(transcript: TranscriptEntry[], window = 6
   const recentKeys = new Set(recent.map(rowKey))
   const earlier = transcript.slice(0, -window)
 
-  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_CURSOR, ACTOR_AGY, ACTOR_OPENCODE, ACTOR_KIMI]) {
+  for (const role of ['human', ACTOR_CLAUDE, ACTOR_CODEX, ACTOR_CURSOR, ACTOR_AGY, ACTOR_OPENCODE, ACTOR_KIMI, ACTOR_WECODE_CLAUDE, ACTOR_WECODE_CODEX, ACTOR_WECODE_OPENCODE]) {
     if (recent.some((item) => item.role === role)) continue
     const last = [...earlier].reverse().find((item) => item.role === role)
     if (last && !recentKeys.has(rowKey(last))) {
@@ -277,6 +280,9 @@ export function actorDisplayName(actor: unknown): string {
   if (actor === ACTOR_CODEX) return 'Codex'
   if (actor === ACTOR_CURSOR) return 'Cursor'
   if (actor === ACTOR_AGY) return 'Antigravity'
+  if (actor === ACTOR_WECODE_CLAUDE) return 'WeCode Claude'
+  if (actor === ACTOR_WECODE_CODEX) return 'WeCode Codex'
+  if (actor === ACTOR_WECODE_OPENCODE) return 'WeCode OpenCode'
   return typeof actor === 'string' && actor ? actor : 'Codex'
 }
 

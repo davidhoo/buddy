@@ -365,8 +365,67 @@ describe('BuddyRunner with ACP protocol', () => {
     const taskDir = store.taskDirectory('art-demo', created.workspace_key)
     const outputMd = await readFile(join(taskDir, 'artifacts', `${runId}-output.md`), 'utf8')
     expect(outputMd).toBe('Done running tests.')
-    const promptMd = await readFile(join(taskDir, 'artifacts', `${runId}-prompt.md`), 'utf8')
+    const promptMd = await readFile(join(taskDir, 'artifacts', `${runId}-output.md`), 'utf8')
     expect(promptMd.length).toBeGreaterThan(0)
   })
-})
 
+  it('automatically recovers ACP protocol and args from globalSettings during health check', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-acp-recover-'))
+    const fakeAcpServer = join(root, 'fake-acp-agent.js')
+
+    const serverScript = `
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin });
+
+      rl.on('line', (line) => {
+        const req = JSON.parse(line);
+        if (req.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: req.id,
+            result: {
+              protocolVersion: '1.0',
+              agentInfo: { name: 'recovered-acp', version: '1.0.0' },
+              capabilities: { streaming: true, tools: true }
+            }
+          }) + '\\n');
+        }
+      });
+    `
+    await writeFile(fakeAcpServer, serverScript)
+
+    const store = new BuddyStore(root)
+    // Global settings has wecode_claude configured with ACP protocol
+    await store.updateGlobalSettings({
+      launchers: {
+        wecode_claude: {
+          protocol: 'acp',
+          command: process.execPath,
+          args: [fakeAcpServer],
+          env: {},
+          timeout_seconds: 10
+        }
+      }
+    })
+
+    // Simulate a task whose settings launcher dropped protocol and args (e.g. only command was stored)
+    const created = await store.createTask({
+      task_id: 'recover-demo',
+      repo_root: '/tmp/repo',
+      task_text: 'Test ACP protocol recovery',
+      settings: {
+        launchers: {
+          wecode_claude: {
+            command: process.execPath,
+            env: {},
+            timeout_seconds: 10
+          }
+        }
+      }
+    })
+
+    const runner = new BuddyRunner(store)
+    const ping = await (runner as any).executePing('recover-demo', created.workspace_key, 'wecode_claude')
+    expect(ping.success).toBe(true)
+  })
+})

@@ -63,6 +63,18 @@ body {
   border-left-color: var(--actor-kimi);
   background: color-mix(in srgb, var(--actor-kimi) 5%, var(--bg-elevated));
 }
+.msg-wecode_claude {
+  border-left-color: var(--actor-claude);
+  background: color-mix(in srgb, var(--actor-claude) 5%, var(--bg-elevated));
+}
+.msg-wecode_codex {
+  border-left-color: var(--actor-codex);
+  background: color-mix(in srgb, var(--actor-codex) 5%, var(--bg-elevated));
+}
+.msg-wecode_opencode {
+  border-left-color: var(--actor-opencode);
+  background: color-mix(in srgb, var(--actor-opencode) 5%, var(--bg-elevated));
+}
 .msg-human {
   border-left-color: var(--fg-secondary);
   background: var(--bg-elevated);
@@ -126,6 +138,9 @@ body {
 .msg-agy .role { color: var(--actor-agy); }
 .msg-opencode .role { color: var(--actor-opencode); }
 .msg-kimi .role { color: var(--actor-kimi); }
+.msg-wecode_claude .role { color: var(--actor-claude); }
+.msg-wecode_codex .role { color: var(--actor-codex); }
+.msg-wecode_opencode .role { color: var(--actor-opencode); }
 .msg-human .role { color: var(--fg); }
 .msg-system .role { color: var(--fg-muted); }
 

@@ -41,6 +41,7 @@ describe('registerBuddyHandlers', () => {
       testLauncher: vi.fn(),
       detectActorModels: vi.fn(),
       updateTaskText: vi.fn(),
+      checkAcpGlobalAdapters: vi.fn(),
       onTaskEvent: vi.fn()
     }
 
@@ -57,6 +58,7 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:checkAcpGlobalAdapters', expect.any(Function))
     const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
     cancelHandler({}, 'task', 'workspace')
     expect(service.cancelTask).toHaveBeenCalledWith('task', 'workspace')
@@ -65,6 +67,10 @@ describe('registerBuddyHandlers', () => {
     testLauncherHandler({}, 'agy', 'agy', { http_proxy: 'http://custom:7893' })
     expect(service.testLauncher).toHaveBeenCalledWith('agy', 'agy', { http_proxy: 'http://custom:7893' })
 
-    expect(handle).toHaveBeenCalledTimes(36)
+    const checkAcpHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:checkAcpGlobalAdapters')![1]
+    checkAcpHandler({})
+    expect(service.checkAcpGlobalAdapters).toHaveBeenCalled()
+
+    expect(handle).toHaveBeenCalledTimes(37)
   })
 })

@@ -98,6 +98,8 @@ export const api = {
     ) as Promise<TestLauncherResult>,
   detectActorModels: () =>
     buddy().detectActorModels() as Promise<Record<string, string | undefined>>,
+  checkAcpGlobalAdapters: () =>
+    buddy().checkAcpGlobalAdapters(),
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
     buddy().onTaskEvent(callback)
 }

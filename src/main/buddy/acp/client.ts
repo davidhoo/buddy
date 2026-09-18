@@ -3,6 +3,8 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  type AcpContentBlock,
+  type AcpClientCapabilities,
   type AcpInitializeParams,
   type AcpInitializeResult,
   type AcpLoadSessionParams,
@@ -49,12 +51,33 @@ export class AcpClient {
   >()
   private activePromptHandlers: AcpPromptHandlers | null = null
   private readonly unsubscribeTransport: () => void
+  private readonly unsubscribeClose: () => void
+  private readonly unsubscribeError: () => void
 
   constructor(
     private readonly transport: AcpTransport,
     private readonly options: AcpClientOptions = {}
   ) {
     this.unsubscribeTransport = this.transport.onMessage((msg) => this.handleMessage(msg))
+    this.unsubscribeClose = this.transport.onClose((code, signal) => {
+      const stderr = this.transport.getStderr?.()?.trim()
+      const exitDesc = code !== null ? `code ${code}` : signal !== null ? `signal ${signal}` : 'unknown reason'
+      const reason = stderr
+        ? `Process exited with ${exitDesc}: ${stderr}`
+        : `Process exited unexpectedly with ${exitDesc}`
+      this.rejectAllPending(new Error(reason))
+    })
+    this.unsubscribeError = this.transport.onError((err) => {
+      this.rejectAllPending(err)
+    })
+  }
+
+  private rejectAllPending(err: Error): void {
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      clearTimeout(pending.timer)
+      pending.reject(err)
+      this.pendingRequests.delete(id)
+    }
   }
 
   private handleMessage(msg: JsonRpcMessage): void {
@@ -122,14 +145,48 @@ export class AcpClient {
         handlers.onBreak?.(typeof data?.reason === 'string' ? data.reason : undefined)
         break
 
-      case 'session/update':
-        // Generic session update container supported by Zed / standard ACP
+      case 'session/update': {
+        const update = (data?.update ?? data) as Record<string, unknown> | undefined
+        if (!update) break
+
+        const sessionUpdate = update.sessionUpdate
+
+        if (sessionUpdate === 'agent_message_chunk' || sessionUpdate === 'content_chunk') {
+          const content = update.content as Record<string, unknown> | undefined
+          if (content && typeof content.text === 'string') {
+            handlers.onContentDelta?.(content.text)
+          } else if (typeof update.text === 'string') {
+            handlers.onContentDelta?.(update.text)
+          }
+        } else if (sessionUpdate === 'agent_thought_chunk') {
+          const content = update.content as Record<string, unknown> | undefined
+          if (content && typeof content.text === 'string') {
+            handlers.onThinkingDelta?.(content.text)
+          } else if (typeof update.thinking === 'string') {
+            handlers.onThinkingDelta?.(update.thinking)
+          }
+        } else if (sessionUpdate === 'tool_call') {
+          const toolCallId = String(update.toolCallId ?? update.id ?? '')
+          const name = String(update.name ?? update.title ?? 'tool')
+          const input = (update.rawInput ?? update.input ?? {}) as Record<string, unknown>
+          handlers.onToolCall?.(toolCallId, name, input)
+        } else if (sessionUpdate === 'tool_call_update') {
+          const toolCallId = String(update.toolCallId ?? update.id ?? '')
+          const content = update.content
+          const status = update.status
+          if (status === 'completed' || status === 'error') {
+            handlers.onToolResult?.(toolCallId, content, status === 'error')
+          }
+        }
+
+        // Generic fallback for custom delta format
         if (data?.delta && typeof data.delta === 'object') {
           const delta = data.delta as Record<string, unknown>
           if (typeof delta.text === 'string') handlers.onContentDelta?.(delta.text)
           if (typeof delta.thinking === 'string') handlers.onThinkingDelta?.(delta.thinking)
         }
         break
+      }
     }
   }
 
@@ -138,6 +195,30 @@ export class AcpClient {
     const params = (req.params ?? {}) as Record<string, unknown>
 
     try {
+      if (method === 'session/request_permission' || method === 'session/requestPermission') {
+        const options = (params.options ?? []) as Array<{ optionId: string; kind?: string }>
+        const allowed =
+          options.find((opt) => opt.kind === 'allow_always') ??
+          options.find((opt) => opt.kind === 'allow_once') ??
+          options[0]
+
+        if (allowed) {
+          await this.sendResponse(req.id, {
+            outcome: {
+              outcome: 'selected',
+              optionId: allowed.optionId
+            }
+          })
+        } else {
+          await this.sendResponse(req.id, {
+            outcome: {
+              outcome: 'cancelled'
+            }
+          })
+        }
+        return
+      }
+
       if (method === 'tools/call' || method === 'session/callTool') {
         const toolName = String(params.name ?? '')
         const toolInput = (params.input ?? {}) as Record<string, unknown>
@@ -223,14 +304,15 @@ export class AcpClient {
    * Perform handshake with the ACP Agent
    */
   async initialize(customParams?: Partial<AcpInitializeParams>): Promise<AcpInitializeResult> {
+    const clientCapabilities: AcpClientCapabilities = {
+      fs: { readTextFile: true, writeTextFile: true },
+      terminal: true
+    }
     const params: AcpInitializeParams = {
-      protocolVersion: '1.0',
+      protocolVersion: 1,
       clientInfo: this.options.clientInfo ?? { name: 'buddy', version: '1.0.0' },
-      capabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: { runCommand: true },
-        tools: { customTools: true }
-      },
+      clientCapabilities,
+      capabilities: clientCapabilities,
       ...customParams
     }
     return this.request<AcpInitializeResult>('initialize', params)
@@ -240,14 +322,29 @@ export class AcpClient {
    * Create a new session in the ACP Agent
    */
   async newSession(params: AcpNewSessionParams): Promise<AcpNewSessionResult> {
-    return this.request<AcpNewSessionResult>('session/new', params)
+    const payload = {
+      ...params,
+      mcpServers: params.mcpServers ?? []
+    }
+    return this.request<AcpNewSessionResult>('session/new', payload)
   }
 
   /**
    * Load an existing session in the ACP Agent
    */
   async loadSession(params: AcpLoadSessionParams): Promise<AcpLoadSessionResult> {
-    return this.request<AcpLoadSessionResult>('session/load', params)
+    const payload = {
+      ...params,
+      mcpServers: params.mcpServers ?? []
+    }
+    return this.request<AcpLoadSessionResult>('session/load', payload)
+  }
+
+  /**
+   * Set session mode (e.g. bypassPermissions, acceptEdits)
+   */
+  async setSessionMode(sessionId: string, modeId: string): Promise<unknown> {
+    return this.request('session/set_mode', { sessionId, modeId })
   }
 
   /**
@@ -255,6 +352,10 @@ export class AcpClient {
    */
   async prompt(params: AcpPromptParams, handlers?: AcpPromptHandlers): Promise<AcpPromptResult> {
     this.activePromptHandlers = handlers ?? null
+
+    const promptBlocks: AcpContentBlock[] = Array.isArray(params.prompt)
+      ? params.prompt
+      : [{ type: 'text', text: params.prompt }]
 
     const breakTool: AcpToolDefinition = {
       name: 'buddy_propose_break',
@@ -273,8 +374,10 @@ export class AcpClient {
 
     try {
       return await this.request<AcpPromptResult>('session/prompt', {
-        ...params,
-        tools: augmentedTools
+        sessionId: params.sessionId,
+        prompt: promptBlocks,
+        tools: augmentedTools,
+        ...(params._meta ? { _meta: params._meta } : {})
       })
     } finally {
       this.activePromptHandlers = null
@@ -293,11 +396,9 @@ export class AcpClient {
    */
   async close(): Promise<void> {
     this.unsubscribeTransport()
-    for (const [id, pending] of this.pendingRequests.entries()) {
-      clearTimeout(pending.timer)
-      pending.reject(new Error('ACP Client closed'))
-      this.pendingRequests.delete(id)
-    }
+    this.unsubscribeClose()
+    this.unsubscribeError()
+    this.rejectAllPending(new Error('ACP Client closed'))
     await this.transport.close()
   }
 }

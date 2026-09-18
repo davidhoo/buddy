@@ -47,10 +47,10 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, splitCommand, type LauncherRunResult } from './launchers'
-import { AcpClient, AcpStdioTransport, defaultAcpArgs } from './acp'
+import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, resolveAcpBinary, checkGlobalAcpAdapters, type GlobalAcpAdaptersStatus } from './acp'
 import { detectModelFromConfig } from './model-detect'
-import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings } from '../../shared/defaults'
-import { buildPingPrompt } from './prompts'
+import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, defaultLauncherFor } from '../../shared/defaults'
+import { buildPingPrompt, actorDisplayName } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
 import { mergeChildEnv } from './shell-path'
@@ -339,10 +339,14 @@ export class BuddyCoreService {
   ): Promise<TestLauncherResult> {
     const PING_TIMEOUT_SECONDS = 120
     const startTime = Date.now()
+    const effectiveCommand =
+      protocol !== 'acp' && (command.trim() === 'npx' || !command.trim())
+        ? defaultLauncherFor(actor).command
+        : command
 
     // Phase 1: Tool check - verify the command exists and can be spawned
     try {
-      const splitCmd = splitCommand(command)
+      const splitCmd = splitCommand(effectiveCommand)
       const baseExecutable = splitCmd[0] ?? ''
       await new Promise<void>((resolve, reject) => {
         const child = spawn(baseExecutable, ['--version'], {
@@ -389,19 +393,21 @@ export class BuddyCoreService {
       await mkdir(testDir, { recursive: true })
 
       if (protocol === 'acp') {
-        const acpArgs = args && args.length > 0 ? args : defaultAcpArgs(command, actor)
+        const baseArgs = args && args.length > 0 ? args : defaultAcpArgs(effectiveCommand, actor)
+        const resolved = resolveAcpBinary(effectiveCommand, baseArgs)
+        const acpEnv = await prepareAcpEnvironment(actor, env, this.store.dataRoot)
         const transport = new AcpStdioTransport({
-          command,
-          args: acpArgs,
+          command: resolved.command,
+          args: resolved.args,
           cwd: testDir,
-          env
+          env: acpEnv
         })
         try {
           transport.start()
           const client = new AcpClient(transport, { timeoutMs: PING_TIMEOUT_SECONDS * 1000 })
           const initResult = await client.initialize()
           const info = initResult.agentInfo ?? initResult.serverInfo
-          const serverName = info?.name ?? 'ACP Agent'
+          const serverName = info?.name ?? (actor === 'cursor' ? 'Cursor Agent' : `${actorDisplayName(actor)} (ACP)`)
           const serverVersion = info?.version ? ` v${info.version}` : ''
           await client.close().catch(() => {})
           const res: TestLauncherResult = {
@@ -441,10 +447,10 @@ export class BuddyCoreService {
       const eventFile = join(testDir, `${runId}-events.jsonl`)
       await writeFile(promptFile, prompt)
 
-      const commandKind = commandKindFor(actor, command)
+      const commandKind = commandKindFor(actor, effectiveCommand)
       const launcherCommand = buildLauncherCommand({
         actor,
-        command,
+        command: effectiveCommand,
         mode: 'start',
         promptFile,
         promptText: prompt,
@@ -610,6 +616,10 @@ export class BuddyCoreService {
       // Clean up temp directory
       try { await rm(testDir, { recursive: true, force: true }) } catch { /* ignore cleanup errors */ }
     }
+  }
+
+  checkAcpGlobalAdapters(): GlobalAcpAdaptersStatus {
+    return checkGlobalAcpAdapters()
   }
 }
 

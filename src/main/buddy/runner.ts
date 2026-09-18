@@ -11,8 +11,10 @@ import type {
   TaskSettings,
   TaskStats,
   TranscriptEntry,
-  TaskState
+  TaskState,
+  Launcher
 } from '../../shared/types'
+import { defaultLauncherFor } from '../../shared/defaults'
 import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind, type LauncherRunResult } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
@@ -21,7 +23,7 @@ import { BuddyStore } from './store'
 import { TaskServiceManager, type ServiceRun } from './task-services'
 import { BuddyEventBus } from './events'
 import type { TaskNotifier } from './notifications'
-import { AcpClient, AcpStdioTransport, defaultAcpArgs } from './acp'
+import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, resolveAcpBinary } from './acp'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -29,7 +31,10 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
   cursor: 'RUNNING_CURSOR',
   agy: 'RUNNING_AGY',
   opencode: 'RUNNING_OPENCODE',
-  kimi: 'RUNNING_KIMI'
+  kimi: 'RUNNING_KIMI',
+  wecode_claude: 'RUNNING_WECODE_CLAUDE',
+  wecode_codex: 'RUNNING_WECODE_CODEX',
+  wecode_opencode: 'RUNNING_WECODE_OPENCODE'
 }
 
 const PING_TIMEOUT_SECONDS = 120
@@ -627,6 +632,44 @@ export class BuddyRunner {
     }
   }
 
+  private resolveEffectiveLauncher(
+    actor: string,
+    taskLaunchers?: Record<string, Launcher>,
+    globalLaunchers?: Record<string, Launcher>
+  ): Launcher {
+    const fromTask = taskLaunchers?.[actor]
+    const fromGlobal = globalLaunchers?.[actor]
+    const fallback = defaultLauncherFor(actor)
+    const base: Launcher = fromTask ?? fromGlobal ?? fallback
+    const isNpxOrAcp =
+      base.command === 'npx' ||
+      (typeof base.command === 'string' && base.command.includes('acp')) ||
+      (Array.isArray(base.args) && base.args.some((a) => a.toLowerCase().includes('acp')))
+
+    const protocol =
+      base.protocol ??
+      (fromGlobal?.protocol === 'acp' && (base.command === fromGlobal.command || isNpxOrAcp)
+        ? 'acp'
+        : isNpxOrAcp
+          ? 'acp'
+          : undefined)
+
+    const args =
+      base.args && base.args.length > 0
+        ? [...base.args]
+        : protocol === 'acp' && fromGlobal?.args && fromGlobal.args.length > 0
+          ? [...fromGlobal.args]
+          : undefined
+
+    return {
+      command: base.command,
+      env: { ...(base.env ?? {}) },
+      timeout_seconds: base.timeout_seconds ?? fallback.timeout_seconds,
+      ...(protocol ? { protocol } : {}),
+      ...(args ? { args } : {})
+    }
+  }
+
   private async executePingAttempt(
     taskId: string,
     workspaceKey: string,
@@ -634,20 +677,19 @@ export class BuddyRunner {
     signal?: AbortSignal
   ): Promise<{ success: boolean; sessionId?: string; threadId?: string; error?: string; stderr?: string; stdout?: string; timedOut?: boolean }> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
-    const launcher = detail.settings.launchers[actor] ?? {
-      command: actor,
-      env: {},
-      timeout_seconds: PING_TIMEOUT_SECONDS
-    }
+    const globalSettings = await this.store.readGlobalSettings()
+    const launcher = this.resolveEffectiveLauncher(actor, detail.settings.launchers, globalSettings.launchers)
 
     if (launcher.protocol === 'acp') {
       const cwd = await existingCwd(detail.state.repo_root)
-      const args = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const baseArgs = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const resolved = resolveAcpBinary(launcher.command, baseArgs)
+      const acpEnv = await prepareAcpEnvironment(actor, launcher.env, this.store.dataRoot)
       const transport = new AcpStdioTransport({
-        command: launcher.command,
-        args,
+        command: resolved.command,
+        args: resolved.args,
         cwd,
-        env: launcher.env
+        env: acpEnv
       })
       try {
         transport.start()
@@ -800,7 +842,13 @@ export class BuddyRunner {
         if (actor === 'agy' && sid) sessionUpdates.agy_session_id = sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
-        const displayId = actor === 'codex' ? (tid ?? sid) : sid
+        if (actor === 'wecode_claude' && sid) sessionUpdates.wecode_claude_session_id = sid
+        if (actor === 'wecode_codex' && (tid ?? sid)) sessionUpdates.wecode_codex_thread_id = tid ?? sid
+        if (actor === 'wecode_opencode' && sid) sessionUpdates.wecode_opencode_session_id = sid
+        const displayId = (actor === 'codex' || actor === 'wecode_codex') ? (tid ?? sid) : sid
+        if (displayId) {
+          sessionUpdates.actor_sessions = { ...(sessionUpdates.actor_sessions ?? {}), [actor]: displayId }
+        }
         await this.store.appendTaskEvent(taskId, workspaceKey, {
           type: 'health_check.actor_passed',
           actor,
@@ -829,6 +877,7 @@ export class BuddyRunner {
         status: 'READY',
         health_check: null,
         ...sessionUpdates,
+        actor_sessions: { ...(state.actor_sessions ?? {}), ...(sessionUpdates.actor_sessions ?? {}) },
         updated_at: new Date().toISOString()
       }))
       await this.store.appendTaskEvent(taskId, workspaceKey, {
@@ -841,13 +890,16 @@ export class BuddyRunner {
         'system',
         'health_check.passed',
         { kind: 'health_check', actors, session_ids: actors.map(a => {
-          const sid = a === 'codex'
-            ? (sessionUpdates.codex_thread_id)
+          const sid = (a === 'codex' || a === 'wecode_codex')
+            ? (sessionUpdates.codex_thread_id ?? sessionUpdates.wecode_codex_thread_id)
             : (a === 'claude' ? sessionUpdates.claude_session_id
               : a === 'cursor' ? sessionUpdates.cursor_session_id
                 : a === 'agy' ? sessionUpdates.agy_session_id
                   : a === 'opencode' ? sessionUpdates.opencode_session_id
-                    : sessionUpdates.kimi_session_id)
+                    : a === 'kimi' ? sessionUpdates.kimi_session_id
+                      : a === 'wecode_claude' ? sessionUpdates.wecode_claude_session_id
+                        : a === 'wecode_opencode' ? sessionUpdates.wecode_opencode_session_id
+                          : sessionUpdates.actor_sessions?.[a])
           return { actor: a, session_id: (sid as string | undefined) ?? null }
         }) }
       )
@@ -937,11 +989,8 @@ export class BuddyRunner {
     compactRetries = 0
   ): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
-    const launcher = detail.settings.launchers[actor] ?? {
-      command: actor,
-      env: {},
-      timeout_seconds: 600
-    }
+    const globalSettings = await this.store.readGlobalSettings()
+    const launcher = this.resolveEffectiveLauncher(actor, detail.settings.launchers, globalSettings.launchers)
     if (launcher.protocol === 'acp') {
       return this.executeAcpActor(taskId, workspaceKey, actor, runId, userMessage, signal)
     }
@@ -958,11 +1007,7 @@ export class BuddyRunner {
   ): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
-    const launcher = detail.settings.launchers[actor] ?? {
-      command: actor,
-      env: {},
-      timeout_seconds: 600
-    }
+    const launcher = this.resolveEffectiveLauncher(actor, detail.settings.launchers, globalSettings.launchers)
     const cwd = await existingCwd(detail.state.repo_root)
     const existingSessionId = sessionIdForActor(actor, detail.state, detail.settings)
     const args = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
@@ -998,11 +1043,18 @@ export class BuddyRunner {
       serviceRun = await this.services.openRun(taskId, workspaceKey, runId, launcher.env)
       const startedAtMs = Date.now()
 
+      const acpEnv = await prepareAcpEnvironment(
+        actor,
+        { ...launcher.env, ...serviceRun.env },
+        this.store.dataRoot
+      )
+      const baseArgs = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const resolved = resolveAcpBinary(launcher.command, baseArgs)
       transport = new AcpStdioTransport({
-        command: launcher.command,
-        args,
+        command: resolved.command,
+        args: resolved.args,
         cwd,
-        env: { ...launcher.env, ...serviceRun.env }
+        env: acpEnv
       })
       transport.start()
 
@@ -1020,17 +1072,28 @@ export class BuddyRunner {
 
       // 2. Session
       let sessionId = existingSessionId
+      let availableModes: Array<{ id: string }> | undefined
       if (sessionId) {
         try {
           const loaded = await client.loadSession({ sessionId, cwd })
           sessionId = loaded.sessionId || sessionId
+          availableModes = (loaded as any).modes?.availableModes
         } catch {
           const created = await client.newSession({ cwd })
           sessionId = created.sessionId
+          availableModes = created.modes?.availableModes
         }
       } else {
         const created = await client.newSession({ cwd })
         sessionId = created.sessionId
+        availableModes = created.modes?.availableModes
+      }
+
+      const autoMode = availableModes?.find(
+        (m) => m.id === 'bypassPermissions' || m.id === 'acceptEdits'
+      )?.id
+      if (autoMode) {
+        await client.setSessionMode(sessionId, autoMode).catch(() => {})
       }
 
       // 3. Prompt turn
@@ -1499,6 +1562,9 @@ export class BuddyRunner {
       if (actor === 'agy' && sessionId) next.agy_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
+      if (actor === 'wecode_claude' && sessionId) next.wecode_claude_session_id = sessionId
+      if (actor === 'wecode_codex' && (threadId || sessionId)) next.wecode_codex_thread_id = (threadId || sessionId)
+      if (actor === 'wecode_opencode' && sessionId) next.wecode_opencode_session_id = sessionId
 
       if (breakConfirmed) {
         return {
@@ -1783,6 +1849,9 @@ export class BuddyRunner {
       : actor === 'agy' ? 'agy_session_id'
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'kimi' ? 'kimi_session_id'
+      : actor === 'wecode_claude' ? 'wecode_claude_session_id'
+      : actor === 'wecode_codex' ? 'wecode_codex_thread_id'
+      : actor === 'wecode_opencode' ? 'wecode_opencode_session_id'
       : null
 
     if (!sessionKey) return
@@ -1811,9 +1880,12 @@ export class BuddyRunner {
       const contextSent = { ...(state.context_sent ?? {}) }
       // Mark context as not sent so the fresh session receives the compact context
       contextSent[actor] = false
+      const actorSessions = { ...(state.actor_sessions ?? {}) }
+      delete actorSessions[actor]
       return {
         ...state,
         [sessionKey]: null,
+        actor_sessions: actorSessions,
         context_sent: contextSent
       }
     })
@@ -2154,6 +2226,9 @@ function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<T
   if (actor === 'agy') return state.agy_session_id ?? stringSetting(settings, 'seed_agy_session_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
   if (actor === 'kimi') return state.kimi_session_id ?? stringSetting(settings, 'seed_kimi_session_id')
+  if (actor === 'wecode_claude') return state.wecode_claude_session_id ?? stringSetting(settings, 'seed_wecode_claude_session_id')
+  if (actor === 'wecode_codex') return state.wecode_codex_thread_id ?? stringSetting(settings, 'seed_wecode_codex_thread_id')
+  if (actor === 'wecode_opencode') return state.wecode_opencode_session_id ?? stringSetting(settings, 'seed_wecode_opencode_session_id')
   return undefined
 }
 
@@ -2163,7 +2238,17 @@ function stringSetting(settings: Partial<TaskSettings> | undefined, key: keyof T
 }
 
 function normalizeActorRole(actor: string): TranscriptEntry['role'] {
-  if (actor === 'claude' || actor === 'codex' || actor === 'cursor' || actor === 'agy' || actor === 'opencode' || actor === 'kimi') return actor
+  if (
+    actor === 'claude' ||
+    actor === 'codex' ||
+    actor === 'cursor' ||
+    actor === 'agy' ||
+    actor === 'opencode' ||
+    actor === 'kimi' ||
+    actor === 'wecode_claude' ||
+    actor === 'wecode_codex' ||
+    actor === 'wecode_opencode'
+  ) return actor
   return 'system'
 }
 

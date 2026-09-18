@@ -52,18 +52,16 @@ export interface AcpClientCapabilities {
     readTextFile?: boolean
     writeTextFile?: boolean
   }
-  terminal?: {
-    runCommand?: boolean
-  }
-  tools?: {
-    customTools?: boolean
-  }
+  terminal?: boolean
+  [key: string]: unknown
 }
 
 export interface AcpInitializeParams {
-  protocolVersion: string
+  protocolVersion: number | string
   clientInfo: AcpClientInfo
-  capabilities: AcpClientCapabilities
+  clientCapabilities?: AcpClientCapabilities
+  capabilities?: AcpClientCapabilities
+  _meta?: Record<string, unknown>
 }
 
 export interface AcpAgentInfo {
@@ -83,29 +81,54 @@ export interface AcpInitializeResult {
   protocolVersion: string | number
   agentInfo?: AcpAgentInfo
   serverInfo?: AcpAgentInfo
-  capabilities: AcpAgentCapabilities
+  capabilities?: AcpAgentCapabilities
+  agentCapabilities?: Record<string, unknown>
+  authMethods?: unknown[]
+  [key: string]: unknown
 }
+
+/**
+ * ACP Content Block structure for prompt turns
+ */
+export type AcpContentBlock =
+  | { type: 'text'; text: string; [key: string]: unknown }
+  | { type: 'image'; data: string; mimeType: string; [key: string]: unknown }
+  | { type: 'audio'; data: string; mimeType: string; [key: string]: unknown }
+  | { type: 'resource'; resource: unknown; [key: string]: unknown }
+  | { type: 'resource_link'; uri: string; [key: string]: unknown }
 
 /**
  * ACP Session Lifecycle
  */
 export interface AcpNewSessionParams {
   cwd: string
-  mcpServers?: Array<{ name: string; command: string; args?: string[] }>
+  mcpServers?: Array<unknown>
   systemPrompt?: string
+  additionalDirectories?: string[]
+  _meta?: Record<string, unknown>
 }
 
 export interface AcpNewSessionResult {
   sessionId: string
+  modes?: {
+    currentModeId: string
+    availableModes: Array<{ id: string; name: string; description?: string }>
+  }
+  configOptions?: Array<unknown>
+  [key: string]: unknown
 }
 
 export interface AcpLoadSessionParams {
   sessionId: string
   cwd: string
+  mcpServers?: Array<unknown>
+  additionalDirectories?: string[]
+  _meta?: Record<string, unknown>
 }
 
 export interface AcpLoadSessionResult {
   sessionId: string
+  [key: string]: unknown
 }
 
 /**
@@ -119,13 +142,16 @@ export interface AcpToolDefinition {
 
 export interface AcpPromptParams {
   sessionId: string
-  prompt: string
+  prompt: string | AcpContentBlock[]
   tools?: AcpToolDefinition[]
+  _meta?: Record<string, unknown>
 }
 
 export interface AcpPromptResult {
-  status: 'completed' | 'cancelled' | 'error'
+  status?: 'completed' | 'cancelled' | 'error' | string
   stopReason?: string
+  usage?: Record<string, unknown>
+  _meta?: Record<string, unknown>
 }
 
 /**

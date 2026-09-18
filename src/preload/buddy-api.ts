@@ -6,6 +6,7 @@ import type {
   CreateTaskResult,
   Event,
   GitCommitPushResult,
+  GlobalAcpAdaptersStatus,
   GlobalSettings,
   InstructionQueueItem,
   RoundEventSummary,
@@ -111,6 +112,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:detectActorModels') as Promise<Record<string, string | undefined>>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
       ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
+    checkAcpGlobalAdapters: (): Promise<GlobalAcpAdaptersStatus> =>
+      ipc.invoke('buddy:checkAcpGlobalAdapters') as Promise<GlobalAcpAdaptersStatus>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {
       const listener: Listener = (_event, payload) => callback(payload)
       ipc.on('buddy:event', listener)

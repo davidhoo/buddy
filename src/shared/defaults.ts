@@ -1,6 +1,16 @@
 import type { AcpPreset, GlobalSettings, Launcher } from './types'
 
-export const DEFAULT_LAUNCHER_ORDER = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
+export const DEFAULT_LAUNCHER_ORDER = [
+  'claude',
+  'codex',
+  'cursor',
+  'agy',
+  'opencode',
+  'kimi',
+  'wecode_claude',
+  'wecode_codex',
+  'wecode_opencode'
+] as const
 
 export const DEFAULT_LAUNCHER_TIMEOUT_SECONDS = 7200
 
@@ -16,7 +26,7 @@ export const KNOWN_ACP_PRESETS: AcpPreset[] = [
   {
     id: 'wecode-opencode-acp',
     name: 'WeCode OpenCode ACP',
-    actor: 'opencode',
+    actor: 'wecode_opencode',
     command: 'wecode',
     args: ['opencode', 'acp'],
     description: 'WeCode OpenCode native ACP server'
@@ -38,12 +48,28 @@ export const KNOWN_ACP_PRESETS: AcpPreset[] = [
     description: 'Claude Agent ACP adapter'
   },
   {
-    id: 'kimi-acp',
-    name: 'Kimi ACP',
-    actor: 'kimi',
-    command: 'kimi',
+    id: 'cursor-acp',
+    name: 'Cursor ACP',
+    actor: 'cursor',
+    command: 'cursor-agent',
     args: ['acp'],
-    description: 'Kimi CLI with native ACP mode'
+    description: 'Cursor Agent native ACP mode'
+  },
+  {
+    id: 'wecode-claude-acp',
+    name: 'WeCode Claude ACP',
+    actor: 'wecode_claude',
+    command: 'npx',
+    args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+    description: 'WeCode Claude via ACP adapter'
+  },
+  {
+    id: 'wecode-codex-acp',
+    name: 'WeCode Codex ACP',
+    actor: 'wecode_codex',
+    command: 'npx',
+    args: ['-y', '@agentclientprotocol/codex-acp'],
+    description: 'WeCode Codex via ACP adapter'
   }
 ]
 
@@ -53,7 +79,10 @@ const DEFAULT_LAUNCHER_COMMANDS: Record<string, string> = {
   cursor: 'cursor-agent',
   agy: 'agy',
   opencode: 'opencode',
-  kimi: 'kimi'
+  kimi: 'kimi',
+  wecode_claude: 'wecode',
+  wecode_codex: 'wecode codex',
+  wecode_opencode: 'wecode opencode'
 }
 
 export function defaultLauncherFor(actor: string): Launcher {
@@ -66,19 +95,23 @@ export function defaultLauncherFor(actor: string): Launcher {
 
 export function normalizeLauncher(actor: string, launcher?: Partial<Launcher> | null): Launcher {
   const fallback = defaultLauncherFor(actor)
+  let command = typeof launcher?.command === 'string' && launcher.command.trim() !== '' ? launcher.command : fallback.command
+  if (launcher?.protocol !== 'acp' && command === 'npx') {
+    command = fallback.command
+  }
   const result: Launcher = {
-    command: typeof launcher?.command === 'string' && launcher.command.trim() !== '' ? launcher.command : fallback.command,
+    command,
     env: launcher?.env ? { ...launcher.env } : { ...fallback.env },
     timeout_seconds:
       typeof launcher?.timeout_seconds === 'number'
         ? launcher.timeout_seconds
         : fallback.timeout_seconds
   }
-  if (launcher?.protocol) {
-    result.protocol = launcher.protocol
-  }
-  if (Array.isArray(launcher?.args) && launcher.args.length > 0) {
-    result.args = [...launcher.args]
+  if (launcher?.protocol === 'acp') {
+    result.protocol = 'acp'
+    if (Array.isArray(launcher.args)) {
+      result.args = [...launcher.args]
+    }
   }
   return result
 }
@@ -114,6 +147,9 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     seed_agy_session_id: settings?.seed_agy_session_id ?? '',
     seed_opencode_session_id: settings?.seed_opencode_session_id ?? '',
     seed_kimi_session_id: settings?.seed_kimi_session_id ?? '',
+    seed_wecode_claude_session_id: settings?.seed_wecode_claude_session_id ?? '',
+    seed_wecode_codex_thread_id: settings?.seed_wecode_codex_thread_id ?? '',
+    seed_wecode_opencode_session_id: settings?.seed_wecode_opencode_session_id ?? '',
     max_compact_retries: settings?.max_compact_retries ?? 3,
     auto_generate_commit_message: settings?.auto_generate_commit_message ?? true,
     system_notifications_enabled: settings?.system_notifications_enabled ?? true,

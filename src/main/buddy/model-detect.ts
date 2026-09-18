@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand } from './launchers'
+import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand, isWecodeOpenCodeCommand } from './launchers'
 
 /**
  * Detect the current model for an actor by reading its configuration file.
@@ -19,20 +19,20 @@ import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand } from './l
  * 2. CLI-specific config file:
  *    - opencode: ~/.config/opencode/opencode.json → JSON "model" field
  *    - codex:    ~/.codex/config.toml → TOML "model" field
- *      (when launched via `wecode codex`, reads ~/.wecode-cli/config.json → codex.model instead)
+ *      (when launched via `wecode codex` or actor is wecode_codex, reads ~/.wecode-cli/config.json → codex.model instead)
  *    - kimi:     ~/.kimi-code/config.toml → TOML "default_model" field
  *      (~/.kimi/config.toml is checked as a legacy fallback)
  *    - claude:   ~/.claude/settings.json → env.ANTHROPIC_MODEL, else "model" field
  *      (the "model" field is a tier alias like "sonnet[1m]"; ANTHROPIC_MODEL is the
  *       real model the SDK invokes, so it takes precedence to match what runs)
- *      (when launched via WeCode — `wecode` without a leading `codex` token —
+ *      (when launched via WeCode — `wecode` or actor is wecode_claude —
  *       reads ~/.wecode-cli/config.json → env.ANTHROPIC_MODEL instead, and does
  *       NOT fall back to ~/.claude/settings.json)
  *    - cursor:   ~/.cursor/cli-config.json → selectedModel.modelId
  *      (falls back to the legacy model object; Cursor's default is represented as
  *       modelId="default" and displayModelId="auto")
  *
- * @param actor  Actor name (codex, cursor, opencode, kimi, claude)
+ * @param actor  Actor name (codex, cursor, opencode, kimi, claude, wecode_*)
  * @param command  Optional launcher command string. Used both to extract an
  *                 explicit `-m`/`--model` override and to determine the CLI
  *                 kind (e.g. distinguishing `wecode codex` from plain `codex`,
@@ -55,10 +55,10 @@ export async function detectModelFromConfig(
       return await readJsonModel(join(home, '.config', 'opencode', 'opencode.json'), 'model')
     }
     if (kind === 'native_codex') {
-      // When codex is launched via `wecode codex`, the effective model is
+      // When codex is launched via `wecode codex` or actor is wecode_codex, the effective model is
       // in ~/.wecode-cli/config.json (codex.model), NOT ~/.codex/config.toml
       // — wecode does not write back to config.toml.
-      if (isWecodeCodexCommand(command ?? '')) {
+      if (isWecodeCodexCommand(command ?? '') || actor === 'wecode_codex') {
         return await readWecodeCodexModel(home)
       }
       return await readTomlModel(join(home, '.codex', 'config.toml'), 'model')
@@ -71,11 +71,11 @@ export async function detectModelFromConfig(
     }
     if (kind === 'native_claude') {
       // WeCode Claude (`wecode`, optionally with flags like
-      // --dangerously-skip-permissions) reads its own config and must NOT
+      // --dangerously-skip-permissions, or actor is wecode_claude) reads its own config and must NOT
       // fall back to ~/.claude/settings.json — otherwise a stale Claude model
       // would be displayed. Detection is by executable basename, not by any
       // permission flag, mirroring commandKindFor.
-      if (isWecodeClaudeCommand(command ?? '')) {
+      if (isWecodeClaudeCommand(command ?? '') || actor === 'wecode_claude') {
         return await readWecodeClaudeModel(join(home, '.wecode-cli', 'config.json'))
       }
       return await readClaudeModel(join(home, '.claude', 'settings.json'))

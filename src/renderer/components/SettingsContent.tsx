@@ -1,12 +1,11 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { HexColorPicker } from 'react-colorful'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutUpLeft, Command, CornerDownLeft, Delete, Monitor, Moon, Option, RotateCcw, Search, Space, Sun } from 'lucide-react'
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
-import { useUpdateGlobalSettings } from '../hooks/useBuddy'
-import { useTestLauncher } from '../hooks/useBuddy'
-import type { TestLauncherResult } from '../../shared/types'
+import { useUpdateGlobalSettings, useTestLauncher, useAcpGlobalAdapters } from '../hooks/useBuddy'
+import type { TestLauncherResult, GlobalAcpAdaptersStatus } from '../../shared/types'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
 import {
@@ -27,7 +26,7 @@ import {
 } from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, KNOWN_ACP_PRESETS, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
-import { CheckCircle, XCircle, Loader2, Zap } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Zap, AlertCircle, Info, Copy, Check } from 'lucide-react'
 import { Switch } from './Switch'
 
 export type SettingsTab = 'general' | 'appearance' | 'keyboard' | 'prompts'
@@ -45,7 +44,7 @@ function launcherInfoFor(actor: string, t: TFunction): LauncherInfo {
       return {
         title: t('settings.launcher.claude.title'),
         label: t('settings.launcher.claude.label'),
-        placeholder: 'claude --dangerously-skip-permissions',
+        placeholder: 'claude',
         hint: <HintWithCode template={t('settings.launcher.claude.hint')} />
       }
     case 'codex':
@@ -82,6 +81,27 @@ function launcherInfoFor(actor: string, t: TFunction): LauncherInfo {
         label: t('settings.launcher.kimi.label'),
         placeholder: 'kimi',
         hint: <HintWithCode template={t('settings.launcher.kimi.hint')} />
+      }
+    case 'wecode_claude':
+      return {
+        title: t('settings.launcher.wecode_claude.title'),
+        label: t('settings.launcher.wecode_claude.label'),
+        placeholder: 'wecode',
+        hint: <HintWithCode template={t('settings.launcher.wecode_claude.hint')} />
+      }
+    case 'wecode_codex':
+      return {
+        title: t('settings.launcher.wecode_codex.title'),
+        label: t('settings.launcher.wecode_codex.label'),
+        placeholder: 'wecode codex',
+        hint: <HintWithCode template={t('settings.launcher.wecode_codex.hint')} />
+      }
+    case 'wecode_opencode':
+      return {
+        title: t('settings.launcher.wecode_opencode.title'),
+        label: t('settings.launcher.wecode_opencode.label'),
+        placeholder: 'wecode opencode',
+        hint: <HintWithCode template={t('settings.launcher.wecode_opencode.hint')} />
       }
     default:
       return { title: actor, label: actor, placeholder: actor, hint: '' }
@@ -301,6 +321,8 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   const currentTimeout =
     DEFAULT_LAUNCHER_ORDER.map((a) => launchers[a]?.timeout_seconds).find((v) => typeof v === 'number') ?? 7200
 
+  const { data: globalAdapters } = useAcpGlobalAdapters()
+
   return (
     <div className="space-y-8">
       <GeneralSection />
@@ -313,14 +335,26 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
       <SettingsList>
         {DEFAULT_LAUNCHER_ORDER.map((actor) => {
           const launcher = launchers[actor] ?? defaultLauncherFor(actor)
+          const isFirstWecode = actor === 'wecode_claude'
           return (
-            <LauncherSection
-              key={actor}
-              actor={actor}
-              launcher={launcher}
-              info={launcherInfoFor(actor, t)}
-              onSave={(patch) => saveLauncher(actor, patch)}
-            />
+            <Fragment key={actor}>
+              {isFirstWecode && (
+                <div className="px-4 py-2 bg-bg-subtle/50 flex items-center gap-2.5 select-none">
+                  <div className="h-px bg-border-subtle flex-1" />
+                  <span className="text-[11px] text-fg-muted font-medium tracking-wide">
+                    {t('settings.launcher.internalToolsHeader')}
+                  </span>
+                  <div className="h-px bg-border-subtle flex-1" />
+                </div>
+              )}
+              <LauncherSection
+                actor={actor}
+                launcher={launcher}
+                info={launcherInfoFor(actor, t)}
+                onSave={(patch) => saveLauncher(actor, patch)}
+                globalAdapters={globalAdapters}
+              />
+            </Fragment>
           )
         })}
       </SettingsList>
@@ -463,11 +497,18 @@ function PromptsSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   )
 }
 
-function LauncherSection({ actor, launcher, info, onSave }: {
+function LauncherSection({
+  actor,
+  launcher,
+  info,
+  onSave,
+  globalAdapters
+}: {
   actor: string
   launcher: Launcher
   info: LauncherInfo
   onSave: (patch: Partial<Launcher>) => void
+  globalAdapters?: GlobalAcpAdaptersStatus
 }) {
   const t = useT()
   const savedProtocol = launcher.protocol === 'acp' ? 'acp' : 'cli'
@@ -477,12 +518,24 @@ function LauncherSection({ actor, launcher, info, onSave }: {
   const [protocol, setProtocol] = useState<'cli' | 'acp'>(savedProtocol)
   const [commandDraft, setCommandDraft] = useState(savedCommand)
   const [argsDraft, setArgsDraft] = useState(savedArgs)
+  const [copied, setCopied] = useState(false)
+
+  const adapter =
+    actor === 'claude' || actor === 'wecode_claude'
+      ? globalAdapters?.claude
+      : actor === 'codex' || actor === 'wecode_codex'
+      ? globalAdapters?.codex
+      : undefined
 
   useEffect(() => {
     setProtocol(savedProtocol)
-    setCommandDraft(savedCommand)
+    const initialCommand =
+      savedProtocol === 'cli' && (savedCommand === 'npx' || savedCommand.includes('acp') || !savedCommand.trim())
+        ? defaultLauncherFor(actor).command
+        : savedCommand
+    setCommandDraft(initialCommand)
     setArgsDraft(savedArgs)
-  }, [savedProtocol, savedCommand, savedArgs])
+  }, [savedProtocol, savedCommand, savedArgs, actor])
 
   const dirty =
     protocol !== savedProtocol ||
@@ -492,13 +545,36 @@ function LauncherSection({ actor, launcher, info, onSave }: {
   const [testResult, setTestResult] = useState<TestLauncherResult | null>(null)
   const testLauncherMutation = useTestLauncher()
 
-  const actorPresets = KNOWN_ACP_PRESETS.filter((p) => p.actor === actor)
+  const directBin =
+    actor === 'claude' || actor === 'wecode_claude'
+      ? 'claude-agent-acp'
+      : actor === 'codex' || actor === 'wecode_codex'
+      ? 'codex-acp'
+      : undefined
+
+  const actorPresets = useMemo(() => {
+    const rawPresets = KNOWN_ACP_PRESETS.filter((p) => p.actor === actor)
+    if (adapter?.installed && directBin) {
+      return rawPresets.map((preset) => {
+        if (preset.command === 'npx') {
+          return {
+            ...preset,
+            command: directBin,
+            args: [],
+            description: `${preset.name} (${directBin})`
+          }
+        }
+        return preset
+      })
+    }
+    return rawPresets
+  }, [actor, adapter?.installed, directBin])
 
   const handleSave = () => {
     const trimmedCommand = commandDraft.trim()
     const trimmedArgs = argsDraft.trim()
     const patch: Partial<Launcher> = {
-      command: trimmedCommand,
+      command: trimmedCommand || defaultLauncherFor(actor).command,
       protocol: protocol === 'acp' ? 'acp' : undefined,
       args: protocol === 'acp' && trimmedArgs ? trimmedArgs.split(/\s+/) : undefined
     }
@@ -551,7 +627,12 @@ function LauncherSection({ actor, launcher, info, onSave }: {
           <div className="inline-flex rounded-lg p-0.5 bg-bg-muted border border-border">
             <button
               type="button"
-              onClick={() => setProtocol('cli')}
+              onClick={() => {
+                setProtocol('cli')
+                if (commandDraft === 'npx' || commandDraft.includes('acp') || !commandDraft.trim()) {
+                  setCommandDraft(defaultLauncherFor(actor).command)
+                }
+              }}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
                 protocol === 'cli'
                   ? 'bg-bg-elevated text-fg shadow-sm'
@@ -562,7 +643,14 @@ function LauncherSection({ actor, launcher, info, onSave }: {
             </button>
             <button
               type="button"
-              onClick={() => setProtocol('acp')}
+              onClick={() => {
+                setProtocol('acp')
+                const defaultPreset = actorPresets[0]
+                if (defaultPreset && (commandDraft === defaultLauncherFor(actor).command || !commandDraft.trim())) {
+                  setCommandDraft(defaultPreset.command)
+                  setArgsDraft(defaultPreset.args.join(' '))
+                }
+              }}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
                 protocol === 'acp'
                   ? 'bg-bg-elevated text-purple-600 dark:text-purple-400 shadow-sm font-semibold'
@@ -595,6 +683,70 @@ function LauncherSection({ actor, launcher, info, onSave }: {
           </div>
         )}
       </div>
+
+      {protocol === 'acp' && adapter && (
+        adapter.installed ? (
+          <div className="mb-3 px-3 py-2.5 rounded-lg text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Zap size={14} className="shrink-0 text-emerald-500" />
+              <span className="leading-relaxed">
+                {t('settings.launcher.globalAdapterReady', { bin: adapter.binaryPath ?? directBin ?? '' })}
+              </span>
+            </div>
+            {directBin && (commandDraft === 'npx' || commandDraft.includes('/npx')) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCommandDraft(directBin)
+                  setArgsDraft('')
+                }}
+                className="shrink-0 px-2.5 py-1 text-[11px] font-medium rounded border border-emerald-500/30 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-800 dark:text-emerald-200 flex items-center gap-1 transition-colors"
+              >
+                <Zap size={12} />
+                {t('settings.launcher.switchToDirect', { bin: directBin })}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mb-3 p-3 rounded-lg text-xs bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2 font-medium mb-1 text-amber-800 dark:text-amber-300">
+              <Zap size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>{t('settings.launcher.globalInstallPromptTitle')}</span>
+            </div>
+            <p className="text-fg-secondary text-[11px] mb-2 leading-relaxed">
+              {t('settings.launcher.globalInstallPromptDesc')}
+            </p>
+            <div className="flex items-center justify-between gap-2 bg-bg/60 dark:bg-bg/40 border border-amber-500/20 rounded-md px-2.5 py-1.5 font-mono text-[11px]">
+              <span className="text-fg select-all truncate">{adapter.installCommand}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(adapter.installCommand).then(() => {
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 3000)
+                  })
+                }}
+                className="shrink-0 px-2 py-1 text-[11px] font-sans font-medium rounded border border-border/80 bg-bg hover:bg-bg-subtle text-fg flex items-center gap-1 transition-colors"
+                title={adapter.installCommand}
+              >
+                {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                <span>{copied ? t('common.copied') : t('settings.launcher.copyInstallCmd')}</span>
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
+      {protocol === 'acp' && (actor === 'agy' || actor === 'kimi') && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 flex items-start gap-2">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span>
+            {actor === 'agy'
+              ? t('settings.launcher.agyAcpWarning')
+              : t('settings.launcher.kimiAcpWarning')}
+          </span>
+        </div>
+      )}
 
       {protocol === 'cli' ? (
         <>
@@ -1387,6 +1539,9 @@ function ActorBadge({ actor }: { actor: string }) {
     agy: 'var(--actor-agy)',
     opencode: 'var(--actor-opencode)',
     kimi: 'var(--actor-kimi)',
+    wecode_claude: 'var(--actor-claude)',
+    wecode_codex: 'var(--actor-codex)',
+    wecode_opencode: 'var(--actor-opencode)',
   }
   return (
     <div

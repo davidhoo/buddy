@@ -21,6 +21,9 @@ export type TaskStatus =
   | 'RUNNING_AGY'
   | 'RUNNING_OPENCODE'
   | 'RUNNING_KIMI'
+  | 'RUNNING_WECODE_CLAUDE'
+  | 'RUNNING_WECODE_CODEX'
+  | 'RUNNING_WECODE_OPENCODE'
   | 'PINGING'
   | 'COUNTDOWN'
   | 'PAUSED'
@@ -81,6 +84,9 @@ export interface TaskState {
   agy_session_id?: string | null
   opencode_session_id?: string | null
   kimi_session_id?: string | null
+  wecode_claude_session_id?: string | null
+  wecode_codex_thread_id?: string | null
+  wecode_opencode_session_id?: string | null
   context_hash?: string
   context_sent?: Record<string, boolean>
   event_seq?: number
@@ -131,6 +137,9 @@ export interface TaskSettings {
   seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  seed_wecode_claude_session_id?: string
+  seed_wecode_codex_thread_id?: string
+  seed_wecode_opencode_session_id?: string
 }
 
 export interface Launcher {
@@ -151,7 +160,7 @@ export interface AcpPreset {
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'system'
+  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode' | 'system'
   content: string
   ts: string
   round?: number
@@ -208,6 +217,9 @@ export interface GlobalSettings {
   seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  seed_wecode_claude_session_id?: string
+  seed_wecode_codex_thread_id?: string
+  seed_wecode_opencode_session_id?: string
   max_compact_retries?: number
   auto_generate_commit_message?: boolean
   system_notifications_enabled?: boolean
@@ -235,6 +247,17 @@ export interface TestLauncherResult {
   timedOut?: boolean
   exitCode?: number | null
   signal?: string | null
+}
+
+export interface GlobalAcpAdapterItem {
+  installed: boolean
+  binaryPath: string | null
+  installCommand: string
+}
+
+export interface GlobalAcpAdaptersStatus {
+  claude: GlobalAcpAdapterItem
+  codex: GlobalAcpAdapterItem
 }
 
 export interface TaskEventEnvelope {

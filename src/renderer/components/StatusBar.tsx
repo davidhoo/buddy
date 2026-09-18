@@ -63,7 +63,10 @@ const SESSION_FIELD: Record<Actor, keyof TaskState> = {
   cursor: 'cursor_session_id',
   agy: 'agy_session_id',
   opencode: 'opencode_session_id',
-  kimi: 'kimi_session_id'
+  kimi: 'kimi_session_id',
+  wecode_claude: 'wecode_claude_session_id',
+  wecode_codex: 'wecode_codex_thread_id',
+  wecode_opencode: 'wecode_opencode_session_id'
 }
 
 export function StatusBar({
@@ -348,7 +351,7 @@ function ActorCard({
   const mountedRef = useRef(true)
 
   const sessionField = SESSION_FIELD[actor]
-  const session = (taskState?.[sessionField] as string | undefined) || ''
+  const session = taskState?.actor_sessions?.[actor] || (taskState?.[sessionField] as string | undefined) || ''
 
   useEffect(() => {
     return () => {

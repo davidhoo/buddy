@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { basename } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
+import { existsSync, statSync, chmodSync } from 'node:fs'
 import { installHintFor, mergeChildEnv } from './shell-path'
 
 export type LauncherCommandKind =
@@ -79,6 +80,27 @@ export class LauncherTimeoutError extends Error {
 }
 
 /**
+ * Ensure node-pty's spawn-helper binary has executable permission (can be 0644 after npm/pnpm extract).
+ */
+export function ensurePtySpawnHelperExecutable(): void {
+  if (process.platform === 'win32') return
+  try {
+    const unixTermPath = require.resolve('node-pty/lib/unixTerminal')
+    const utils = require('node-pty/lib/utils')
+    const native = utils.loadNativeModule('pty')
+    const helperPath = resolve(dirname(unixTermPath), native.dir + '/spawn-helper')
+    if (existsSync(helperPath)) {
+      const stats = statSync(helperPath)
+      if ((stats.mode & 0o111) === 0) {
+        chmodSync(helperPath, 0o755)
+      }
+    }
+  } catch {
+    // Ignore if path resolution fails
+  }
+}
+
+/**
  * Run a launcher command using a PTY (pseudo-terminal).
  * Required for CLI tools (like opencode) that hang when spawned with piped stdio.
  */
@@ -101,6 +123,8 @@ export async function runLauncherWithPty(input: {
       'Please ensure node-pty is installed: pnpm add node-pty'
     )
   }
+
+  ensurePtySpawnHelperExecutable()
 
   const [command, ...prefixArgs] = splitCommand(input.command)
   const fullArgs = [...prefixArgs, ...input.args]
@@ -172,16 +196,25 @@ export async function runLauncherWithPty(input: {
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
   let baseCmd = splitCommand(input.command)
   const kind = commandKindFor(input.actor, baseCmd)
-  if (!baseCmd[0] && kind !== 'contract') baseCmd = [input.actor]
+  if (!baseCmd[0] && kind !== 'contract') {
+    if (input.actor === 'wecode_claude') baseCmd = ['wecode']
+    else if (input.actor === 'wecode_codex') baseCmd = ['wecode', 'codex']
+    else if (input.actor === 'wecode_opencode') baseCmd = ['wecode', 'opencode']
+    else baseCmd = [input.actor]
+  }
   const [command, ...prefixArgs] = kind === 'native_codex'
     ? cleanCodexBaseCommand(baseCmd)
     : baseCmd
 
   if (kind === 'native_claude') {
+    const skipPermissions = prefixArgs.includes('--dangerously-skip-permissions')
+      ? []
+      : ['--dangerously-skip-permissions']
     return {
       command,
       args: [
         ...prefixArgs,
+        ...skipPermissions,
         '-p',
         '--output-format',
         'stream-json',
@@ -357,13 +390,14 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   // This allows e.g. actor='kimi' with command='opencode -m provider/kimi-k2.6'
   // to be correctly identified as native_opencode.
   //
-  // WeCode wraps both claude and codex: `wecode` (or `wecode ...` without a
-  // leading `codex` token) runs claude; `wecode codex ...` runs codex.
+  // WeCode wraps claude, codex, and opencode:
+  // `wecode codex ...` runs codex; `wecode opencode ...` runs opencode;
+  // otherwise `wecode` (or `wecode ...`) runs claude.
   if (executable === 'claude' || isWecodeClaudeCommand(baseCmd)) return 'native_claude'
-  if (executable === 'codex' || (executable === 'wecode' && baseCmd[1] === 'codex')) return 'native_codex'
+  if (executable === 'codex' || isWecodeCodexCommand(baseCmd)) return 'native_codex'
   if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'
   if (executable === 'agy' || executable === 'antigravity') return 'native_agy'
-  if (executable === 'opencode') return 'native_opencode'
+  if (executable === 'opencode' || isWecodeOpenCodeCommand(baseCmd)) return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
   // Fallback: when no command is specified, infer from actor name.
   // Also: the Antigravity settings card always speaks agy's native protocol.
@@ -371,11 +405,11 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   // command string used a wrapper basename we do not recognize — that is
   // exactly what produces "flags provided but not defined: -actor".
   if (executable === '' || executable === 'wecode' || actor === 'agy') {
-    if (actor === 'claude') return 'native_claude'
-    if (actor === 'codex') return 'native_codex'
+    if (actor === 'claude' || actor === 'wecode_claude') return 'native_claude'
+    if (actor === 'codex' || actor === 'wecode_codex') return 'native_codex'
     if (actor === 'cursor') return 'native_cursor'
     if (actor === 'agy') return 'native_agy'
-    if (actor === 'opencode') return 'native_opencode'
+    if (actor === 'opencode' || actor === 'wecode_opencode') return 'native_opencode'
     if (actor === 'kimi') return 'native_kimi'
   }
   return 'contract'
@@ -575,12 +609,12 @@ export function isWecodeCommand(command: string | string[]): boolean {
 
 /**
  * Whether a command invokes WeCode Claude (i.e. `wecode` whose second token
- * is NOT `codex`). Mirrors the WeCode-Claude branch of commandKindFor.
+ * is NOT `codex` and NOT `opencode`). Mirrors the WeCode-Claude branch of commandKindFor.
  */
 export function isWecodeClaudeCommand(command: string | string[]): boolean {
   const baseCmd = Array.isArray(command) ? command : splitCommand(command)
   if (basename(baseCmd[0] ?? '') !== 'wecode') return false
-  return baseCmd[1] !== 'codex'
+  return baseCmd[1] !== 'codex' && baseCmd[1] !== 'opencode'
 }
 
 /**
@@ -590,6 +624,15 @@ export function isWecodeClaudeCommand(command: string | string[]): boolean {
 export function isWecodeCodexCommand(command: string | string[]): boolean {
   const baseCmd = Array.isArray(command) ? command : splitCommand(command)
   return basename(baseCmd[0] ?? '') === 'wecode' && baseCmd[1] === 'codex'
+}
+
+/**
+ * Whether a command invokes WeCode OpenCode (i.e. `wecode opencode ...`).
+ * Mirrors the WeCode-OpenCode branch of commandKindFor.
+ */
+export function isWecodeOpenCodeCommand(command: string | string[]): boolean {
+  const baseCmd = Array.isArray(command) ? command : splitCommand(command)
+  return basename(baseCmd[0] ?? '') === 'wecode' && baseCmd[1] === 'opencode'
 }
 
 function cleanCodexBaseCommand(baseCmd: string[]): string[] {

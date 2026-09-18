@@ -10,6 +10,7 @@ export interface AcpTransport {
   onClose(handler: (code: number | null, signal: string | null) => void): () => void
   onError(handler: (err: Error) => void): () => void
   close(): Promise<void>
+  getStderr?(): string
 }
 
 export interface StdioTransportOptions {
@@ -26,6 +27,7 @@ export class AcpStdioTransport implements AcpTransport {
   private readonly messageHandlers = new Set<(msg: JsonRpcMessage) => void>()
   private readonly closeHandlers = new Set<(code: number | null, signal: string | null) => void>()
   private readonly errorHandlers = new Set<(err: Error) => void>()
+  private readonly stderrChunks: string[] = []
   private closed = false
 
   constructor(private readonly options: StdioTransportOptions) {}
@@ -73,9 +75,12 @@ export class AcpStdioTransport implements AcpTransport {
       }
     })
 
-    if (child.stderr && this.options.onStderr) {
+    if (child.stderr) {
       child.stderr.on('data', (chunk: Buffer) => {
-        this.options.onStderr?.(chunk.toString('utf8'))
+        const str = chunk.toString('utf8')
+        this.stderrChunks.push(str)
+        if (this.stderrChunks.length > 50) this.stderrChunks.shift()
+        this.options.onStderr?.(str)
       })
     }
 
@@ -132,6 +137,10 @@ export class AcpStdioTransport implements AcpTransport {
         // Suppress secondary handler error
       }
     }
+  }
+
+  getStderr(): string {
+    return this.stderrChunks.join('')
   }
 
   async close(): Promise<void> {

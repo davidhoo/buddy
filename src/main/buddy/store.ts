@@ -41,7 +41,17 @@ interface TaskMeta {
   context_text?: string
 }
 
-const ACTORS = ['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'] as const
+const ACTORS = [
+  'claude',
+  'codex',
+  'cursor',
+  'agy',
+  'opencode',
+  'kimi',
+  'wecode_claude',
+  'wecode_codex',
+  'wecode_opencode'
+] as const
 
 export class BuddyStore {
   constructor(public readonly dataRoot: string) {}
@@ -619,16 +629,22 @@ export class BuddyStore {
 
   /** Session id an actor used for this task, from persisted task state. */
   private async actorSessionId(taskId: string, workspaceKey: string, actor: string): Promise<string | undefined> {
-    const field = actor === 'kimi' ? 'kimi_session_id'
-      : actor === 'opencode' ? 'opencode_session_id'
-      : actor === 'claude' ? 'claude_session_id'
-      : actor === 'codex' ? 'codex_thread_id'
-      : actor === 'cursor' ? 'cursor_session_id'
-      : actor === 'agy' ? 'agy_session_id'
-      : null
-    if (!field) return undefined
     try {
       const state = await this.readTaskState(taskId, workspaceKey)
+      if (state.actor_sessions?.[actor]) {
+        return state.actor_sessions[actor]
+      }
+      const field = actor === 'kimi' ? 'kimi_session_id'
+        : actor === 'opencode' ? 'opencode_session_id'
+        : actor === 'claude' ? 'claude_session_id'
+        : actor === 'codex' ? 'codex_thread_id'
+        : actor === 'cursor' ? 'cursor_session_id'
+        : actor === 'agy' ? 'agy_session_id'
+        : actor === 'wecode_claude' ? 'wecode_claude_session_id'
+        : actor === 'wecode_codex' ? 'wecode_codex_thread_id'
+        : actor === 'wecode_opencode' ? 'wecode_opencode_session_id'
+        : null
+      if (!field) return undefined
       const value = (state as unknown as Record<string, unknown>)[field]
       return typeof value === 'string' && value ? value : undefined
     } catch {
@@ -838,6 +854,9 @@ const TRANSCRIPT_ROLES = new Set<TranscriptEntry['role']>([
   'agy',
   'opencode',
   'kimi',
+  'wecode_claude',
+  'wecode_codex',
+  'wecode_opencode',
   'system'
 ])
 
@@ -938,7 +957,7 @@ function defaultTaskSettings(
   const { launchers: overrideLaunchers, ...restOverrides } = overrides
   const launchers = normalizeLaunchers({
     ...normalizedGlobal.launchers,
-    ...coerceLauncherOverrides(overrideLaunchers)
+    ...coerceLauncherOverrides(overrideLaunchers, normalizedGlobal.launchers)
   })
 
   return {
@@ -951,13 +970,19 @@ function defaultTaskSettings(
     seed_codex_thread_id: normalizedGlobal.seed_codex_thread_id ?? '',
     seed_cursor_session_id: normalizedGlobal.seed_cursor_session_id ?? '',
     seed_agy_session_id: normalizedGlobal.seed_agy_session_id ?? '',
-    seed_opencode_session_id: '',
-    seed_kimi_session_id: '',
+    seed_opencode_session_id: normalizedGlobal.seed_opencode_session_id ?? '',
+    seed_kimi_session_id: normalizedGlobal.seed_kimi_session_id ?? '',
+    seed_wecode_claude_session_id: normalizedGlobal.seed_wecode_claude_session_id ?? '',
+    seed_wecode_codex_thread_id: normalizedGlobal.seed_wecode_codex_thread_id ?? '',
+    seed_wecode_opencode_session_id: normalizedGlobal.seed_wecode_opencode_session_id ?? '',
     ...restOverrides
   } as TaskSettings
 }
 
-function coerceLauncherOverrides(value: unknown): Record<string, Partial<Launcher>> {
+function coerceLauncherOverrides(
+  value: unknown,
+  globalLaunchers?: Record<string, Launcher>
+): Record<string, Partial<Launcher>> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {}
   }
@@ -966,13 +991,32 @@ function coerceLauncherOverrides(value: unknown): Record<string, Partial<Launche
   for (const [actor, raw] of Object.entries(value)) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
     const candidate = raw as Partial<Launcher>
+    const globalLauncher = globalLaunchers?.[actor]
     const obj: Partial<Launcher> = {
       command: candidate.command,
       env: candidate.env,
       timeout_seconds: candidate.timeout_seconds
     }
-    if (candidate.protocol) obj.protocol = candidate.protocol
-    if (candidate.args && candidate.args.length > 0) obj.args = candidate.args
+
+    const isNpxOrAcp =
+      candidate.command === 'npx' ||
+      (typeof candidate.command === 'string' && candidate.command.includes('acp')) ||
+      (Array.isArray(candidate.args) && candidate.args.some((a) => a.toLowerCase().includes('acp')))
+
+    if (candidate.protocol) {
+      obj.protocol = candidate.protocol
+    } else if (globalLauncher?.protocol === 'acp' && (candidate.command === globalLauncher.command || isNpxOrAcp)) {
+      obj.protocol = 'acp'
+    } else if (isNpxOrAcp) {
+      obj.protocol = 'acp'
+    }
+
+    if (candidate.args && candidate.args.length > 0) {
+      obj.args = candidate.args
+    } else if (obj.protocol === 'acp' && globalLauncher?.args && globalLauncher.args.length > 0) {
+      obj.args = [...globalLauncher.args]
+    }
+
     launchers[actor] = obj
   }
   return launchers
@@ -1027,6 +1071,10 @@ function defaultTaskState(
     agy_session_id: null,
     opencode_session_id: null,
     kimi_session_id: null,
+    wecode_claude_session_id: null,
+    wecode_codex_thread_id: null,
+    wecode_opencode_session_id: null,
+    actor_sessions: {},
     context_hash: sha256Hex(contextText),
     context_sent: Object.fromEntries(ACTORS.map((actor) => [actor, false])),
     active_run: null,
