@@ -153,6 +153,16 @@ describe('publish-release.sh', () => {
     expect(releaseScript).not.toContain('gh release create')
   })
 
+  it('commits the package.json version bump before creating source archives', async () => {
+    const releaseScript = await readFile(join(repoRoot, 'scripts/release.sh'), 'utf8')
+    const commitIdx = releaseScript.indexOf('git commit -m "chore: release ${VERSION}"')
+    const archiveIdx = releaseScript.indexOf('git archive --format=tar.gz')
+
+    expect(commitIdx).toBeGreaterThan(-1)
+    expect(archiveIdx).toBeGreaterThan(-1)
+    expect(commitIdx).toBeLessThan(archiveIdx)
+  })
+
   it('creates a missing release as draft and publishes only after verification', async () => {
     const fixture = await makeFixture()
 

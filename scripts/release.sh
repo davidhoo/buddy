@@ -13,7 +13,8 @@ set -euo pipefail
 #   - CSC_NAME set to an Apple Development signing identity
 #
 # Flow:
-#   pre-check → bump version → forced signing → local verification → commit/tag/push
+#   pre-check → bump version → forced signing → local verification
+#   → commit version bump → source archives from that commit → tag/push
 #   → Draft upload → remote verification → publish/latest-feed verification
 # =============================================================================
 
@@ -105,20 +106,29 @@ for f in "${EXPECTED_FILES[@]}"; do
 done
 echo "   All artifacts present ✓"
 
-# --- 5. Create source archives ---
+# --- 5. Commit version bump before source archives (skip commit if tag exists) ---
+# git archive uses the committed tree, not the working copy. Archive only after
+# package.json is committed so source tarballs match the release version.
+if git tag --list "$VERSION" | grep -q .; then
+  echo ">> Tag ${VERSION} already exists, skipping version commit ✓"
+else
+  echo ">> Committing version bump..."
+  git add package.json
+  git diff --cached --quiet || git commit -m "chore: release ${VERSION}"
+  echo "   Version commit ready ✓"
+fi
+
+# --- 6. Create source archives from HEAD (includes the version bump) ---
 echo ">> Creating source archives..."
 git archive --format=tar.gz --prefix="buddy-${VERSION}/" HEAD \
   > "release/buddy-${VERSION}-source.tar.gz"
 git archive --format=zip --prefix="buddy-${VERSION}/" -o "release/buddy-${VERSION}-source.zip" HEAD
 echo "   Source archives created ✓"
 
-# --- 6. Commit version bump, tag and push (skip if tag already exists) ---
+# --- 7. Tag and push (skip if tag already exists) ---
 if git tag --list "$VERSION" | grep -q .; then
-  echo ">> Tag ${VERSION} already exists, skipping commit/tag/push ✓"
+  echo ">> Tag ${VERSION} already exists, skipping tag/push ✓"
 else
-  echo ">> Committing version bump..."
-  git add package.json
-  git diff --cached --quiet || git commit -m "chore: release ${VERSION}"
   echo ">> Pushing tag ${VERSION}..."
   git tag "$VERSION"
   git push "$REMOTE_NAME" main "$VERSION"
@@ -130,7 +140,7 @@ else
   echo "   Tag pushed ✓"
 fi
 
-# --- 7. Publish through the verified Draft gate ---
+# --- 8. Publish through the verified Draft gate ---
 echo ">> Publishing verified GitHub Release..."
 bash scripts/publish-release.sh "$VERSION" "$GITHUB_REPO"
 

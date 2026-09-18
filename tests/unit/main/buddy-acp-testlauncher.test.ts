@@ -391,33 +391,46 @@ rl.on('line', (line) => {
     }
   })
 
-  it('successfully handshakes with live cursor-agent, opencode, and wecode opencode if available', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'buddy-acp-live-test-'))
-    try {
-      const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
+  // Live probes hit real CLIs (cursor-agent / opencode / wecode) with a 120s ACP
+  // ping timeout. Keep them out of the default unit suite so hung agents cannot
+  // fail or stall `pnpm test`. Opt in with BUDDY_LIVE_ACP_TEST=1.
+  it.skipIf(!process.env.BUDDY_LIVE_ACP_TEST)(
+    'successfully handshakes with live cursor-agent, opencode, and wecode opencode if available',
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'buddy-acp-live-test-'))
+      try {
+        const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
 
-      // Test cursor if installed
-      const cursorRes = await service.testLauncher('cursor', 'cursor-agent', undefined, 'acp', ['acp']).catch(() => null)
-      if (cursorRes && cursorRes.success) {
-        expect(cursorRes.success).toBe(true)
-        expect(cursorRes.responsePreview).toContain('Connected: Cursor Agent')
-      }
+        // Test cursor if installed
+        const cursorRes = await service
+          .testLauncher('cursor', 'cursor-agent', undefined, 'acp', ['acp'])
+          .catch(() => null)
+        if (cursorRes && cursorRes.success) {
+          expect(cursorRes.success).toBe(true)
+          expect(cursorRes.responsePreview).toContain('Connected: Cursor Agent')
+        }
 
-      // Test opencode if installed
-      const opencodeRes = await service.testLauncher('opencode', 'opencode', undefined, 'acp', ['acp']).catch(() => null)
-      if (opencodeRes && opencodeRes.success) {
-        expect(opencodeRes.success).toBe(true)
-        expect(opencodeRes.responsePreview).toContain('Connected: OpenCode')
-      }
+        // Test opencode if installed
+        const opencodeRes = await service
+          .testLauncher('opencode', 'opencode', undefined, 'acp', ['acp'])
+          .catch(() => null)
+        if (opencodeRes && opencodeRes.success) {
+          expect(opencodeRes.success).toBe(true)
+          expect(opencodeRes.responsePreview).toContain('Connected: OpenCode')
+        }
 
-      // Test wecode_opencode if installed
-      const wecodeRes = await service.testLauncher('wecode_opencode', 'wecode opencode', undefined, 'acp', []).catch(() => null)
-      if (wecodeRes && wecodeRes.success) {
-        expect(wecodeRes.success).toBe(true)
-        expect(wecodeRes.responsePreview).toContain('Connected: OpenCode')
+        // Test wecode_opencode if installed
+        const wecodeRes = await service
+          .testLauncher('wecode_opencode', 'wecode opencode', undefined, 'acp', [])
+          .catch(() => null)
+        if (wecodeRes && wecodeRes.success) {
+          expect(wecodeRes.success).toBe(true)
+          expect(wecodeRes.responsePreview).toContain('Connected: OpenCode')
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true }).catch(() => {})
       }
-    } finally {
-      await rm(root, { recursive: true, force: true }).catch(() => {})
-    }
-  }, 20000)
+    },
+    20000
+  )
 })
