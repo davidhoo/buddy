@@ -1065,7 +1065,8 @@ export class BuddyRunner {
       const acpEnv = await prepareAcpEnvironment(
         actor,
         { ...launcher.env, ...serviceRun.env },
-        this.store.dataRoot
+        this.store.dataRoot,
+        existingSessionId || undefined
       )
       const baseArgs = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
       const resolved = resolveAcpBinary(launcher.command, baseArgs)

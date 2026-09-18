@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- Codex / WeCode Codex 的 ACP 运行、模型探测与启动器检查使用 Buddy 专用会话及 SQLite 目录，避免内部会话出现在桌面 Codex 中并因缺少 WeCode provider 无法打开；旧任务续聊仅导入对应会话，保留原始记录
+
 ## [2.0.2] - 2026-09-18
 
 ### Added

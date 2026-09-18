@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,6 +10,15 @@ import {
 import { KNOWN_ACP_PRESETS } from '../../../src/shared/defaults'
 
 describe('WeCode ACP integration', () => {
+  let source: string
+  beforeEach(async () => {
+    source = await mkdtemp(join(tmpdir(), 'buddy-codex-source-'))
+    vi.stubEnv('CODEX_HOME', source)
+  })
+  afterEach(async () => {
+    vi.unstubAllEnvs()
+    await rm(source, { recursive: true, force: true })
+  })
   it('registers wecode-claude-acp and wecode-codex-acp in KNOWN_ACP_PRESETS', () => {
     const claudePreset = KNOWN_ACP_PRESETS.find((p) => p.id === 'wecode-claude-acp')
     expect(claudePreset).toBeDefined()
@@ -92,7 +101,8 @@ describe('WeCode ACP integration', () => {
     try {
       const env = await prepareAcpEnvironment('wecode_codex', { CUSTOM_VAR: 'abc' }, testDir)
       expect(env.CUSTOM_VAR).toBe('abc')
-      expect(env.CODEX_PATH).toBe(join(testDir, 'bin', 'wecode-codex'))
+      expect(env.BUDDY_CODEX_EXECUTABLE).toBe(join(testDir, 'bin', 'wecode-codex'))
+      expect(env.CODEX_PATH).toBe(join(testDir, 'bin', 'buddy-codex-acp'))
 
       // Preserves existing CODEX_PATH
       const customEnv = await prepareAcpEnvironment(
@@ -100,7 +110,7 @@ describe('WeCode ACP integration', () => {
         { CODEX_PATH: '/my/custom/wrapper' },
         testDir
       )
-      expect(customEnv.CODEX_PATH).toBe('/my/custom/wrapper')
+      expect(customEnv.BUDDY_CODEX_EXECUTABLE).toBe('/my/custom/wrapper')
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {})
     }
@@ -111,8 +121,9 @@ describe('WeCode ACP integration', () => {
     expect(claudeEnv.CLAUDE_CODE_EXECUTABLE).toBeUndefined()
     expect(claudeEnv.CODEX_PATH).toBeUndefined()
 
-    const codexEnv = await prepareAcpEnvironment('codex', { FOO: 'bar' })
+    const codexEnv = await prepareAcpEnvironment('codex', { FOO: 'bar' }, source)
     expect(codexEnv.CLAUDE_CODE_EXECUTABLE).toBeUndefined()
-    expect(codexEnv.CODEX_PATH).toBeUndefined()
+    expect(codexEnv.CODEX_PATH).toBe(join(source, 'bin', 'buddy-codex-acp'))
+    expect(codexEnv.BUDDY_CODEX_EXECUTABLE).toBe(process.env.CODEX_PATH || 'codex')
   })
 })
