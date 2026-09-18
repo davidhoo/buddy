@@ -26,8 +26,9 @@ pnpm release:signed         # Build + Apple Development sign + verify (needs CSC
 - `pnpm dist` and `pnpm package` are local adhoc build paths. Their artifacts must never be uploaded to a GitHub Release.
 - The only official publishing entrypoint is `CSC_NAME='Apple Development: ...' scripts/release.sh vX.Y.Z`.
 - Official releases intentionally use the Apple Development identity for Team ID `XLDSS978CT` without notarization.
+- Before publishing, `CHANGELOG.md` must contain the Keep a Changelog entry for that version (`## [X.Y.Z] - YYYY-MM-DD` with Added/Changed/Fixed/Removed as needed). `scripts/publish-release.sh` uses that section as GitHub Release notes; placeholder notes like `Release vX.Y.Z` are a release blocker.
 - The release script keeps a GitHub Release in Draft while it uploads packages, uploads `latest-mac.yml` last, downloads all five official assets again, and verifies signatures, versions, hashes, and metadata before publication.
-- `Signature=adhoc`, `TeamIdentifier=not set`, `skipped macOS application code signing`, a missing asset, or a remote verification failure is a release blocker. Do not publish or declare completion.
+- `Signature=adhoc`, `TeamIdentifier=not set`, `skipped macOS application code signing`, a missing asset, missing changelog notes, or a remote verification failure is a release blocker. Do not publish or declare completion.
 - Reviewer completion evidence must include remote download and signature verification. Asset names, counts, and sizes alone are insufficient.
 
 ## Architecture

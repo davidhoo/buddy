@@ -36,6 +36,31 @@ CSC_NAME='Apple Development: coolbor@gmail.com (LL5Q233Q8L)' \
 
 Do not replace this command with `pnpm dist`, `gh release create`, or a manual `gh release upload` sequence.
 
+## Release notes (required)
+
+GitHub Release notes must be the matching Keep a Changelog section from `CHANGELOG.md`, not a placeholder like `Release vX.Y.Z`.
+
+Required format (same as historical releases such as v1.3.1):
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- …
+
+### Fixed
+- …
+```
+
+Rules:
+
+- Before publishing, `CHANGELOG.md` must already contain the `## [X.Y.Z] - YYYY-MM-DD` entry for this version.
+- `scripts/publish-release.sh` extracts that section and passes it via `--notes-file` when creating or updating the Draft release.
+- Missing or empty changelog entries, or placeholder-only notes (`Release vX.Y.Z`), are release blockers.
+- Sections use `### Added` / `### Changed` / `### Fixed` / `### Removed` (omit empty ones), in Chinese, user-facing language.
+
+Do not hand-write `gh release create --notes "Release …"`. The publisher owns notes from `CHANGELOG.md`.
+
 ## Enforced publication flow
 
 The official script performs the following fail-closed sequence:
@@ -44,7 +69,7 @@ The official script performs the following fail-closed sequence:
 2. Build ARM64 and x64 with forced code signing and no notarization.
 3. Verify local App bundles, ZIP contents, DMG contents, version fields, Team ID, bundle ID, exact signing authority, and `latest-mac.yml` hashes and sizes.
 4. Commit and push the version/tag.
-5. Create the GitHub Release as Draft, or move an existing same-tag Release back to Draft before replacement.
+5. Create the GitHub Release as Draft (or move an existing same-tag Release back to Draft), setting notes from the matching `CHANGELOG.md` section.
 6. Upload DMG, ZIP, and source archives; upload `latest-mac.yml` last.
 7. Download the five official assets from GitHub by tag and repeat the complete packaged-artifact verification.
 8. Publish and mark Latest only after remote verification passes.
@@ -62,9 +87,10 @@ Stop the release when any command reports:
 - a signing authority different from the selected `CSC_NAME`;
 - a missing GitHub asset;
 - a ZIP/DMG/version/hash/metadata mismatch;
-- failed remote download or verification.
+- failed remote download or verification;
+- missing `CHANGELOG.md` entry for the version, or placeholder release notes such as `Release vX.Y.Z`.
 
-A Release page containing correctly named files is not completion evidence. Reviewer approval requires the remote download verifier to pass.
+A Release page containing correctly named files is not completion evidence. Reviewer approval requires the remote download verifier to pass. Release notes must match the Keep a Changelog section for that version.
 
 ## Read-only verification of an existing Release
 

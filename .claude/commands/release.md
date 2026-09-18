@@ -102,16 +102,27 @@ Execute the full release process for version `$ARGUMENTS`. Follow these steps in
 - `git push $PUSH_REMOTE main $ARGUMENTS`
 - If `$PUSH_REMOTE` is `upstream` AND `origin` also exists, also push to origin: `git push origin main $ARGUMENTS`
 
-### Step 8: Create GitHub Release
+### Step 8: Create GitHub Release (optional draft shell)
 
-- Use the **full changelog** (same content from Step 4, including version header and sections) as release notes
-- If the changelog is multi-line, write it to a temp file first and use `--notes-file`:
+- Prefer letting `scripts/publish-release.sh` (via Step 9) create/update the Draft and set notes from `CHANGELOG.md`.
+- If you create the Release early, notes **must** still be the full Keep a Changelog section for this version (same content as Step 4 / `CHANGELOG.md`), never a placeholder like `Release vX.Y.Z`.
+- Required shape:
+  ```markdown
+  ## [X.Y.Z] - YYYY-MM-DD
+
+  ### Added
+  - …
+
+  ### Fixed
+  - …
+  ```
+- When creating early, write notes to a temp file and use `--notes-file` (and `--draft`):
   ```bash
   echo "$CHANGELOG" > /tmp/release-notes-$VERSION.md
-  gh release create "$ARGUMENTS" --repo $GITHUB_REPO --title "Buddy $ARGUMENTS" --notes-file /tmp/release-notes-$VERSION.md
+  gh release create "$ARGUMENTS" --repo $GITHUB_REPO --title "Buddy $ARGUMENTS" --notes-file /tmp/release-notes-$VERSION.md --draft
   rm /tmp/release-notes-$VERSION.md
   ```
-
+- Step 9's publisher will re-apply notes from `CHANGELOG.md` when preparing the Draft; missing changelog entries fail the release.
 ### Step 9: Run release script
 
 - Execute `scripts/release.sh $ARGUMENTS`

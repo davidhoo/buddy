@@ -10,6 +10,7 @@ cd "$PROJECT_ROOT"
 RELEASE_DIR="${RELEASE_DIR:-release}"
 RELEASE_DIR="$(cd "$RELEASE_DIR" && pwd)"
 VERIFY_PUBLISHED_RELEASE_SCRIPT="${VERIFY_PUBLISHED_RELEASE_SCRIPT:-${PROJECT_ROOT}/scripts/verify-published-release.sh}"
+CHANGELOG_FILE="${CHANGELOG_FILE:-${PROJECT_ROOT}/CHANGELOG.md}"
 
 command -v gh >/dev/null \
   || { echo "gh not found. Install: brew install gh && gh auth login" >&2; exit 1; }
@@ -30,14 +31,48 @@ for file in "${PACKAGE_FILES[@]}" "$LATEST_MAC_YML"; do
   [ -f "$file" ] || { echo "Missing required release asset: ${file}" >&2; exit 1; }
 done
 
-echo ">> Preparing Draft release ${VERSION}..."
+[ -f "$CHANGELOG_FILE" ] || { echo "Missing changelog: ${CHANGELOG_FILE}" >&2; exit 1; }
+
+# Extract Keep a Changelog section for this version (header through next --- / next version).
+NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/buddy-release-notes.XXXXXX")"
+cleanup_notes() {
+  rm -f "$NOTES_FILE"
+}
+trap cleanup_notes EXIT
+
+awk -v ver="$PACKAGE_VERSION" '
+  $0 ~ "^## \\[" ver "\\]" { found = 1 }
+  found && /^---$/ { exit }
+  found && $0 ~ /^## \[/ && $0 !~ "^## \\[" ver "\\]" { exit }
+  found { print }
+' "$CHANGELOG_FILE" > "$NOTES_FILE"
+
+if [ ! -s "$NOTES_FILE" ]; then
+  echo "CHANGELOG.md has no entry for [${PACKAGE_VERSION}]; refuse placeholder release notes" >&2
+  exit 1
+fi
+if ! grep -qE "^## \[${PACKAGE_VERSION}\]" "$NOTES_FILE"; then
+  echo "Extracted release notes do not start with ## [${PACKAGE_VERSION}]" >&2
+  exit 1
+fi
+# Block the historical placeholder that shipped for v2.0.0 by accident.
+if grep -qxE "Release v?${PACKAGE_VERSION}" "$NOTES_FILE"; then
+  echo "Refuse placeholder release notes: Release ${VERSION}" >&2
+  exit 1
+fi
+
+echo ">> Preparing Draft release ${VERSION} with CHANGELOG notes..."
 if gh release view "$VERSION" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
-  gh release edit "$VERSION" --repo "$GITHUB_REPO" --draft >/dev/null
+  gh release edit "$VERSION" \
+    --repo "$GITHUB_REPO" \
+    --title "Buddy ${VERSION}" \
+    --notes-file "$NOTES_FILE" \
+    --draft >/dev/null
 else
   gh release create "$VERSION" \
     --repo "$GITHUB_REPO" \
     --title "Buddy ${VERSION}" \
-    --notes "Release ${VERSION}" \
+    --notes-file "$NOTES_FILE" \
     --draft >/dev/null
 fi
 
@@ -53,6 +88,7 @@ rollback_if_needed() {
   if [ -n "$FEED_DIR" ]; then
     rm -rf "$FEED_DIR"
   fi
+  cleanup_notes
   trap - EXIT
   exit "$status"
 }
@@ -99,6 +135,7 @@ fi
 FEED_VERIFIED=true
 rm -rf "$FEED_DIR"
 FEED_DIR=""
+cleanup_notes
 trap - EXIT
 
 echo ">> Release ${VERSION} published and latest feed verified"

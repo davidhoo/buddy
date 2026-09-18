@@ -15,6 +15,7 @@ interface Fixture {
   releaseDir: string
   eventLog: string
   verifier: string
+  changelog: string
 }
 
 async function makeFixture(): Promise<Fixture> {
@@ -24,6 +25,7 @@ async function makeFixture(): Promise<Fixture> {
   const releaseDir = join(root, 'release')
   const eventLog = join(root, 'events.log')
   const verifier = join(root, 'verify-published-release.sh')
+  const changelog = join(root, 'CHANGELOG.md')
   await mkdir(binDir)
   await mkdir(releaseDir)
 
@@ -38,6 +40,24 @@ async function makeFixture(): Promise<Fixture> {
   ]) {
     await writeFile(join(releaseDir, name), name === 'latest-mac.yml' ? 'verified-feed' : name)
   }
+
+  await writeFile(
+    changelog,
+    `# Changelog
+
+## [9.9.9] - 2026-09-18
+
+### Fixed
+- test fix for publish notes
+
+---
+
+## [1.0.0] - 2026-01-01
+
+### Added
+- older entry
+`
+  )
 
   const fakeGh = join(binDir, 'gh')
   await writeFile(
@@ -110,7 +130,7 @@ exit "\${VERIFY_EXIT_CODE:-0}"
   )
   await chmod(verifier, 0o755)
 
-  return { root, binDir, releaseDir, eventLog, verifier }
+  return { root, binDir, releaseDir, eventLog, verifier, changelog }
 }
 
 function runScript(fixture: Fixture, extraEnv: NodeJS.ProcessEnv = {}) {
@@ -123,6 +143,7 @@ function runScript(fixture: Fixture, extraEnv: NodeJS.ProcessEnv = {}) {
       EVENT_LOG: fixture.eventLog,
       RELEASE_DIR: fixture.releaseDir,
       VERIFY_PUBLISHED_RELEASE_SCRIPT: fixture.verifier,
+      CHANGELOG_FILE: fixture.changelog,
       ...extraEnv
     }
   })
@@ -170,13 +191,50 @@ describe('publish-release.sh', () => {
     const events = await eventLines(fixture)
 
     expect(result.status).toBe(0)
-    expect(events.some((line) => line.includes('release create v9.9.9') && line.includes('--draft'))).toBe(true)
+    expect(
+      events.some(
+        (line) =>
+          line.includes('release create v9.9.9') &&
+          line.includes('--draft') &&
+          line.includes('--notes-file')
+      )
+    ).toBe(true)
+    expect(events.some((line) => line.includes('Release v9.9.9'))).toBe(false)
     const verifyIndex = events.findIndex((line) => line.startsWith('verify '))
     const publishIndex = events.findIndex(
       (line) => line.includes('release edit v9.9.9') && line.includes('--draft=false --latest')
     )
     expect(verifyIndex).toBeGreaterThan(-1)
     expect(publishIndex).toBeGreaterThan(verifyIndex)
+  })
+
+  it('syncs CHANGELOG notes when moving an existing release back to draft', async () => {
+    const fixture = await makeFixture()
+
+    const result = runScript(fixture)
+    const events = await eventLines(fixture)
+
+    expect(result.status).toBe(0)
+    const draftIndex = events.findIndex(
+      (line) =>
+        line.includes('release edit v9.9.9') &&
+        line.includes('--notes-file') &&
+        line.includes('--draft') &&
+        !line.includes('--draft=false')
+    )
+    const uploadIndex = events.findIndex((line) => line.includes('release upload v9.9.9'))
+    expect(draftIndex).toBeGreaterThan(-1)
+    expect(uploadIndex).toBeGreaterThan(draftIndex)
+  })
+
+  it('fails closed when CHANGELOG.md has no entry for the version', async () => {
+    const fixture = await makeFixture()
+    await writeFile(fixture.changelog, '# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Added\n- older\n')
+
+    const result = runScript(fixture, { GH_RELEASE_EXISTS: '0' })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toMatch(/no entry for \[9\.9\.9\]/i)
   })
 
   it('moves an existing release to draft before clobbering assets', async () => {
@@ -187,7 +245,7 @@ describe('publish-release.sh', () => {
 
     expect(result.status).toBe(0)
     const draftIndex = events.findIndex(
-      (line) => line.includes('release edit v9.9.9') && line.endsWith('--draft')
+      (line) => line.includes('release edit v9.9.9') && line.includes('--draft') && !line.includes('--draft=false')
     )
     const uploadIndex = events.findIndex((line) => line.includes('release upload v9.9.9'))
     expect(draftIndex).toBeGreaterThan(-1)
