@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { open, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand, isWecodeOpenCodeCommand } from './launchers'
@@ -31,6 +31,10 @@ import { commandKindFor, isWecodeClaudeCommand, isWecodeCodexCommand, isWecodeOp
  *    - cursor:   ~/.cursor/cli-config.json → selectedModel.modelId
  *      (falls back to the legacy model object; Cursor's default is represented as
  *       modelId="default" and displayModelId="auto")
+ *    - agy:      ~/.gemini/antigravity-cli/settings.json → JSON "model" field
+ *      (display label written by `/model`; the default is omitted because agy
+ *       uses sparse persistence). If absent, the latest cli.log selected-model
+ *       override label is used.
  *
  * @param actor  Actor name (codex, cursor, opencode, kimi, claude, wecode_*)
  * @param command  Optional launcher command string. Used both to extract an
@@ -84,8 +88,7 @@ export async function detectModelFromConfig(
       return await readCursorModel(join(home, '.cursor', 'cli-config.json'))
     }
     if (kind === 'native_agy') {
-      // agy has no stable model field in settings yet; --model on the command wins above.
-      return undefined
+      return await readAgyModel(home)
     }
     // contract: model is not knowable before a run.
   } catch {
@@ -196,6 +199,53 @@ async function readCursorModel(filePath: string): Promise<string | undefined> {
     ?? textValue(configured?.displayNameShort)
     ?? selectedModelId
     ?? configuredModelId
+}
+
+/**
+ * Read the selected Antigravity CLI model.
+ *
+ * `/model` persists the display label in settings.json. The default model is
+ * not written (sparse persistence), so fall back to the latest CLI log line
+ * that reports the selected-model override actually sent to the backend.
+ */
+async function readAgyModel(home: string): Promise<string | undefined> {
+  const fromSettings = await readJsonModel(
+    join(home, '.gemini', 'antigravity-cli', 'settings.json'),
+    'model'
+  ).catch(() => undefined)
+  if (fromSettings) return fromSettings
+  return await readAgyModelFromLog(join(home, '.gemini', 'antigravity-cli', 'cli.log'))
+}
+
+const AGY_LOG_MODEL_RE = /Propagating selected model override to backend: label="([^"]+)"/g
+const AGY_LOG_TAIL_BYTES = 64 * 1024
+
+async function readAgyModelFromLog(filePath: string): Promise<string | undefined> {
+  try {
+    const raw = await readFileTail(filePath, AGY_LOG_TAIL_BYTES)
+    let last: string | undefined
+    for (const match of raw.matchAll(AGY_LOG_MODEL_RE)) {
+      if (match[1]) last = match[1]
+    }
+    return last
+  } catch {
+    return undefined
+  }
+}
+
+async function readFileTail(filePath: string, maxBytes: number): Promise<string> {
+  const handle = await open(filePath, 'r')
+  try {
+    const size = (await handle.stat()).size
+    if (size <= 0) return ''
+    const length = Math.min(size, maxBytes)
+    const start = size - length
+    const buffer = Buffer.alloc(length)
+    await handle.read(buffer, 0, length, start)
+    return buffer.toString('utf8')
+  } finally {
+    await handle.close()
+  }
 }
 
 /**

@@ -27,7 +27,7 @@ import type {
   TaskStats,
   TranscriptEntry
 } from '../../shared/types'
-import { normalizeGlobalSettings, normalizeLaunchers } from '../../shared/defaults'
+import { normalizeGlobalSettings, normalizeLauncher, normalizeLaunchers } from '../../shared/defaults'
 import { validateTaskId } from '../../shared/task-id'
 import { canonicalRepoRoot, createBuddyPaths, taskDir, workspaceKeyForRepo } from './paths'
 import { redactJsonValue } from './redact'
@@ -772,6 +772,33 @@ export class BuddyStore {
     await atomicWriteText(join(dir, 'task.md'), taskMarkdownContent(taskText))
   }
 
+  async updateTaskLauncherModel(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    model: string
+  ): Promise<TaskSettings> {
+    const trimmedActor = actor.trim()
+    if (!trimmedActor) throw new Error('actor is required')
+    const settings = await this.readTaskSettings(taskId, workspaceKey)
+    const existing = settings.launchers?.[trimmedActor]
+    const launcher: Launcher = existing
+      ? { ...existing, env: { ...existing.env } }
+      : normalizeLauncher(trimmedActor)
+    const trimmedModel = typeof model === 'string' ? model.trim() : ''
+    if (trimmedModel) launcher.model = trimmedModel
+    else delete launcher.model
+    const next: TaskSettings = {
+      ...settings,
+      launchers: {
+        ...settings.launchers,
+        [trimmedActor]: launcher
+      }
+    }
+    await atomicWriteJson(this.settingsPath(taskId, workspaceKey), next)
+    return next
+  }
+
   private async readTaskMeta(taskId: string, workspaceKey: string): Promise<TaskMeta> {
     const markdown = await this.readMarkdownTaskMeta(taskId, workspaceKey)
     if (markdown) return markdown
@@ -996,6 +1023,9 @@ function coerceLauncherOverrides(
       command: candidate.command,
       env: candidate.env,
       timeout_seconds: candidate.timeout_seconds
+    }
+    if (typeof candidate.model === 'string' && candidate.model.trim()) {
+      obj.model = candidate.model.trim()
     }
 
     const isNpxOrAcp =

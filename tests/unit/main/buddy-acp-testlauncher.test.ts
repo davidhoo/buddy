@@ -325,6 +325,72 @@ rl.on('line', (line) => {
     }
   })
 
+  it('lists models advertised by an ACP session/new result', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-acp-list-models-'))
+    const fakeAcp = join(root, 'fake-acp-models.js')
+
+    const fakeAcpContent = `#!/usr/bin/env node
+const readline = require('node:readline')
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+rl.on('line', (line) => {
+  try {
+    const req = JSON.parse(line)
+    if (req.method === 'initialize') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: req.id,
+        result: { protocolVersion: 1, agentInfo: { name: 'ModelAgent', version: '1.0.0' } }
+      }) + '\\n')
+    } else if (req.method === 'session/new') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          sessionId: 'sess_models',
+          models: {
+            currentModelId: 'sonnet-4.5',
+            availableModels: [
+              { modelId: 'opus-4.6', name: 'Opus 4.6' },
+              { modelId: 'sonnet-4.5', name: 'Sonnet 4.5' }
+            ]
+          }
+        }
+      }) + '\\n')
+    }
+  } catch {}
+})
+`
+    await writeFile(fakeAcp, fakeAcpContent)
+    await chmod(fakeAcp, 0o755)
+
+    try {
+      const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
+      await service.updateGlobalSettings({
+        launchers: {
+          claude: {
+            protocol: 'acp',
+            command: process.execPath,
+            args: [fakeAcp],
+            env: {},
+            timeout_seconds: 10
+          }
+        }
+      })
+
+      const list = await service.listAcpModels('claude')
+      expect(list.currentModelId).toBe('sonnet-4.5')
+      expect(list.models).toEqual([
+        { id: 'opus-4.6', name: 'Opus 4.6' },
+        { id: 'sonnet-4.5', name: 'Sonnet 4.5' }
+      ])
+
+      const cliList = await service.listAcpModels('codex')
+      expect(cliList.models).toEqual([])
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
   it('successfully handshakes with live cursor-agent, opencode, and wecode opencode if available', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-acp-live-test-'))
     try {

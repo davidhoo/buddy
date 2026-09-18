@@ -49,7 +49,7 @@ vi.mock('../../../src/renderer/components/BranchModal', () => ({
   BranchModal: () => null,
 }))
 
-import { CommitModal, FileStatus } from '../../../src/renderer/components/FileStatus'
+import { CommitModal, FileStatus, hasGitChangedFiles } from '../../../src/renderer/components/FileStatus'
 import { api } from '../../../src/renderer/lib/api'
 import { useGitPushAvailability } from '../../../src/renderer/hooks/useBuddy'
 import type { GitPushAvailability } from '../../../src/shared/types'
@@ -87,6 +87,26 @@ function renderModal(overrides: Record<string, unknown> = {}) {
   render(<CommitModal {...props} />)
   return { onClose, props }
 }
+
+describe('hasGitChangedFiles', () => {
+  it('is false while git status is missing or empty', () => {
+    expect(hasGitChangedFiles(undefined)).toBe(false)
+    expect(hasGitChangedFiles(null)).toBe(false)
+    expect(hasGitChangedFiles(makeCleanGitStatus())).toBe(false)
+  })
+
+  it('is true when listed files or fallback counts are present', () => {
+    expect(hasGitChangedFiles(makeGitStatus())).toBe(true)
+    expect(hasGitChangedFiles(makeCleanGitStatus({
+      files: [],
+      untracked: 2,
+    }))).toBe(true)
+    expect(hasGitChangedFiles(makeCleanGitStatus({
+      files: [],
+      diff: { filesChanged: 1, insertions: 1, deletions: 0, summary: '' },
+    }))).toBe(true)
+  })
+})
 
 describe('CommitModal close behavior', () => {
   beforeEach(() => {

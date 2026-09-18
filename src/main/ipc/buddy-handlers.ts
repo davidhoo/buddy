@@ -1,10 +1,12 @@
 import type { IpcMain } from 'electron'
 import type {
+  AcpModelList,
   AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
   GlobalSettings,
   GitCommitPushResult,
+  TaskSettings,
   RoundEventSummary,
   SendMessageInput,
   StartTaskInput,
@@ -49,7 +51,9 @@ export interface BuddyHandlerService {
   cancelGenerateCommitMessage(): void
   testLauncher(actor: string, command: string, env?: Record<string, string>, protocol?: 'cli' | 'acp', args?: string[]): Promise<TestLauncherResult>
   detectActorModels(): Promise<Record<string, string | undefined>>
+  listAcpModels(actor: string, cwd?: string): Promise<AcpModelList>
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
+  updateTaskLauncherModel(taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings>
   checkAcpGlobalAdapters(): Promise<GlobalAcpAdaptersStatus> | GlobalAcpAdaptersStatus
 }
 
@@ -157,8 +161,14 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   ipcMain.handle('buddy:detectActorModels', () =>
     service.detectActorModels()
   )
+  ipcMain.handle('buddy:listAcpModels', (_event, actor: string, cwd?: string) =>
+    service.listAcpModels(actor, cwd)
+  )
   ipcMain.handle('buddy:updateTaskText', (_event, taskId: string, workspaceKey: string, taskText: string) =>
     service.updateTaskText(taskId, workspaceKey, taskText)
+  )
+  ipcMain.handle('buddy:updateTaskLauncherModel', (_event, taskId: string, workspaceKey: string, actor: string, model: string) =>
+    service.updateTaskLauncherModel(taskId, workspaceKey, actor, model)
   )
   ipcMain.handle('buddy:checkAcpGlobalAdapters', () =>
     service.checkAcpGlobalAdapters()

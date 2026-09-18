@@ -76,4 +76,39 @@ describe('MessageBubble completed task stats', () => {
 
     expect(html).toContain('123')
   })
+
+  it('shows the changed-files link on a completed task when onViewChanges is provided', () => {
+    mocks.useTaskStats.mockReturnValue({ data: null })
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        entry={taskDoneEntry()}
+        onViewChanges={() => {}}
+      />
+    )
+
+    expect(html).toContain('text-accent-primary hover:underline inline align-baseline')
+    expect(html).toMatch(/Click to view|点击查看|點擊查看/)
+    expect(html).toMatch(/Changed files|变更文件|變更檔案/)
+  })
+
+  it('hides the changed-files link when a completed task has no onViewChanges handler', () => {
+    mocks.useTaskStats.mockReturnValue({ data: null })
+    const html = renderToStaticMarkup(<MessageBubble entry={taskDoneEntry()} />)
+
+    expect(html).not.toContain('text-accent-primary hover:underline inline align-baseline')
+    expect(html).not.toMatch(/Click to view|点击查看|點擊查看/)
+    expect(html).not.toMatch(/Changed files|变更文件|變更檔案/)
+  })
 })
+
+function taskDoneEntry(): TranscriptEntry {
+  return {
+    role: 'system',
+    content: 'Both actors confirmed the task is complete.',
+    ts: '2026-08-11T10:57:57.000Z',
+    meta: {
+      kind: 'round_notice',
+      done_reason: 'dual_break_confirmed'
+    }
+  }
+}

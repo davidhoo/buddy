@@ -39,6 +39,13 @@ export interface AcpClientOptions {
   }
 }
 
+function formatAcpRpcError(error: { code: number; message: string; data?: unknown }): string {
+  const dataText = error.data === undefined || error.data === null
+    ? ''
+    : ` ${typeof error.data === 'string' ? error.data : JSON.stringify(error.data)}`
+  return `ACP Error ${error.code}: ${error.message}${dataText}`.slice(0, 2000)
+}
+
 export class AcpClient {
   private nextId = 1
   private readonly pendingRequests = new Map<
@@ -87,7 +94,7 @@ export class AcpClient {
         clearTimeout(pending.timer)
         this.pendingRequests.delete(msg.id)
         if (msg.error) {
-          pending.reject(new Error(`ACP Error ${msg.error.code}: ${msg.error.message}`))
+          pending.reject(new Error(formatAcpRpcError(msg.error)))
         } else {
           pending.resolve(msg.result)
         }
@@ -345,6 +352,28 @@ export class AcpClient {
    */
   async setSessionMode(sessionId: string, modeId: string): Promise<unknown> {
     return this.request('session/set_mode', { sessionId, modeId })
+  }
+
+  /**
+   * Legacy ACP model selector (session/set_model). Newer agents expose the
+   * same choice through session/set_config_option instead.
+   */
+  async setSessionModel(sessionId: string, modelId: string): Promise<unknown> {
+    return this.request('session/set_model', { sessionId, modelId })
+  }
+
+  /**
+   * Set a session config option (model, mode, thought level, …).
+   */
+  async setSessionConfigOption(sessionId: string, configId: string, value: unknown): Promise<unknown> {
+    return this.request('session/set_config_option', { sessionId, configId, value })
+  }
+
+  /**
+   * Ask the agent to drop an active session if it advertises session close.
+   */
+  async closeSession(sessionId: string): Promise<unknown> {
+    return this.request('session/close', { sessionId })
   }
 
   /**

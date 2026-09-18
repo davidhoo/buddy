@@ -40,7 +40,9 @@ describe('registerBuddyHandlers', () => {
       cancelGenerateCommitMessage: vi.fn(),
       testLauncher: vi.fn(),
       detectActorModels: vi.fn(),
+      listAcpModels: vi.fn(),
       updateTaskText: vi.fn(),
+      updateTaskLauncherModel: vi.fn(),
       checkAcpGlobalAdapters: vi.fn(),
       onTaskEvent: vi.fn()
     }
@@ -58,6 +60,8 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:gitStageFiles', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:cancelGenerateCommitMessage', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:detectActorModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:listAcpModels', expect.any(Function))
+    expect(handle).toHaveBeenCalledWith('buddy:updateTaskLauncherModel', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:checkAcpGlobalAdapters', expect.any(Function))
     const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
     cancelHandler({}, 'task', 'workspace')
@@ -71,6 +75,10 @@ describe('registerBuddyHandlers', () => {
     checkAcpHandler({})
     expect(service.checkAcpGlobalAdapters).toHaveBeenCalled()
 
-    expect(handle).toHaveBeenCalledTimes(37)
+    const updateModelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:updateTaskLauncherModel')![1]
+    updateModelHandler({}, 'task', 'workspace', 'claude', 'opus-4.6')
+    expect(service.updateTaskLauncherModel).toHaveBeenCalledWith('task', 'workspace', 'claude', 'opus-4.6')
+
+    expect(handle).toHaveBeenCalledTimes(39)
   })
 })

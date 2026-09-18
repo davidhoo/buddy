@@ -113,6 +113,10 @@ export function normalizeLauncher(actor: string, launcher?: Partial<Launcher> | 
       result.args = [...launcher.args]
     }
   }
+  const model = typeof launcher?.model === 'string' ? launcher.model.trim() : ''
+  if (model) {
+    result.model = model
+  }
   return result
 }
 

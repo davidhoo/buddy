@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { CreateTaskModal } from '../../../src/renderer/App'
@@ -21,23 +21,33 @@ vi.mock('../../../src/renderer/components/BranchModal', () => ({
 
 type CreateTaskModalProps = Parameters<typeof CreateTaskModal>[0]
 
-function mockWindowApi() {
+type BuddyMocks = {
+  detectActorModels?: ReturnType<typeof vi.fn>
+  listAcpModels?: ReturnType<typeof vi.fn>
+}
+
+function mockWindowApi(buddyOverrides: BuddyMocks = {}) {
   const api = {
     selectDirectory: vi.fn().mockResolvedValue(null),
     readClipboardFilePaths: vi.fn().mockResolvedValue([]),
     readFileAsDataURL: vi.fn().mockResolvedValue('')
   }
   const buddy = {
-    detectActorModels: vi.fn().mockResolvedValue({})
+    detectActorModels: vi.fn().mockResolvedValue({}),
+    listAcpModels: vi.fn().mockResolvedValue({ models: [] }),
+    ...buddyOverrides
   }
   Object.defineProperty(window, 'api', { configurable: true, value: api })
   Object.defineProperty(window, 'buddy', { configurable: true, value: buddy })
   return { api, buddy }
 }
 
-function renderModal(overrides: Partial<CreateTaskModalProps> = {}) {
+function renderModal(
+  overrides: Partial<CreateTaskModalProps> = {},
+  buddyOverrides: BuddyMocks = {}
+) {
   const onCreate = vi.fn()
-  mockWindowApi()
+  mockWindowApi(buddyOverrides)
   const props: CreateTaskModalProps = {
     onClose: vi.fn(),
     onCreate,
@@ -226,6 +236,92 @@ describe('CreateTaskModal task brief layout', () => {
     const hint = screen.getByText('modal.create.taskBriefPasteHint')
     const row = label.parentElement
     expect(row).toContainElement(hint)
+  })
+})
+
+describe('CreateTaskModal actor models', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => store.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+        removeItem: vi.fn((key: string) => store.delete(key)),
+        clear: vi.fn(() => store.clear())
+      }
+    })
+  })
+
+  it('annotates CLI agents with the configured model and hides the ACP model picker', async () => {
+    renderModal({}, {
+      detectActorModels: vi.fn().mockResolvedValue({
+        claude: 'sonnet-4.5',
+        codex: 'gpt-5.6'
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('option', { name: 'actor.claude (sonnet-4.5)' }).length).toBeGreaterThan(0)
+    })
+    expect(screen.getAllByRole('option', { name: 'actor.codex (gpt-5.6)' }).length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('modal.create.implementer modal.create.model')).not.toBeInTheDocument()
+  })
+
+  it('shows an ACP model picker and snapshots the selected model onto the launcher', async () => {
+    const { onCreate } = renderModal(
+      {
+        globalSettings: {
+          launchers: {
+            claude: {
+              protocol: 'acp',
+              command: 'npx',
+              args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+              env: {},
+              timeout_seconds: 7200
+            },
+            codex: {
+              command: 'codex',
+              env: {},
+              timeout_seconds: 7200
+            }
+          }
+        }
+      },
+      {
+        listAcpModels: vi.fn().mockImplementation(async (actor: string) => {
+          if (actor !== 'claude') return { models: [] }
+          return {
+            models: [
+              { id: 'opus-4.6', name: 'Opus 4.6' },
+              { id: 'sonnet-4.5', name: 'Sonnet 4.5' }
+            ],
+            currentModelId: 'sonnet-4.5'
+          }
+        })
+      }
+    )
+
+    const modelSelect = await screen.findByLabelText('modal.create.implementer modal.create.model')
+    await waitFor(() => {
+      expect(modelSelect).toHaveValue('sonnet-4.5')
+    })
+    expect(screen.getAllByRole('option', { name: 'actor.claude' }).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('option', { name: /actor.claude \(/ })).toHaveLength(0)
+
+    fireEvent.change(modelSelect, { target: { value: 'opus-4.6' } })
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), {
+      target: { value: 'acp-model' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /modal.create.submit/ }))
+
+    expect(onCreate).toHaveBeenCalledTimes(1)
+    const settings = onCreate.mock.calls[0][3] as {
+      launchers: Record<string, { model?: string; protocol?: string }>
+    }
+    expect(settings.launchers.claude.model).toBe('opus-4.6')
+    expect(settings.launchers.claude.protocol).toBe('acp')
+    expect(settings.launchers.codex.model).toBeUndefined()
   })
 })
 

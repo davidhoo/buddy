@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, X, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { useHealthCheck, useBootstrap, useTasks, useTaskDetail, useCreateTask, useSendMessage, useStartTask, useInterrupt, useDeleteTask, useEnqueueInstruction, useDequeueInstruction, useClearInstructionQueue, useInterruptAndInsert, useGitStatus } from './hooks/useBuddy'
 import { ChangesModal } from './components/ChangesModal'
+import { hasGitChangedFiles } from './components/FileStatus'
 import { useCancelTask } from './hooks/useBuddy'
 import { BranchModal } from './components/BranchModal'
 import { useTheme } from './hooks/useTheme'
@@ -22,7 +23,7 @@ import { ACTOR_LABEL_KEY, Actor } from './lib/format'
 import { isTaskReadyToStart, isTaskQueued, queuedPosition } from './lib/taskState'
 import type { Task } from '../shared/types'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
-import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta, Launcher } from '../shared/types'
+import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta, Launcher, AcpModelInfo } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
 import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings, normalizeLauncher } from '../shared/defaults'
 import { TASK_ID_MAX_CODE_POINTS, validateTaskId } from '../shared/task-id'
@@ -74,6 +75,7 @@ export default function App() {
 
   const changesRepoRoot = taskDetail?.state?.repo_root || null
   const { data: changesGitStatus } = useGitStatus(changesRepoRoot)
+  const hasChangedFiles = hasGitChangedFiles(changesGitStatus)
 
   // Feed main-process locale to renderer language detection as fallback
   useEffect(() => {
@@ -707,7 +709,7 @@ export default function App() {
                 onCreateTask={handleOpenCreateModal}
                 onRetryHealthCheck={handleRetryHealthCheck}
                 isRetryingHealthCheck={isRetryingHealthCheck}
-                onViewChanges={() => setShowTaskDoneChanges(true)}
+                onViewChanges={hasChangedFiles ? () => setShowTaskDoneChanges(true) : undefined}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 attachments={currentAttachments}
@@ -736,7 +738,7 @@ export default function App() {
       </div>
 
       {/* 任务完成 - 变更文件弹窗 */}
-      {showTaskDoneChanges && changesGitStatus && changesRepoRoot && (
+      {showTaskDoneChanges && hasChangedFiles && changesGitStatus && changesRepoRoot && (
         <ChangesModal
           gitStatus={changesGitStatus}
           repoRoot={changesRepoRoot}
@@ -816,6 +818,13 @@ export function CreateTaskModal({
   })
   const [implementerSession, setImplementerSession] = useState('')
   const [reviewerSession, setReviewerSession] = useState('')
+  const [implementerModel, setImplementerModel] = useState(() => {
+    try { return localStorage.getItem('buddy.lastImplementerModel') || '' } catch { return '' }
+  })
+  const [reviewerModel, setReviewerModel] = useState(() => {
+    try { return localStorage.getItem('buddy.lastReviewerModel') || '' } catch { return '' }
+  })
+  const [acpModelState, setAcpModelState] = useState<Record<string, { loading: boolean; models: AcpModelInfo[] }>>({})
   const [executionMode, setExecutionMode] = useState<'immediate' | 'queued'>('immediate')
   const [showBranchModal, setShowBranchModal] = useState(false)
 
@@ -920,9 +929,42 @@ export function CreateTaskModal({
 
   const actorLabel = (a: Actor): string => {
     const name = t(ACTOR_LABEL_KEY[a])
+    if (normalizeLauncher(a, normalizedGlobalSettings.launchers?.[a]).protocol === 'acp') return name
     const model = actorModels[a]
     return model ? `${name} (${model})` : name
   }
+
+  const isAcpActor = (a: Actor): boolean =>
+    normalizeLauncher(a, normalizedGlobalSettings.launchers?.[a]).protocol === 'acp'
+
+  const acpActorsKey = [implementer, reviewer].filter(isAcpActor).join('|')
+  useEffect(() => {
+    const actors = [implementer, reviewer].filter((actor, index, all) => isAcpActor(actor) && all.indexOf(actor) === index)
+    if (actors.length === 0) return
+    let cancelled = false
+    for (const actor of actors) {
+      setAcpModelState(prev => ({ ...prev, [actor]: { loading: true, models: prev[actor]?.models ?? [] } }))
+      window.buddy?.listAcpModels(actor)
+        .then(list => {
+          if (cancelled) return
+          const models = list?.models ?? []
+          setAcpModelState(prev => ({ ...prev, [actor]: { loading: false, models } }))
+          const pick = (current: string): string => {
+            if (current && models.some(model => model.id === current)) return current
+            if (list?.currentModelId && models.some(model => model.id === list.currentModelId)) return list.currentModelId
+            return models[0]?.id ?? ''
+          }
+          if (actor === implementer) setImplementerModel(pick)
+          if (actor === reviewer) setReviewerModel(pick)
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAcpModelState(prev => ({ ...prev, [actor]: { loading: false, models: [] } }))
+          }
+        })
+    }
+    return () => { cancelled = true }
+  }, [acpActorsKey])
 
   // Debounced git branch query — avoids firing on every keystroke in the path input
   const [debouncedRepoRoot, setDebouncedRepoRoot] = useState(repoRoot.trim())
@@ -967,9 +1009,18 @@ export function CreateTaskModal({
     try {
       localStorage.setItem('buddy.lastImplementer', implementer)
       localStorage.setItem('buddy.lastReviewer', reviewer)
+      localStorage.setItem('buddy.lastImplementerModel', implementerModel)
+      localStorage.setItem('buddy.lastReviewerModel', reviewerModel)
     } catch {}
     const launchers = normalizedGlobalSettings.launchers ?? {}
-    const launcherFor = (actor: Actor): Launcher => normalizeLauncher(actor, launchers[actor])
+    const launcherFor = (actor: Actor): Launcher => {
+      const launcher = normalizeLauncher(actor, launchers[actor])
+      const selected = actor === implementer ? implementerModel : actor === reviewer ? reviewerModel : ''
+      if (launcher.protocol === 'acp' && selected) {
+        return { ...launcher, model: selected }
+      }
+      return launcher
+    }
     const settings: Record<string, unknown> = {
       protocol_version: normalizedGlobalSettings.protocol_version ?? '1',
       flow_policy: 'claude_then_codex',
@@ -996,6 +1047,61 @@ export function CreateTaskModal({
   const actorOptions: Actor[] = [...DEFAULT_LAUNCHER_ORDER] as Actor[]
   const standardActors: Actor[] = actorOptions.filter(a => !a.startsWith('wecode_'))
   const internalActors: Actor[] = actorOptions.filter(a => a.startsWith('wecode_'))
+
+  const actorSelect = (value: Actor, onChange: (actor: Actor) => void) => (
+    <div className="relative min-w-0 flex-1">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as Actor)}
+        className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
+      >
+        <optgroup label={t('modal.create.standardAgents')}>
+          {standardActors.map(a => (
+            <option key={a} value={a}>{actorLabel(a)}</option>
+          ))}
+        </optgroup>
+        <optgroup label={t('modal.create.internalAgents')}>
+          {internalActors.map(a => (
+            <option key={a} value={a}>{actorLabel(a)}</option>
+          ))}
+        </optgroup>
+      </select>
+      <ChevronDown
+        size={14}
+        className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+      />
+    </div>
+  )
+
+  const modelSelect = (actor: Actor, value: string, onChange: (model: string) => void, roleLabel: string) => {
+    if (!isAcpActor(actor)) return null
+    const state = acpModelState[actor]
+    const loading = state?.loading ?? true
+    const models = state?.models ?? []
+    return (
+      <div className="relative min-w-0 flex-1">
+        <select
+          aria-label={`${roleLabel} ${t('modal.create.model')}`}
+          value={loading ? '' : value}
+          disabled={loading || models.length === 0}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs disabled:opacity-60"
+        >
+          {loading && <option value="">{t('common.loading')}</option>}
+          {!loading && models.length === 0 && (
+            <option value="">{t('modal.create.modelUnavailable')}</option>
+          )}
+          {models.map(model => (
+            <option key={model.id} value={model.id}>{model.name}</option>
+          ))}
+        </select>
+        <ChevronDown
+          size={14}
+          className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-buddy-modal onKeyDown={(e) => {
@@ -1169,52 +1275,16 @@ export function CreateTaskModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.implementer')}</label>
-              <div className="relative">
-                <select
-                  value={implementer}
-                  onChange={(e) => setImplementer(e.target.value as Actor)}
-                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-                >
-                  <optgroup label={t('modal.create.standardAgents')}>
-                    {standardActors.map(a => (
-                      <option key={a} value={a}>{actorLabel(a)}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label={t('modal.create.internalAgents')}>
-                    {internalActors.map(a => (
-                      <option key={a} value={a}>{actorLabel(a)}</option>
-                    ))}
-                  </optgroup>
-                </select>
-                <ChevronDown
-                  size={14}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
-                />
+              <div className="flex gap-2">
+                {actorSelect(implementer, setImplementer)}
+                {modelSelect(implementer, implementerModel, setImplementerModel, t('modal.create.implementer'))}
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">{t('modal.create.reviewer')}</label>
-              <div className="relative">
-                <select
-                  value={reviewer}
-                  onChange={(e) => setReviewer(e.target.value as Actor)}
-                  className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs"
-                >
-                  <optgroup label={t('modal.create.standardAgents')}>
-                    {standardActors.map(a => (
-                      <option key={a} value={a}>{actorLabel(a)}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label={t('modal.create.internalAgents')}>
-                    {internalActors.map(a => (
-                      <option key={a} value={a}>{actorLabel(a)}</option>
-                    ))}
-                  </optgroup>
-                </select>
-                <ChevronDown
-                  size={14}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
-                />
+              <div className="flex gap-2">
+                {actorSelect(reviewer, setReviewer)}
+                {modelSelect(reviewer, reviewerModel, setReviewerModel, t('modal.create.reviewer'))}
               </div>
             </div>
           </div>

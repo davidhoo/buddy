@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type {
+  AcpModelList,
   AttachmentMeta,
   BootstrapResponse,
   CountdownInput,
@@ -47,7 +48,7 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, splitCommand, type LauncherRunResult } from './launchers'
-import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, resolveAcpBinary, checkGlobalAcpAdapters, type GlobalAcpAdaptersStatus } from './acp'
+import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, probeAcpModels, resolveAcpBinary, checkGlobalAcpAdapters, type GlobalAcpAdaptersStatus } from './acp'
 import { detectModelFromConfig } from './model-detect'
 import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, defaultLauncherFor } from '../../shared/defaults'
 import { buildPingPrompt, actorDisplayName } from './prompts'
@@ -66,6 +67,8 @@ export class BuddyCoreService {
   private readonly runner: BuddyRunner
   private readonly events?: BuddyEventBus
   private coordinator?: QueueCoordinator
+  private readonly acpModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
+  private readonly acpModelInflight = new Map<string, Promise<AcpModelList>>()
 
   constructor(options: BuddyCoreServiceOptions | string = {}) {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
@@ -89,6 +92,15 @@ export class BuddyCoreService {
 
   async updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void> {
     return this.store.updateTaskText(taskId, workspaceKey, taskText)
+  }
+
+  async updateTaskLauncherModel(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    model: string
+  ) {
+    return this.store.updateTaskLauncherModel(taskId, workspaceKey, actor, model)
   }
 
   async checkHealth(): Promise<boolean> {
@@ -310,24 +322,80 @@ export class BuddyCoreService {
   }
 
   /**
-   * Detect the currently configured model for every actor, reading each
+   * Detect the currently configured model for every CLI actor, reading each
    * actor's launcher command from global settings so the result matches what
    * the runner will actually invoke. Used by the new-task modal to annotate
-   * each agent option with its model (e.g. "Codex (gpt-5.6-luna)").
+   * each CLI agent option with its model (e.g. "Codex (gpt-5.6-luna)").
+   *
+   * ACP actors are omitted: their model is chosen from the live agent list
+   * rather than from a local CLI config file.
    *
    * Returns a map of actor → model string. Actors whose model cannot be
-   * determined before a run (e.g. claude, whose model is only emitted in
-   * stream-json output) resolve to undefined.
+   * determined before a run resolve to undefined.
    */
   async detectActorModels(): Promise<Record<string, string | undefined>> {
     const settings = await this.store.readGlobalSettings()
     const launchers = normalizeGlobalSettings(settings).launchers ?? {}
     const result: Record<string, string | undefined> = {}
     for (const actor of DEFAULT_LAUNCHER_ORDER) {
-      const command = launchers[actor]?.command
+      const launcher = launchers[actor]
+      if (launcher?.protocol === 'acp') {
+        result[actor] = undefined
+        continue
+      }
+      const command = launcher?.command
       result[actor] = await detectModelFromConfig(actor, command).catch(() => undefined)
     }
     return result
+  }
+
+  /**
+   * Probe an ACP actor for the models it currently advertises. CLI actors
+   * resolve to an empty list. Results are cached briefly so the create-task
+   * modal can reopen without spawning the agent again.
+   */
+  async listAcpModels(actor: string, cwd?: string): Promise<AcpModelList> {
+    const empty: AcpModelList = { models: [] }
+    const settings = await this.store.readGlobalSettings()
+    const launchers = normalizeGlobalSettings(settings).launchers ?? {}
+    const launcher = launchers[actor]
+    if (launcher?.protocol !== 'acp') return empty
+
+    const cacheKey = `${actor}|${launcher.command}|${(launcher.args ?? []).join(' ')}`
+    const cached = this.acpModelCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.list
+    }
+    const inflight = this.acpModelInflight.get(cacheKey)
+    if (inflight) return inflight
+
+    const pending = (async (): Promise<AcpModelList> => {
+      try {
+        const baseArgs = launcher.args && launcher.args.length > 0
+          ? launcher.args
+          : defaultAcpArgs(launcher.command, actor)
+        const resolved = resolveAcpBinary(launcher.command, baseArgs)
+        const acpEnv = await prepareAcpEnvironment(actor, launcher.env, this.store.dataRoot)
+        const list = await probeAcpModels({
+          command: resolved.command,
+          args: resolved.args,
+          cwd,
+          env: acpEnv
+        })
+        this.acpModelCache.set(cacheKey, {
+          list,
+          expiresAt: Date.now() + 5 * 60 * 1000
+        })
+        return list
+      } catch {
+        return empty
+      } finally {
+        this.acpModelInflight.delete(cacheKey)
+      }
+    })()
+
+    this.acpModelInflight.set(cacheKey, pending)
+    return pending
   }
 
   async testLauncher(

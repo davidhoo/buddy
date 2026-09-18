@@ -1,4 +1,5 @@
 import type {
+  AcpModelList,
   AttachmentMeta,
   CountdownInput,
   CreateTaskInput,
@@ -10,6 +11,7 @@ import type {
   TestLauncherResult,
   StartTaskInput,
   TaskEventEnvelope,
+  TaskSettings,
   TaskStats
 } from '../../shared/types'
 
@@ -98,6 +100,10 @@ export const api = {
     ) as Promise<TestLauncherResult>,
   detectActorModels: () =>
     buddy().detectActorModels() as Promise<Record<string, string | undefined>>,
+  listAcpModels: (actor: string, cwd?: string) =>
+    buddy().listAcpModels(actor, cwd) as Promise<AcpModelList>,
+  updateTaskLauncherModel: (taskId: string, workspaceKey: string, actor: string, model: string) =>
+    buddy().updateTaskLauncherModel(taskId, workspaceKey, actor, model) as Promise<TaskSettings>,
   checkAcpGlobalAdapters: () =>
     buddy().checkAcpGlobalAdapters(),
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>

@@ -339,6 +339,8 @@ export function ChatArea({ task, hasAnyTasks, onSendMessage, onStartTask, onInte
           isReady={isReady}
           settings={task?.settings ?? null}
           taskState={task?.state ?? null}
+          taskId={task?.task_id}
+          workspaceKey={task?.workspace_key}
           draft={draft}
           onDraftChange={onDraftChange}
           attachments={attachments}

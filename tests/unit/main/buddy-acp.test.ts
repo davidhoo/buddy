@@ -301,6 +301,22 @@ describe('AcpClient', () => {
     await expect(reqPromise).rejects.toThrow('ACP Error -32600: Invalid Request')
   })
 
+  it('includes JSON-RPC error data in the wrapped ACP Error message', async () => {
+    const transport = new MockAcpTransport()
+    const client = new AcpClient(transport)
+
+    const reqPromise = client.request('session/prompt')
+    const req = transport.sentMessages[0] as JsonRpcRequest
+
+    transport.simulateMessage({
+      jsonrpc: '2.0',
+      id: req.id,
+      error: { code: -32603, message: 'Internal error', data: '超出上下文' }
+    })
+
+    await expect(reqPromise).rejects.toThrow('ACP Error -32603: Internal error 超出上下文')
+  })
+
   it('rejects pending requests immediately when transport closes unexpectedly with stderr', async () => {
     const transport = new MockAcpTransport()
     const client = new AcpClient(transport)
@@ -322,6 +338,25 @@ describe('AcpClient', () => {
     transport.simulateError(new Error('spawn ENOENT'))
 
     await expect(initPromise).rejects.toThrow('spawn ENOENT')
+  })
+
+  it('sends session/set_model and session/set_config_option', async () => {
+    const transport = new MockAcpTransport()
+    const client = new AcpClient(transport)
+
+    const modelPromise = client.setSessionModel('sess_1', 'opus-4.6')
+    const modelReq = transport.sentMessages[0] as JsonRpcRequest
+    expect(modelReq.method).toBe('session/set_model')
+    expect(modelReq.params).toEqual({ sessionId: 'sess_1', modelId: 'opus-4.6' })
+    transport.simulateMessage({ jsonrpc: '2.0', id: modelReq.id, result: {} })
+    await modelPromise
+
+    const configPromise = client.setSessionConfigOption('sess_1', 'model', 'gpt-5.6')
+    const configReq = transport.sentMessages[1] as JsonRpcRequest
+    expect(configReq.method).toBe('session/set_config_option')
+    expect(configReq.params).toEqual({ sessionId: 'sess_1', configId: 'model', value: 'gpt-5.6' })
+    transport.simulateMessage({ jsonrpc: '2.0', id: configReq.id, result: {} })
+    await configPromise
   })
 })
 

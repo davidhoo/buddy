@@ -148,6 +148,18 @@ export interface Launcher {
   args?: string[]
   env: Record<string, string>
   timeout_seconds: number
+  /** Per-task ACP model id selected in the create-task modal or composer. */
+  model?: string
+}
+
+export interface AcpModelInfo {
+  id: string
+  name: string
+}
+
+export interface AcpModelList {
+  models: AcpModelInfo[]
+  currentModelId?: string
 }
 
 export interface AcpPreset {

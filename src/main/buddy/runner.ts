@@ -23,7 +23,7 @@ import { BuddyStore } from './store'
 import { TaskServiceManager, type ServiceRun } from './task-services'
 import { BuddyEventBus } from './events'
 import type { TaskNotifier } from './notifications'
-import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, resolveAcpBinary } from './acp'
+import { AcpClient, AcpStdioTransport, applyAcpSessionModel, defaultAcpArgs, prepareAcpEnvironment, resolveAcpBinary } from './acp'
 
 const ACTOR_STATUS: Record<string, TaskState['status']> = {
   claude: 'RUNNING_CLAUDE',
@@ -47,6 +47,9 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /context window limit/i,
   /context length exceeded/i,
   /context\.length\.exceeded/i,
+  /context[_ .]+length/i,
+  /context[_ .]+window/i,
+  /context[_ .]+overflow/i,
   /maximum context length/i,
   /max.*context.*length/i,
   /token limit/i,
@@ -54,7 +57,9 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /exceeds.*token/i,
   /exceeded.*token/i,
   /input.*too long/i,
+  /prompt[_ ]too[_ ]long/i,
   /request too large/i,
+  /max_tokens/i,
   /context window.*exhausted/i,
   // Chinese error messages from models like GLM, Qwen, DeepSeek
   /对话内容太长/i,
@@ -66,6 +71,18 @@ const CONTEXT_WINDOW_LIMIT_PATTERNS = [
   /内容过长/i,
   /超出.*长度/i
 ]
+
+/** Bare ACP/LLM prompt stopReason values that mean the input/context overflowed */
+const ACP_OVERFLOW_STOP_REASONS = new Set([
+  'max_tokens',
+  'max_token',
+  'context_length',
+  'context_length_exceeded',
+  'context_window',
+  'context_window_exceeded',
+  'context_overflow',
+  'prompt_too_long'
+])
 
 const DEFAULT_MAX_COMPACT_RETRIES = 3
 
@@ -666,7 +683,8 @@ export class BuddyRunner {
       env: { ...(base.env ?? {}) },
       timeout_seconds: base.timeout_seconds ?? fallback.timeout_seconds,
       ...(protocol ? { protocol } : {}),
-      ...(args ? { args } : {})
+      ...(args ? { args } : {}),
+      ...(base.model ? { model: base.model } : {})
     }
   }
 
@@ -992,7 +1010,7 @@ export class BuddyRunner {
     const globalSettings = await this.store.readGlobalSettings()
     const launcher = this.resolveEffectiveLauncher(actor, detail.settings.launchers, globalSettings.launchers)
     if (launcher.protocol === 'acp') {
-      return this.executeAcpActor(taskId, workspaceKey, actor, runId, userMessage, signal)
+      return this.executeAcpActor(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries)
     }
     return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries, 0)
   }
@@ -1003,7 +1021,8 @@ export class BuddyRunner {
     actor: string,
     runId: string,
     userMessage: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    compactRetries = 0
   ): Promise<void> {
     const detail = await this.store.getTaskDetail(taskId, workspaceKey)
     const globalSettings = await this.store.readGlobalSettings()
@@ -1072,21 +1091,25 @@ export class BuddyRunner {
 
       // 2. Session
       let sessionId = existingSessionId
+      let sessionResult: unknown
       let availableModes: Array<{ id: string }> | undefined
       if (sessionId) {
         try {
           const loaded = await client.loadSession({ sessionId, cwd })
           sessionId = loaded.sessionId || sessionId
-          availableModes = (loaded as any).modes?.availableModes
+          availableModes = (loaded as { modes?: { availableModes?: Array<{ id: string }> } }).modes?.availableModes
+          sessionResult = loaded
         } catch {
           const created = await client.newSession({ cwd })
           sessionId = created.sessionId
           availableModes = created.modes?.availableModes
+          sessionResult = created
         }
       } else {
         const created = await client.newSession({ cwd })
         sessionId = created.sessionId
         availableModes = created.modes?.availableModes
+        sessionResult = created
       }
 
       const autoMode = availableModes?.find(
@@ -1094,6 +1117,10 @@ export class BuddyRunner {
       )?.id
       if (autoMode) {
         await client.setSessionMode(sessionId, autoMode).catch(() => {})
+      }
+
+      if (launcher.model) {
+        await applyAcpSessionModel(client, sessionId, launcher.model, sessionResult).catch(() => {})
       }
 
       // 3. Prompt turn
@@ -1108,7 +1135,7 @@ export class BuddyRunner {
       let outputText = ''
       let breakReason: string | undefined
 
-      await client.prompt(
+      const promptResult = await client.prompt(
         { sessionId, prompt },
         {
           onContentDelta: (text) => {
@@ -1163,6 +1190,10 @@ export class BuddyRunner {
         }
       )
 
+      if (isAcpPromptContextOverflow(promptResult)) {
+        throw new Error(describeAcpPromptOverflow(promptResult))
+      }
+
       await writeFile(outputFile, outputText)
 
       signal.removeEventListener('abort', onAbort)
@@ -1183,7 +1214,33 @@ export class BuddyRunner {
         0
       )
     } catch (error) {
+      // User interrupt: pauseAndAbortRun already cleared active_run and aborted the signal.
+      if (signal.aborted) return
+
       const failureMessage = error instanceof Error ? error.message : String(error)
+      const maxCompactRetries = globalSettings.max_compact_retries ?? DEFAULT_MAX_COMPACT_RETRIES
+      if (isContextWindowLimitError(failureMessage) && compactRetries < maxCompactRetries) {
+        const overflowSessionId = sessionIdForActor(actor, detail.state, detail.settings)
+        if (overflowSessionId) {
+          await this.store.appendTaskEvent(taskId, workspaceKey, {
+            type: 'actor.context_limit_detected',
+            actor,
+            run_id: runId,
+            payload: { error: failureMessage, reset_attempt: compactRetries + 1, max_reset_attempts: maxCompactRetries }
+          })
+
+          await this.store.appendTranscript(
+            taskId,
+            workspaceKey,
+            'system',
+            `${actorDisplayName(actor)} 达到上下文窗口限制，正在重置会话并注入精简上下文 (${compactRetries + 1}/${maxCompactRetries})...`,
+            { kind: 'session_reset', reset_attempt: compactRetries + 1 }
+          )
+          await this.resetSessionForActor(taskId, workspaceKey, actor, detail)
+          return this.executeAcpActor(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries + 1)
+        }
+      }
+
       await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
       throw error
     } finally {
@@ -2274,7 +2331,21 @@ export function isCliWarningOnly(stderrText: string): boolean {
 
 /** Check if an error message indicates a context window limit error */
 export function isContextWindowLimitError(message: string): boolean {
-  return CONTEXT_WINDOW_LIMIT_PATTERNS.some((p) => p.test(message))
+  if (!message) return false
+  if (CONTEXT_WINDOW_LIMIT_PATTERNS.some((p) => p.test(message))) return true
+  return ACP_OVERFLOW_STOP_REASONS.has(message.trim().toLowerCase())
+}
+
+function isAcpPromptContextOverflow(result: { status?: string; stopReason?: string }): boolean {
+  if (result.status === 'cancelled' || result.stopReason === 'cancelled') return false
+  return isContextWindowLimitError(describeAcpPromptOverflow(result))
+}
+
+function describeAcpPromptOverflow(result: { status?: string; stopReason?: string }): string {
+  const parts = ['ACP prompt']
+  if (result.stopReason) parts.push(`stopReason ${result.stopReason}`)
+  if (result.status) parts.push(`status ${result.status}`)
+  return parts.join(' ')
 }
 
 async function existingCwd(path?: string): Promise<string> {

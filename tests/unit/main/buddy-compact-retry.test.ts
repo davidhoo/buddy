@@ -69,6 +69,20 @@ describe('isContextWindowLimitError', () => {
     // Full GLM error with JSON wrapper
     expect(isContextWindowLimitError('API Error: 400 {"error":{"message":"对话内容太长，已超出当前模型的处理能力。"},"type":"error"}')).toBe(true)
   })
+
+  it('detects ACP-wrapped overflow errors and stopReason values', () => {
+    expect(isContextWindowLimitError('ACP Error -32603: 超出上下文')).toBe(true)
+    expect(isContextWindowLimitError('ACP Error -32000: 对话内容太长，已超出当前模型的处理能力')).toBe(true)
+    expect(isContextWindowLimitError('ACP Error -32603: context window limit')).toBe(true)
+    expect(isContextWindowLimitError('ACP Error -32603: {"error":{"message":"超出上下文"}}')).toBe(true)
+    expect(isContextWindowLimitError('ACP prompt stopReason max_tokens')).toBe(true)
+    expect(isContextWindowLimitError('ACP prompt stopReason context_length_exceeded')).toBe(true)
+    expect(isContextWindowLimitError('max_tokens')).toBe(true)
+    expect(isContextWindowLimitError('context_overflow')).toBe(true)
+    expect(isContextWindowLimitError('ACP Error -32600: Invalid Request')).toBe(false)
+    expect(isContextWindowLimitError('ACP Client closed')).toBe(false)
+    expect(isContextWindowLimitError('ACP prompt stopReason cancelled')).toBe(false)
+  })
 })
 
 describe('BuddyRunner context window limit handling', () => {

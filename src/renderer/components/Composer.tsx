@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ArrowUp, ChevronDown, Square, X, Image as ImageIcon } from 'lucide-react'
-import { Attachment, TaskSettings, TaskState } from '../../shared/types'
+import { AcpModelInfo, Attachment, TaskSettings, TaskState } from '../../shared/types'
 import { taskActors, ACTOR_LABEL_KEY, Actor } from '../lib/format'
 import { useT, useSendShortcut } from '../hooks/useI18n'
 import { IMAGE_EXTS, EXT_ICON_MAP, generateAttachmentId, isImageAttachment, fileExt, fileIconForName, mimeTypeForExt } from '../lib/attachments'
@@ -14,19 +14,39 @@ interface ComposerProps {
   isReady: boolean
   settings: TaskSettings | null
   taskState: TaskState | null
+  taskId?: string
+  workspaceKey?: string
   draft: string
   onDraftChange: (value: string) => void
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
+function pickAcpModelId(
+  models: AcpModelInfo[],
+  saved?: string,
+  currentModelId?: string
+): string {
+  if (saved && models.some(model => model.id === saved)) return saved
+  if (currentModelId && models.some(model => model.id === currentModelId)) return currentModelId
+  return models[0]?.id ?? ''
+}
+
+export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, taskId, workspaceKey, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
   const t = useT()
   const { shortcut } = useSendShortcut()
   const { impl, participants } = taskActors(settings)
   const [nextActor, setNextActor] = useState<Actor>(impl)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevStateNextRef = useRef<string | undefined>()
+  const selectedModelByActorRef = useRef<Record<string, string>>({})
+  const persistChainRef = useRef<Promise<unknown>>(Promise.resolve())
+  const nextIsAcp = settings?.launchers?.[nextActor]?.protocol === 'acp'
+  const [acpModelState, setAcpModelState] = useState<{
+    status: 'idle' | 'loading' | 'ready'
+    models: AcpModelInfo[]
+    selected: string
+  }>({ status: 'idle', models: [], selected: '' })
 
   const computedNext = (() => {
     if (isRunning && taskState?.active_run?.actor) {
@@ -43,6 +63,52 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
       }
     }
   }, [computedNext, participants])
+
+  const persistModel = useCallback((actor: string, model: string) => {
+    if (!taskId || !workspaceKey || !model || !window.buddy?.updateTaskLauncherModel) return
+    persistChainRef.current = persistChainRef.current
+      .then(() => window.buddy.updateTaskLauncherModel(taskId, workspaceKey, actor, model))
+      .then(() => undefined)
+      .catch(() => undefined)
+  }, [taskId, workspaceKey])
+
+  useEffect(() => {
+    if (!nextIsAcp) {
+      setAcpModelState({ status: 'idle', models: [], selected: '' })
+      return
+    }
+    let cancelled = false
+    const saved = selectedModelByActorRef.current[nextActor]
+      || settings?.launchers?.[nextActor]?.model
+      || ''
+    setAcpModelState({ status: 'loading', models: [], selected: saved })
+    const cwd = taskState?.repo_root?.trim() || undefined
+    const pending = window.buddy?.listAcpModels?.(nextActor, cwd)
+    if (!pending) {
+      setAcpModelState({ status: 'ready', models: [], selected: saved })
+      return
+    }
+    pending
+      .then(list => {
+        if (cancelled) return
+        const models = list?.models ?? []
+        const selected = pickAcpModelId(models, saved, list?.currentModelId)
+        if (selected) selectedModelByActorRef.current[nextActor] = selected
+        setAcpModelState({ status: 'ready', models, selected })
+      })
+      .catch(() => {
+        if (!cancelled) setAcpModelState({ status: 'ready', models: [], selected: saved })
+      })
+    return () => { cancelled = true }
+  }, [nextIsAcp, nextActor, taskState?.repo_root])
+
+  const handleModelChange = (model: string) => {
+    setAcpModelState(prev => ({ ...prev, selected: model }))
+    selectedModelByActorRef.current[nextActor] = model
+    persistModel(nextActor, model)
+  }
+
+  const flushPersistedModel = () => persistChainRef.current
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -139,17 +205,23 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     const hasContent = draft.trim() || attachments.length > 0
     if (!hasContent) return
 
-    if (isRunning) {
-      onEnqueueInstruction(draft.trim(), attachments.length > 0 ? attachments : undefined)
-    } else {
-      onSend(draft.trim(), nextActor, attachments.length > 0 ? attachments : undefined)
-    }
+    const actor = nextActor
+    const message = draft.trim()
+    const queued = isRunning
+    const atts = attachments.length > 0 ? attachments : undefined
     // Cleanup preview URLs
     for (const att of attachments) {
       if (att.previewUrl) URL.revokeObjectURL(att.previewUrl)
     }
     onDraftChange('')
     onAttachmentsChange([])
+    void flushPersistedModel().then(() => {
+      if (queued) {
+        onEnqueueInstruction(message, atts)
+      } else {
+        onSend(message, actor, atts)
+      }
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -162,7 +234,7 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
       if (draft.trim() || attachments.length > 0) {
         handleSend()
       } else if (isReady) {
-        onStart(nextActor)
+        void flushPersistedModel().then(() => onStart(nextActor))
       }
       return
     }
@@ -178,7 +250,11 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   const showStop = isRunning && !hasDraft
   const showEnqueue = isRunning && hasDraft
   const showStart = isReady && !hasDraft && !isRunning
-  const handlePrimary = showStop ? onInterrupt : showStart ? () => onStart(nextActor) : handleSend
+  const handlePrimary = showStop
+    ? onInterrupt
+    : showStart
+      ? () => { void flushPersistedModel().then(() => onStart(nextActor)) }
+      : handleSend
   const primaryDisabled = showStop ? false : showStart ? false : !hasDraft
 
   const placeholder = isRunning
@@ -287,6 +363,7 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
 
             <div className="relative">
               <select
+                aria-label={t('composer.nextHandoff')}
                 value={nextActor}
                 onChange={(e) => setNextActor(e.target.value as Actor)}
                 className="appearance-none bg-transparent text-sm font-medium pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent"
@@ -301,6 +378,31 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
                 className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
               />
             </div>
+
+            {nextIsAcp && (
+              <div className="relative max-w-[160px]">
+                <select
+                  aria-label={t('modal.create.model')}
+                  value={acpModelState.status !== 'ready' || acpModelState.models.length === 0 ? '' : acpModelState.selected}
+                  disabled={acpModelState.status !== 'ready' || acpModelState.models.length === 0}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="appearance-none bg-transparent text-xs pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent disabled:opacity-60 disabled:cursor-not-allowed max-w-[160px] truncate"
+                >
+                  {acpModelState.status !== 'ready' && <option value="">{t('common.loading')}</option>}
+                  {acpModelState.status === 'ready' && acpModelState.models.length === 0 && (
+                    <option value="">{t('modal.create.modelUnavailable')}</option>
+                  )}
+                  {acpModelState.models.map(model => (
+                    <option key={model.id} value={model.id}>{model.name}</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={10}
+                  strokeWidth={2}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+                />
+              </div>
+            )}
 
             <button
               onClick={handlePrimary}

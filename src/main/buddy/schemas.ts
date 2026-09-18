@@ -147,7 +147,8 @@ export const launcherSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).default({}),
-  timeout_seconds: z.number().default(600)
+  timeout_seconds: z.number().default(600),
+  model: z.string().optional()
 })
 
 // Empty/whitespace custom_prompt is normalized to undefined so an emptied

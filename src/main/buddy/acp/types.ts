@@ -114,6 +114,10 @@ export interface AcpNewSessionResult {
     currentModeId: string
     availableModes: Array<{ id: string; name: string; description?: string }>
   }
+  models?: {
+    currentModelId?: string
+    availableModels?: Array<{ modelId?: string; id?: string; name?: string; description?: string }>
+  }
   configOptions?: Array<unknown>
   [key: string]: unknown
 }

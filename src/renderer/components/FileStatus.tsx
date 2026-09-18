@@ -34,6 +34,19 @@ interface FileStatusProps {
   onDismissFeedback?: () => void
 }
 
+export function countGitChangedFiles(gitStatus: GitStatusResult | null | undefined): number {
+  if (!gitStatus) return 0
+  const listed = gitStatus.files?.length ?? 0
+  if (listed > 0) return listed
+  return (gitStatus.diff?.filesChanged ?? 0)
+    + (gitStatus.staged?.filesChanged ?? 0)
+    + (gitStatus.untracked ?? 0)
+}
+
+export function hasGitChangedFiles(gitStatus: GitStatusResult | null | undefined): boolean {
+  return countGitChangedFiles(gitStatus) > 0
+}
+
 export function FileStatusBadge({ status, t }: { status: GitFileStatusCode; t: TFunction }) {
   const config: Record<GitFileStatusCode, { label: string; cls: string }> = {
     M: { label: t('git.statusModified'), cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
@@ -66,7 +79,7 @@ export function FileStatus({ gitStatus, isLoading, repoRoot, onOpenCommit, onOpe
   const remotes = gitStatus?.remotes ?? []
   const repoRootStr = repoRoot ?? ''
   const branch = gitStatus?.branch ?? null
-  const totalFiles = (gitStatus?.files ?? []).length || ((gitStatus?.diff?.filesChanged ?? 0) + (gitStatus?.staged?.filesChanged ?? 0) + (gitStatus?.untracked ?? 0))
+  const totalFiles = countGitChangedFiles(gitStatus)
   const hasChanges = totalFiles > 0
   // 检测远端优先级: 有效 upstream.remote → 项目级 localStorage 记忆 → remotes[0]。
   // 不读取/写入/排序 Git 配置。

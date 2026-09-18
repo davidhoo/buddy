@@ -1,4 +1,5 @@
 import type {
+  AcpModelList,
   AttachmentMeta,
   BootstrapResponse,
   CountdownInput,
@@ -14,6 +15,7 @@ import type {
   StartTaskInput,
   Task,
   TaskDetail,
+  TaskSettings,
   TaskEventEnvelope,
   TaskStats,
   TestLauncherResult
@@ -110,8 +112,12 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ),
     detectActorModels: (): Promise<Record<string, string | undefined>> =>
       ipc.invoke('buddy:detectActorModels') as Promise<Record<string, string | undefined>>,
+    listAcpModels: (actor: string, cwd?: string): Promise<AcpModelList> =>
+      ipc.invoke('buddy:listAcpModels', actor, cwd) as Promise<AcpModelList>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
       ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
+    updateTaskLauncherModel: (taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings> =>
+      ipc.invoke('buddy:updateTaskLauncherModel', taskId, workspaceKey, actor, model) as Promise<TaskSettings>,
     checkAcpGlobalAdapters: (): Promise<GlobalAcpAdaptersStatus> =>
       ipc.invoke('buddy:checkAcpGlobalAdapters') as Promise<GlobalAcpAdaptersStatus>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {

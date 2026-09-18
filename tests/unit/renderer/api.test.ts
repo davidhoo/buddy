@@ -18,7 +18,8 @@ describe('renderer api', () => {
         interrupt: vi.fn(),
         getEvents: vi.fn(),
         updateGlobalSettings: vi.fn(),
-        testLauncher: vi.fn().mockResolvedValue({ actor: 'agy', success: true, phase: 'ping' })
+        testLauncher: vi.fn().mockResolvedValue({ actor: 'agy', success: true, phase: 'ping' }),
+        updateTaskLauncherModel: vi.fn().mockResolvedValue({ launchers: {} })
       }
     })
   })
@@ -46,5 +47,14 @@ describe('renderer api', () => {
     expect(window.buddy.testLauncher).toHaveBeenCalledWith('agy', 'agy', {
       http_proxy: 'http://127.0.0.1:7893'
     })
+  })
+
+  it('forwards a per-task ACP model update to window.buddy.updateTaskLauncherModel', async () => {
+    const { api } = await import('../../../src/renderer/lib/api')
+
+    await expect(
+      api.updateTaskLauncherModel('demo', 'ws', 'claude', 'opus-4.6')
+    ).resolves.toEqual({ launchers: {} })
+    expect(window.buddy.updateTaskLauncherModel).toHaveBeenCalledWith('demo', 'ws', 'claude', 'opus-4.6')
   })
 })

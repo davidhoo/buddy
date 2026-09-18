@@ -419,4 +419,43 @@ describe('model-detect', () => {
       expect(await detectModelFromConfig('claude', 'wecode')).toBeUndefined()
     })
   })
+
+  it('reads the selected agy model from ~/.gemini/antigravity-cli/settings.json', async () => {
+    const agyDir = join(tempHome, '.gemini', 'antigravity-cli')
+    await mkdir(agyDir, { recursive: true })
+    await writeFile(join(agyDir, 'settings.json'), JSON.stringify({
+      model: 'Claude Opus 4.6 (Thinking)',
+      trustedWorkspaces: ['/tmp']
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('agy', 'agy')).toBe('Claude Opus 4.6 (Thinking)')
+  })
+
+  it('falls back to the latest agy cli.log selected-model label when settings omit model', async () => {
+    const agyDir = join(tempHome, '.gemini', 'antigravity-cli')
+    await mkdir(agyDir, { recursive: true })
+    await writeFile(join(agyDir, 'settings.json'), JSON.stringify({
+      trustedWorkspaces: ['/tmp']
+    }))
+    await writeFile(join(agyDir, 'cli.log'), [
+      'I0918 13:00:07.000000       1 printmode.go:174] Print mode: starting (promptLength=0, model="", conversationID="")',
+      'I0918 13:00:09.649023       1 model_config_manager.go:327] Propagating selected model override to backend: label="Gemini 3.5 Flash (High)"',
+      'I0918 13:52:02.516270     265 model_config_manager.go:327] Propagating selected model override to backend: label="Gemini 3.8 Flash (High)"'
+    ].join('\n'))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('agy', 'agy')).toBe('Gemini 3.8 Flash (High)')
+  })
+
+  it('prefers an explicit agy --model launcher override', async () => {
+    const agyDir = join(tempHome, '.gemini', 'antigravity-cli')
+    await mkdir(agyDir, { recursive: true })
+    await writeFile(join(agyDir, 'settings.json'), JSON.stringify({
+      model: 'Gemini 3.8 Flash (High)'
+    }))
+
+    const { detectModelFromConfig } = await import('../../../src/main/buddy/model-detect')
+    expect(await detectModelFromConfig('agy', 'agy --model "Claude Sonnet 4.6 (Thinking)"')).toBe('Claude Sonnet 4.6 (Thinking)')
+  })
 })
