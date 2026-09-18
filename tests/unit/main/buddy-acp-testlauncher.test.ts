@@ -1,10 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BuddyCoreService } from '../../../src/main/buddy/service'
 
 describe('testLauncher ACP protocol support', () => {
+  let savedActorEnv: string | undefined
+  beforeEach(() => {
+    // The host actor session may export its own adapter env (e.g. WeCode's
+    // CLAUDE_CODE_EXECUTABLE), which mergeChildEnv passes to spawned agents.
+    savedActorEnv = process.env.CLAUDE_CODE_EXECUTABLE
+    delete process.env.CLAUDE_CODE_EXECUTABLE
+    vi.stubEnv('CODEX_HOME', join(tmpdir(), `buddy-codex-home-test-${Date.now()}`))
+    vi.stubEnv('CODEX_SQLITE_HOME', join(tmpdir(), `buddy-codex-home-test-${Date.now()}`))
+  })
+  afterEach(() => {
+    if (savedActorEnv !== undefined) process.env.CLAUDE_CODE_EXECUTABLE = savedActorEnv
+    else delete process.env.CLAUDE_CODE_EXECUTABLE
+    vi.unstubAllEnvs()
+  })
+
   it('successfully initializes and returns preview for ACP agent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-acp-testlauncher-'))
     const fakeAcp = join(root, 'fake-acp.js')
