@@ -451,36 +451,41 @@ export function parseBuddyMessage(text: string): BuddyMessage {
 }
 
 function parseBuddyJsonMessage(text: string): BuddyMessage | null {
-  const fenced = text.match(/```json\s*(\{[\s\S]*\})\s*```/i)
+  // Prefer the first fenced ```json block (non-greedy) so a later degenerate
+  // fence/brace loop cannot stretch the match across the whole payload.
+  const fenced = text.match(/```json\s*([\s\S]*?)```/i)
   if (fenced) {
-    const parsed = parseBuddyJsonCandidate(fenced[1])
-    if (parsed) return parsed
-    const loose = looseExtractBuddyMessage(fenced[1])
-    if (loose) return loose
+    const fromFence = parseBuddyJsonBody(fenced[1].trim())
+    if (fromFence) return fromFence
   }
 
+  return parseBuddyJsonBody(text)
+}
+
+function parseBuddyJsonBody(text: string, allowUnescape = true): BuddyMessage | null {
   const parsed = parseBuddyJsonCandidate(text)
   if (parsed) return parsed
 
-  const loose = looseExtractBuddyMessage(text)
-  if (loose) return loose
-
+  // Brace-balanced extraction before loose fallback: a balanced object stops at
+  // the first complete buddy envelope and ignores trailing token-loop garbage.
+  // If JSON.parse succeeds on that slice, trust it — trailing prose must not veto.
   const obj = findBuddyJsonObject(text)
   if (obj) {
     const objParsed = parseBuddyJsonCandidate(obj)
     if (objParsed) return objParsed
-    const objLoose = looseExtractBuddyMessage(obj)
-    if (objLoose) return objLoose
   }
 
-  const unescaped = tryUnescapeJson(text)
-  if (unescaped) {
-    const uobj = findBuddyJsonObject(unescaped) ?? unescaped
-    const uparsed = parseBuddyJsonCandidate(uobj)
-    if (uparsed) return uparsed
-    const uloose = looseExtractBuddyMessage(uobj)
-    if (uloose) return uloose
+  // Prefer unescape before loose so fully-escaped envelopes are not half-matched.
+  if (allowUnescape) {
+    const unescaped = tryUnescapeJson(text)
+    if (unescaped) {
+      const fromUnescaped = parseBuddyJsonBody(unescaped, false)
+      if (fromUnescaped) return fromUnescaped
+    }
   }
+
+  const loose = looseExtractBuddyMessage(text)
+  if (loose) return loose
 
   return null
 }
@@ -491,20 +496,34 @@ function findBuddyJsonObject(text: string): string | null {
 
   let depth = 0
   let inString = false
-  let inBacktick = false
   let escape = false
-  let start = match.index
+  const start = match.index
 
   for (let i = start; i < text.length; i++) {
     const ch = text[i]
-    if (inBacktick) {
-      if (ch === '`') inBacktick = false
+    if (escape) {
+      escape = false
       continue
     }
-    if (escape) { escape = false; continue }
-    if (ch === '\\') { escape = true; continue }
-    if (ch === '`' && !inString) { inBacktick = true; continue }
-    if (ch === '"') { inString = !inString; continue }
+    if (ch === '\\') {
+      escape = true
+      continue
+    }
+    // Markdown inline code is same-line only. Skip a matched `...` span so
+    // unescaped `"}` inside it does not break depth tracking; an unpaired `
+    // stays a normal character and must not lock the scanner until EOF.
+    if (ch === '`') {
+      const nextBacktick = text.indexOf('`', i + 1)
+      const nextNewline = text.indexOf('\n', i + 1)
+      if (nextBacktick !== -1 && (nextNewline === -1 || nextBacktick < nextNewline)) {
+        i = nextBacktick
+        continue
+      }
+    }
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
     if (inString) continue
     if (ch === '{') depth++
     if (ch === '}') {
@@ -523,6 +542,11 @@ function tryUnescapeJson(text: string): string | null {
   return unescaped
 }
 
+/**
+ * Find the closing `"` of a buddy `content` string by scanning backward from
+ * the end for `"\s*}`. Callers should pass a brace-narrowed scope when possible
+ * so trailing model degeneration is not included in that scan window.
+ */
 function findClosingContentQuote(text: string): number {
   const len = text.length
   let pos = len - 1
@@ -552,7 +576,10 @@ function parseBuddyJsonCandidate(text: string): BuddyMessage | null {
 }
 
 function looseExtractBuddyMessage(text: string): BuddyMessage | null {
-  const typeMatch = text.match(/"type"\s*:\s*"(chat|break)"/)
+  // Prefer the brace-balanced buddy slice so end-scanning cannot swallow trailing noise.
+  const scope = findBuddyJsonObject(text) ?? text
+
+  const typeMatch = scope.match(/"type"\s*:\s*"(chat|break)"/)
   if (!typeMatch || typeMatch.index === undefined) return null
 
   const kind = typeMatch[1] as 'chat' | 'break'
@@ -560,15 +587,15 @@ function looseExtractBuddyMessage(text: string): BuddyMessage | null {
   // Search for "content":" AFTER the "type" match to avoid picking up
   // "content" keys from unrelated JSON structures (e.g. tool_result)
   // that appear before the buddy JSON in the text.
-  const afterType = text.slice(typeMatch.index)
+  const afterType = scope.slice(typeMatch.index)
   const contentKeyMatch = afterType.match(/"content"\s*:\s*"/)
   if (!contentKeyMatch || contentKeyMatch.index === undefined) return null
 
   const contentStart = typeMatch.index + contentKeyMatch.index + contentKeyMatch[0].length
-  const closingQuote = findClosingContentQuote(text)
+  const closingQuote = findClosingContentQuote(scope)
   const raw = closingQuote !== -1 && closingQuote > contentStart
-    ? text.slice(contentStart, closingQuote)
-    : text.slice(contentStart)
+    ? scope.slice(contentStart, closingQuote)
+    : scope.slice(contentStart)
   const content = unescapeJsonString(raw)
 
   return kind === 'break'
