@@ -10,6 +10,7 @@ import {
   ACTOR_DISPLAY_NAME,
   ACTOR_LABEL_KEY,
   Actor,
+  actorColorVar,
   taskActors,
   formatTimeWithRelativeDate,
   decodeErrorText,
@@ -391,7 +392,7 @@ function ActorCard({
     : null
 
   return (
-    <div className={`rounded-lg border p-3 bg-bg-elevated ${running ? '' : 'border-border-subtle'}`} style={running ? { borderColor: `var(--actor-${actor})` } : undefined}>
+    <div className={`rounded-lg border p-3 bg-bg-elevated ${running ? '' : 'border-border-subtle'}`} style={running ? { borderColor: actorColorVar(actor) } : undefined}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-sm font-medium">{ACTOR_DISPLAY_NAME[actor]}</span>
         {roleKey && <span className="text-xs text-fg-secondary">{t(roleKey)}</span>}

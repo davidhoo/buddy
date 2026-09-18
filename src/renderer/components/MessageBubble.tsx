@@ -24,6 +24,9 @@ const roleClasses: Record<string, string> = {
   agy: 'msg-agy',
   opencode: 'msg-opencode',
   kimi: 'msg-kimi',
+  wecode_claude: 'msg-wecode_claude',
+  wecode_codex: 'msg-wecode_codex',
+  wecode_opencode: 'msg-wecode_opencode',
   system: 'msg-system'
 }
 

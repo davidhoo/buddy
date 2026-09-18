@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, PanelBottomOpen } from 'lucide-react'
-import { ACTOR_LABEL_KEY } from '../lib/format'
+import { ACTOR_LABEL_KEY, actorColorVar } from '../lib/format'
 import { useLanguage, useT } from '../hooks/useI18n'
 import type { ActorStreamLine } from '../hooks/useBuddy'
 
@@ -63,10 +63,6 @@ function formatElapsed(startedAt: string): string {
   return `${hour}h ${remainMin}m`
 }
 
-function actorColorVar(actor: string): string {
-  if (['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'].includes(actor)) return `var(--actor-${actor})`
-  return 'var(--border)'
-}
 
 export function RunningStatusMessage({
   actor,

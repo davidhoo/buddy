@@ -42,6 +42,26 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
   wecode_opencode: 'WeCode OpenCode'
 }
 
+/**
+ * CSS color token for an actor. WeCode variants reuse their base actor color.
+ * Unknown actors fall back to `--border` (neutral gray).
+ */
+const ACTOR_COLOR_TOKEN: Record<string, string> = {
+  claude: 'var(--actor-claude)',
+  codex: 'var(--actor-codex)',
+  cursor: 'var(--actor-cursor)',
+  agy: 'var(--actor-agy)',
+  opencode: 'var(--actor-opencode)',
+  kimi: 'var(--actor-kimi)',
+  wecode_claude: 'var(--actor-claude)',
+  wecode_codex: 'var(--actor-codex)',
+  wecode_opencode: 'var(--actor-opencode)'
+}
+
+export function actorColorVar(actor: string): string {
+  return ACTOR_COLOR_TOKEN[actor] ?? 'var(--border)'
+}
+
 const EVENT_TYPE_KEY: Record<string, TranslationKey> = {
   'task.created': 'event.task.created',
   'task.done': 'event.task.done',

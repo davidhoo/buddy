@@ -26,6 +26,7 @@ import {
 } from '../lib/keyboard'
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, KNOWN_ACP_PRESETS, defaultLauncherFor, normalizeGlobalSettings } from '../../shared/defaults'
+import { actorColorVar } from '../lib/format'
 import { CheckCircle, XCircle, Loader2, Zap, AlertCircle, Info, Copy, Check } from 'lucide-react'
 import { Switch } from './Switch'
 
@@ -321,7 +322,7 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
   const currentTimeout =
     DEFAULT_LAUNCHER_ORDER.map((a) => launchers[a]?.timeout_seconds).find((v) => typeof v === 'number') ?? 7200
 
-  const { data: globalAdapters } = useAcpGlobalAdapters()
+  const { data: globalAdapters, refetch: refetchGlobalAdapters } = useAcpGlobalAdapters()
 
   return (
     <div className="space-y-8">
@@ -353,6 +354,9 @@ function GeneralSettings({ globalSettings }: { globalSettings: GlobalSettings | 
                 info={launcherInfoFor(actor, t)}
                 onSave={(patch) => saveLauncher(actor, patch)}
                 globalAdapters={globalAdapters}
+                onRefreshAdapters={() => {
+                  void refetchGlobalAdapters()
+                }}
               />
             </Fragment>
           )
@@ -502,13 +506,15 @@ function LauncherSection({
   launcher,
   info,
   onSave,
-  globalAdapters
+  globalAdapters,
+  onRefreshAdapters
 }: {
   actor: string
   launcher: Launcher
   info: LauncherInfo
   onSave: (patch: Partial<Launcher>) => void
   globalAdapters?: GlobalAcpAdaptersStatus
+  onRefreshAdapters?: () => void
 }) {
   const t = useT()
   const savedProtocol = launcher.protocol === 'acp' ? 'acp' : 'cli'
@@ -569,6 +575,33 @@ function LauncherSection({
     }
     return rawPresets
   }, [actor, adapter?.installed, directBin])
+
+  const applyAcpPreset = useCallback(
+    (preset?: (typeof actorPresets)[number]) => {
+      const target = preset ?? actorPresets[0]
+      if (!target) return
+      setCommandDraft(target.command)
+      setArgsDraft(target.args.join(' '))
+    },
+    [actorPresets]
+  )
+
+  const isNpxAcpDraft =
+    commandDraft === 'npx' || commandDraft.endsWith('/npx') || commandDraft.includes('/npx')
+
+  const commandDraftRef = useRef(commandDraft)
+  commandDraftRef.current = commandDraft
+
+  // If ACP was selected with the npx fallback and a global adapter appears later,
+  // upgrade the draft to the direct binary automatically.
+  useEffect(() => {
+    if (protocol !== 'acp' || !adapter?.installed || !directBin) return
+    const current = commandDraftRef.current
+    const stillNpx = current === 'npx' || current.endsWith('/npx') || current.includes('/npx')
+    if (!stillNpx) return
+    setCommandDraft(directBin)
+    setArgsDraft('')
+  }, [protocol, adapter?.installed, directBin])
 
   const handleSave = () => {
     const trimmedCommand = commandDraft.trim()
@@ -645,11 +678,8 @@ function LauncherSection({
               type="button"
               onClick={() => {
                 setProtocol('acp')
-                const defaultPreset = actorPresets[0]
-                if (defaultPreset && (commandDraft === defaultLauncherFor(actor).command || !commandDraft.trim())) {
-                  setCommandDraft(defaultPreset.command)
-                  setArgsDraft(defaultPreset.args.join(' '))
-                }
+                applyAcpPreset()
+                onRefreshAdapters?.()
               }}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
                 protocol === 'acp'
@@ -671,8 +701,7 @@ function LauncherSection({
                 type="button"
                 onClick={() => {
                   setProtocol('acp')
-                  setCommandDraft(preset.command)
-                  setArgsDraft(preset.args.join(' '))
+                  applyAcpPreset(preset)
                 }}
                 className="px-2 py-0.5 text-[11px] rounded border border-border/80 hover:border-purple-500/50 hover:bg-purple-500/5 text-fg-secondary hover:text-fg transition-colors"
                 title={preset.description}
@@ -693,7 +722,7 @@ function LauncherSection({
                 {t('settings.launcher.globalAdapterReady', { bin: adapter.binaryPath ?? directBin ?? '' })}
               </span>
             </div>
-            {directBin && (commandDraft === 'npx' || commandDraft.includes('/npx')) && (
+            {directBin && isNpxAcpDraft && (
               <button
                 type="button"
                 onClick={() => {
@@ -1532,21 +1561,10 @@ function EditableNumber({ value, min, max, onSave }: {
 }
 
 function ActorBadge({ actor }: { actor: string }) {
-  const map: Record<string, string> = {
-    claude: 'var(--actor-claude)',
-    codex: 'var(--actor-codex)',
-    cursor: 'var(--actor-cursor)',
-    agy: 'var(--actor-agy)',
-    opencode: 'var(--actor-opencode)',
-    kimi: 'var(--actor-kimi)',
-    wecode_claude: 'var(--actor-claude)',
-    wecode_codex: 'var(--actor-codex)',
-    wecode_opencode: 'var(--actor-opencode)',
-  }
   return (
     <div
       className="w-2.5 h-2.5 rounded-full shrink-0"
-      style={{ backgroundColor: map[actor] ?? 'var(--fg-muted)' }}
+      style={{ backgroundColor: actorColorVar(actor) }}
     />
   )
 }
