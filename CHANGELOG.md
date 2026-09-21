@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.4] - 2026-09-21
+
+### Fixed
+- 修复模型尾部退化噪音被吞进 Buddy 消息内容的问题：优先使用括号平衡切片解析 Buddy JSON，围栏改为非贪心匹配，并限定松散匹配扫描范围；Markdown 行内反引号仅在同行成对时跳过，避免未闭合反引号导致扫描器失效
+
+---
+
 ## [2.0.3] - 2026-09-18
 
 ### Fixed
@@ -658,6 +665,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[2.0.4]: https://github.com/davidhoo/buddy/releases/tag/v2.0.4
+[2.0.3]: https://github.com/davidhoo/buddy/releases/tag/v2.0.3
 [2.0.2]: https://github.com/davidhoo/buddy/releases/tag/v2.0.2
 [2.0.1]: https://github.com/davidhoo/buddy/releases/tag/v2.0.1
 [2.0.0]: https://github.com/davidhoo/buddy/releases/tag/v2.0.0
