@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.5] - 2026-09-24
+
+### Fixed
+- 修正 Antigravity（agy）任务耗时被会话寿命夸大：不再把 conversation 累计寿命写入单轮 duration；任务合计改以墙钟 elapsed_ms 为准，并对其它 actor 上报时长做合理性校验
+
+---
+
 ## [2.0.4] - 2026-09-21
 
 ### Fixed
