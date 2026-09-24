@@ -454,9 +454,10 @@ export class BuddyStore {
             outputTokens = (u.output_tokens as number) ?? outputTokens
             cacheReadTokens = (u.cache_read_tokens as number) ?? cacheReadTokens
           }
-          if (typeof result.duration_seconds === 'number') {
-            durationMs = Math.round(result.duration_seconds * 1000)
-          }
+          // Do NOT use result.duration_seconds for per-run duration. agy reports
+          // conversation lifetime (monotonic across resumes), not this turn —
+          // summing it across rounds produced multi-day fake totals in task stats.
+          // Wall-clock elapsed_ms from the transcript is the source of truth.
           const response = textValue(result.response)
           if (response) events.push({ type: 'text', text: response })
           const errorText = textValue(result.error)
@@ -694,8 +695,15 @@ export class BuddyStore {
           outputTokens += summary.outputTokens
           cacheReadTokens += summary.cacheReadTokens
           if (summary.durationMs != null && summary.durationMs > 0) {
-            // Use actor-reported duration if available, otherwise fall back to elapsed_ms
-            durationMs = durationMs - run.elapsedMs + summary.durationMs
+            // Prefer actor-reported duration when it looks like a per-run value.
+            // Reject session-cumulative figures (e.g. historical agy duration_seconds)
+            // that dwarf Buddy's wall-clock elapsed_ms for the same run.
+            const reported = summary.durationMs
+            const plausible =
+              run.elapsedMs <= 0 || reported <= run.elapsedMs * 2 + 5_000
+            if (plausible) {
+              durationMs = durationMs - run.elapsedMs + reported
+            }
           }
           if (summary.costUsd != null) {
             costUsd = (costUsd ?? 0) + summary.costUsd
