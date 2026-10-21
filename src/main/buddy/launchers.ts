@@ -11,6 +11,7 @@ export type LauncherCommandKind =
   | 'native_agy'
   | 'native_opencode'
   | 'native_kimi'
+  | 'native_dsh'
   | 'contract'
 
 export interface LauncherCommandInput {
@@ -50,6 +51,7 @@ export function kindNeedsPty(kind: LauncherCommandKind): boolean {
 export function parserActorForKind(actor: string, kind: LauncherCommandKind): string {
   if (kind === 'native_opencode') return 'opencode'
   if (kind === 'native_kimi') return 'kimi'
+  if (kind === 'native_dsh') return 'dsh'
   if (kind === 'native_claude') return 'claude'
   if (kind === 'native_codex') return 'codex'
   if (kind === 'native_cursor') return 'cursor'
@@ -337,6 +339,25 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     }
   }
 
+  if (kind === 'native_dsh') {
+    // dsh headless draws the task from stdin when no positional task is given,
+    // so the (potentially large) Buddy prompt never has to survive ARG_MAX or
+    // shell quoting. `--json` projects one NDJSON event per line on stdout and
+    // keeps stderr for diagnostics only. `--session-id` adopts an existing
+    // persisted session (same cwd is required by dsh itself).
+    return {
+      command,
+      args: [
+        ...prefixArgs,
+        ...(hasDshHeadlessProfile(prefixArgs) ? [] : ['headless']),
+        '--json',
+        ...(input.sessionId ? ['--session-id', input.sessionId] : [])
+      ],
+      kind,
+      stdinText: input.promptText
+    }
+  }
+
   const mode = input.mode ?? (input.sessionId ? 'resume' : 'start')
   const repoRoot = input.repoRoot ?? ''
   const taskDir = input.taskDir ?? ''
@@ -399,18 +420,20 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (executable === 'agy' || executable === 'antigravity') return 'native_agy'
   if (executable === 'opencode' || isWecodeOpenCodeCommand(baseCmd)) return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
+  if (executable === 'dsh') return 'native_dsh'
   // Fallback: when no command is specified, infer from actor name.
   // Also: the Antigravity settings card always speaks agy's native protocol.
   // Never fall through to contract flags (--actor, etc.) just because the
   // command string used a wrapper basename we do not recognize — that is
   // exactly what produces "flags provided but not defined: -actor".
-  if (executable === '' || executable === 'wecode' || actor === 'agy') {
+  if (executable === '' || executable === 'wecode' || actor === 'agy' || actor === 'dsh') {
     if (actor === 'claude' || actor === 'wecode_claude') return 'native_claude'
     if (actor === 'codex' || actor === 'wecode_codex') return 'native_codex'
     if (actor === 'cursor') return 'native_cursor'
     if (actor === 'agy') return 'native_agy'
     if (actor === 'opencode' || actor === 'wecode_opencode') return 'native_opencode'
     if (actor === 'kimi') return 'native_kimi'
+    if (actor === 'dsh') return 'native_dsh'
   }
   return 'contract'
 }
@@ -638,4 +661,19 @@ export function isWecodeOpenCodeCommand(command: string | string[]): boolean {
 function cleanCodexBaseCommand(baseCmd: string[]): string[] {
   const legacyBareFlags = new Set(['--full-auto'])
   return [baseCmd[0], ...baseCmd.slice(1).filter((part) => !legacyBareFlags.has(part))]
+}
+
+/**
+ * Whether the user already selected the headless profile in the launcher
+ * command (`dsh headless ...` or `dsh --profile headless ...`). In that case
+ * the builder must not append a second `headless` token.
+ */
+export function hasDshHeadlessProfile(command: string | string[]): boolean {
+  const args = Array.isArray(command) ? command : splitCommand(command)
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'headless') return true
+    if (args[i] === '--profile=headless') return true
+    if (args[i] === '--profile' && args[i + 1] === 'headless') return true
+  }
+  return false
 }

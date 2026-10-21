@@ -48,6 +48,7 @@ const ACTORS = [
   'agy',
   'opencode',
   'kimi',
+  'dsh',
   'wecode_claude',
   'wecode_codex',
   'wecode_opencode'
@@ -553,7 +554,8 @@ export class BuddyStore {
       }
       if (event.type === 'text') {
         const part = objectValue(event.part)
-        const t = part?.text as string | undefined
+        // OpenCode/Kimi nest the text under `part`; dsh carries it top-level.
+        const t = (part?.text as string | undefined) ?? textValue(event.text)
         if (t) events.push({ type: 'text', text: t })
       }
       // OpenCode step_finish: tokens in part.tokens, cost in part.cost, model in part.respondedModelID
@@ -569,6 +571,34 @@ export class BuddyStore {
         if (part?.cost != null) costUsd = part.cost as number
         if (part?.respondedModelID) model = part.respondedModelID as string
         else if (part?.requestedModelID) model = part.requestedModelID as string
+      }
+
+      // DeepSeek Harness (`dsh headless --json`) projection: committed
+      // reasoning/text arrive at step boundaries, tool events carry call ids,
+      // and per-step usage is reported on status/step_end.
+      if (event.type === 'thinking') {
+        const thinking = textValue(event.text)
+        if (thinking) events.push({ type: 'thinking', thinkingLength: thinking.length })
+      }
+      if (event.type === 'tool_call') {
+        const toolName = textValue(event.tool) ?? 'tool'
+        events.push({ type: 'tool_use', toolName, toolInput: objectValue(event.input) })
+      }
+      if (event.type === 'tool_result') {
+        const result = textValue(event.result)
+        events.push({
+          type: 'tool_result',
+          toolResultPreview: result?.slice(0, 200),
+          isError: event.status === 'error'
+        })
+      }
+      if (event.type === 'status' && event.phase === 'step_end') {
+        const usage = objectValue(event.usage)
+        if (usage) {
+          inputTokens += numberValue(usage.inputTokens) ?? 0
+          outputTokens += numberValue(usage.outputTokens) ?? 0
+          cacheReadTokens += numberValue(usage.cacheReadTokens) ?? 0
+        }
       }
 
       // Generic: item.text
@@ -636,6 +666,7 @@ export class BuddyStore {
         return state.actor_sessions[actor]
       }
       const field = actor === 'kimi' ? 'kimi_session_id'
+        : actor === 'dsh' ? 'dsh_session_id'
         : actor === 'opencode' ? 'opencode_session_id'
         : actor === 'claude' ? 'claude_session_id'
         : actor === 'codex' ? 'codex_thread_id'
@@ -660,7 +691,7 @@ export class BuddyStore {
     // Collect run_ids grouped by actor, and track elapsed_ms per run
     const actorRuns = new Map<string, { runId: string; elapsedMs: number; endTs: number | undefined }[]>()
 
-    const ACTOR_ROLES = new Set(['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi'])
+    const ACTOR_ROLES = new Set(['claude', 'codex', 'cursor', 'agy', 'opencode', 'kimi', 'dsh'])
     for (const entry of transcript) {
       if (!ACTOR_ROLES.has(entry.role)) continue
       const meta = entry.meta as Record<string, unknown> | undefined
@@ -889,6 +920,7 @@ const TRANSCRIPT_ROLES = new Set<TranscriptEntry['role']>([
   'agy',
   'opencode',
   'kimi',
+  'dsh',
   'wecode_claude',
   'wecode_codex',
   'wecode_opencode',
@@ -1007,6 +1039,7 @@ function defaultTaskSettings(
     seed_agy_session_id: normalizedGlobal.seed_agy_session_id ?? '',
     seed_opencode_session_id: normalizedGlobal.seed_opencode_session_id ?? '',
     seed_kimi_session_id: normalizedGlobal.seed_kimi_session_id ?? '',
+    seed_dsh_session_id: normalizedGlobal.seed_dsh_session_id ?? '',
     seed_wecode_claude_session_id: normalizedGlobal.seed_wecode_claude_session_id ?? '',
     seed_wecode_codex_thread_id: normalizedGlobal.seed_wecode_codex_thread_id ?? '',
     seed_wecode_opencode_session_id: normalizedGlobal.seed_wecode_opencode_session_id ?? '',
@@ -1109,6 +1142,7 @@ function defaultTaskState(
     agy_session_id: null,
     opencode_session_id: null,
     kimi_session_id: null,
+    dsh_session_id: null,
     wecode_claude_session_id: null,
     wecode_codex_thread_id: null,
     wecode_opencode_session_id: null,

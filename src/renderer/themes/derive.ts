@@ -46,6 +46,7 @@ export interface DerivedTokens {
   '--actor-agy': string
   '--actor-opencode': string
   '--actor-kimi': string
+  '--actor-dsh': string
 }
 
 export function deriveTokens(theme: BuddyTheme): DerivedTokens {
@@ -126,6 +127,7 @@ export function deriveTokens(theme: BuddyTheme): DerivedTokens {
     '--actor-agy': '#c45c26',
     '--actor-opencode': '#d97706',
     '--actor-kimi': '#2e7d32',
+    '--actor-dsh': '#4d6bfe',
   }
 
   if (overrides) {

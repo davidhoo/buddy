@@ -335,6 +335,56 @@ describe('launcher command builder', () => {
     })
   })
 
+  it('builds DeepSeek Harness headless JSON command with prompt on stdin', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt'
+    })).toEqual({
+      command: 'dsh',
+      args: ['headless', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello from prompt'
+    })
+  })
+
+  it('resumes a DeepSeek Harness session with --session-id', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'continue',
+      sessionId: 'session-123'
+    })).toEqual({
+      command: 'dsh',
+      args: ['headless', '--json', '--session-id', 'session-123'],
+      kind: 'native_dsh',
+      stdinText: 'continue'
+    })
+  })
+
+  it('does not duplicate the headless profile when already configured', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --profile headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'continue',
+      sessionId: 'session-123'
+    })).toEqual({
+      command: 'dsh',
+      args: ['--profile', 'headless', '--json', '--session-id', 'session-123'],
+      kind: 'native_dsh',
+      stdinText: 'continue'
+    })
+  })
+
+  it('recognizes dsh executable and actor fallback', () => {
+    expect(commandKindFor('dsh', 'dsh')).toBe('native_dsh')
+    expect(commandKindFor('dsh', '/usr/local/bin/dsh --profile headless')).toBe('native_dsh')
+    expect(commandKindFor('dsh', '')).toBe('native_dsh')
+  })
+
   it('builds custom launcher contract flags and environment', () => {
     expect(buildLauncherCommand({
       actor: 'claude',

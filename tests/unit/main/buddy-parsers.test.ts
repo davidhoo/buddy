@@ -282,6 +282,50 @@ describe('buddy actor parsers', () => {
     })
   })
 
+  it('parses dsh session, thinking, text, tool, and final events', () => {
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'session',
+      sessionId: 'session-e6a6d7f3',
+      cwd: '/tmp/repo'
+    }))).toEqual({ sessionId: 'session-e6a6d7f3', rawType: 'session', noise: true })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'thinking',
+      text: 'reasoning hidden from actor content'
+    }))).toEqual({ sessionId: undefined, rawType: 'thinking', noise: true })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'text',
+      text: 'hello'
+    }))).toMatchObject({ text: 'hello', rawType: 'text' })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'tool_call',
+      callId: 'c1',
+      tool: 'bash',
+      input: { command: 'pnpm test' }
+    }))).toMatchObject({ text: '🔧 bash pnpm test', rawType: 'tool_call', streamMode: 'line' })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'final',
+      text: '{"type":"chat","content":"done"}'
+    }))).toEqual({ sessionId: undefined, rawType: 'final', noise: true })
+  })
+
+  it('extracts dsh final text and only falls back to streamed text when final is empty', () => {
+    const events = [
+      JSON.stringify({ type: 'session', sessionId: 's1', cwd: '/tmp/repo' }),
+      JSON.stringify({ type: 'text', text: 'streamed ' }),
+      JSON.stringify({ type: 'text', text: 'reply' }),
+      JSON.stringify({ type: 'final', text: '{"type":"chat","content":"done"}' })
+    ].join('\n')
+
+    expect(extractActorOutput('dsh', events)).toBe('{"type":"chat","content":"done"}')
+    expect(extractActorOutput('dsh', [
+      JSON.stringify({ type: 'text', text: 'without final' })
+    ].join('\n'))).toBe('without final')
+  })
+
   it('detects break messages', () => {
     expect(parseBuddyMessage('type=break\nreason=done')).toMatchObject({
       kind: 'break',

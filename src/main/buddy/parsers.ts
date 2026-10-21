@@ -401,6 +401,60 @@ function agyToolArgsDetail(args: Record<string, unknown>): string | undefined {
   return undefined
 }
 
+/** Parse DeepSeek Harness (`dsh headless --json`) NDJSON events. */
+export function parseDshJsonLine(line: string): ParsedActorLine {
+  const json = JSON.parse(line)
+  const rawType = textValue(json.type)
+  const sessionId = rawType === 'session' ? textValue(json.sessionId) : undefined
+
+  if (rawType === 'session' || rawType === 'status') {
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (rawType === 'thinking') {
+    // Reasoning is tracked by length in round events; never surface it as actor
+    // content or let it be mistaken for the buddy reply.
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (rawType === 'text') {
+    return { text: textValue(json.text), sessionId, rawType }
+  }
+
+  if (rawType === 'tool_call') {
+    const toolName = textValue(json.tool) ?? 'tool'
+    const detail = openCodeToolDetail(toolName, json.input)
+    return {
+      text: detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`,
+      sessionId,
+      rawType,
+      streamMode: 'line'
+    }
+  }
+
+  if (rawType === 'tool_result') {
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (rawType === 'final') {
+    // `final` repeats the last committed assistant text already carried by
+    // `text` events. extractDshOutput treats it as the authoritative reply;
+    // returning no text here avoids rendering a duplicate live bubble.
+    return { sessionId, rawType, noise: true }
+  }
+
+  if (rawType === 'error') {
+    return {
+      text: textValue(json.message) ?? 'error',
+      sessionId,
+      rawType,
+      streamMode: 'line'
+    }
+  }
+
+  return { sessionId, rawType, noise: true }
+}
+
 export function parseActorLine(actor: string, line: string): ParsedActorLine {
   if (actor === 'claude') return parseClaudeStreamLine(line)
   if (actor === 'codex') return parseCodexJsonLine(line)
@@ -408,6 +462,7 @@ export function parseActorLine(actor: string, line: string): ParsedActorLine {
   if (actor === 'agy') return parseAgyStreamLine(line)
   if (actor === 'opencode') return parseOpenCodeJsonLine(line)
   if (actor === 'kimi') return parseKimiJSONLine(line)
+  if (actor === 'dsh') return parseDshJsonLine(line)
   return parseCodexJsonLine(line)
 }
 
@@ -428,6 +483,7 @@ export function extractActorOutput(actor: string, rawEvents: string): string {
   if (actor === 'agy') return extractAgyOutput(rawEvents)
   if (actor === 'opencode') return extractOpenCodeOutput(rawEvents)
   if (actor === 'kimi') return extractKimiOutput(rawEvents)
+  if (actor === 'dsh') return extractDshOutput(rawEvents)
   return extractGenericJsonOutput(rawEvents)
 }
 
@@ -723,6 +779,31 @@ function extractKimiOutput(rawEvents: string): string {
   }
   const streamText = chunks.join('').trim()
   return streamText || legacyLast.trim()
+}
+
+/**
+ * DeepSeek Harness emits committed assistant text as `text` events and repeats
+ * the final answer verbatim in the terminal `final` event. Prefer `final`;
+ * fall back to concatenated `text` events, then to a buddy envelope that a
+ * model printed through a tool result.
+ */
+function extractDshOutput(rawEvents: string): string {
+  let finalText = ''
+  let streamedText = ''
+  let toolText = ''
+  for (const event of parseJsonEvents(rawEvents)) {
+    if (event.type === 'final') {
+      const text = textValue(event.text)
+      if (text) finalText = text
+    } else if (event.type === 'text') {
+      const text = textValue(event.text)
+      if (text) streamedText += text
+    } else if (event.type === 'tool_result') {
+      const result = textValue(event.result)
+      if (result && BUDDY_JSON_PATTERN.test(result)) toolText = result.trim()
+    }
+  }
+  return (finalText || streamedText || toolText).trim()
 }
 
 function extractGenericJsonOutput(rawEvents: string): string {

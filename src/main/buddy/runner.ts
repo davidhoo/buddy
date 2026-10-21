@@ -32,6 +32,7 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
   agy: 'RUNNING_AGY',
   opencode: 'RUNNING_OPENCODE',
   kimi: 'RUNNING_KIMI',
+  dsh: 'RUNNING_DSH',
   wecode_claude: 'RUNNING_WECODE_CLAUDE',
   wecode_codex: 'RUNNING_WECODE_CODEX',
   wecode_opencode: 'RUNNING_WECODE_OPENCODE'
@@ -860,6 +861,7 @@ export class BuddyRunner {
         if (actor === 'agy' && sid) sessionUpdates.agy_session_id = sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
+        if (actor === 'dsh' && sid) sessionUpdates.dsh_session_id = sid
         if (actor === 'wecode_claude' && sid) sessionUpdates.wecode_claude_session_id = sid
         if (actor === 'wecode_codex' && (tid ?? sid)) sessionUpdates.wecode_codex_thread_id = tid ?? sid
         if (actor === 'wecode_opencode' && sid) sessionUpdates.wecode_opencode_session_id = sid
@@ -915,6 +917,7 @@ export class BuddyRunner {
                 : a === 'agy' ? sessionUpdates.agy_session_id
                   : a === 'opencode' ? sessionUpdates.opencode_session_id
                     : a === 'kimi' ? sessionUpdates.kimi_session_id
+                      : a === 'dsh' ? sessionUpdates.dsh_session_id
                       : a === 'wecode_claude' ? sessionUpdates.wecode_claude_session_id
                         : a === 'wecode_opencode' ? sessionUpdates.wecode_opencode_session_id
                           : sessionUpdates.actor_sessions?.[a])
@@ -1620,6 +1623,7 @@ export class BuddyRunner {
       if (actor === 'agy' && sessionId) next.agy_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
+      if (actor === 'dsh' && sessionId) next.dsh_session_id = sessionId
       if (actor === 'wecode_claude' && sessionId) next.wecode_claude_session_id = sessionId
       if (actor === 'wecode_codex' && (threadId || sessionId)) next.wecode_codex_thread_id = (threadId || sessionId)
       if (actor === 'wecode_opencode' && sessionId) next.wecode_opencode_session_id = sessionId
@@ -1907,6 +1911,7 @@ export class BuddyRunner {
       : actor === 'agy' ? 'agy_session_id'
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'kimi' ? 'kimi_session_id'
+      : actor === 'dsh' ? 'dsh_session_id'
       : actor === 'wecode_claude' ? 'wecode_claude_session_id'
       : actor === 'wecode_codex' ? 'wecode_codex_thread_id'
       : actor === 'wecode_opencode' ? 'wecode_opencode_session_id'
@@ -2284,6 +2289,7 @@ function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<T
   if (actor === 'agy') return state.agy_session_id ?? stringSetting(settings, 'seed_agy_session_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
   if (actor === 'kimi') return state.kimi_session_id ?? stringSetting(settings, 'seed_kimi_session_id')
+  if (actor === 'dsh') return state.dsh_session_id ?? stringSetting(settings, 'seed_dsh_session_id')
   if (actor === 'wecode_claude') return state.wecode_claude_session_id ?? stringSetting(settings, 'seed_wecode_claude_session_id')
   if (actor === 'wecode_codex') return state.wecode_codex_thread_id ?? stringSetting(settings, 'seed_wecode_codex_thread_id')
   if (actor === 'wecode_opencode') return state.wecode_opencode_session_id ?? stringSetting(settings, 'seed_wecode_opencode_session_id')
@@ -2303,6 +2309,7 @@ function normalizeActorRole(actor: string): TranscriptEntry['role'] {
     actor === 'agy' ||
     actor === 'opencode' ||
     actor === 'kimi' ||
+    actor === 'dsh' ||
     actor === 'wecode_claude' ||
     actor === 'wecode_codex' ||
     actor === 'wecode_opencode'
@@ -2394,7 +2401,7 @@ export async function collectOutputText(
   outputFile: string,
   stdoutText: string
 ): Promise<string> {
-  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_agy' || kind === 'native_opencode' || kind === 'native_kimi') {
+  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_agy' || kind === 'native_opencode' || kind === 'native_kimi' || kind === 'native_dsh') {
     const parserActor = parserActorForKind(actor, kind)
     let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
@@ -2422,6 +2429,22 @@ export async function collectOutputText(
               }
             }
           }
+        }
+      }
+    }
+
+    // dsh carries tool output directly on `tool_result` events. Models that
+    // print the buddy envelope through a shell command would otherwise be seen
+    // as a plain chat message because the final text only contains preamble.
+    if (message.kind !== 'break' && kind === 'native_dsh') {
+      for (const event of parseJsonlBuffer(stdoutText)) {
+        if (event.type !== 'tool_result') continue
+        const toolOutput = typeof event.result === 'string' ? event.result : undefined
+        if (!toolOutput) continue
+        const toolMessage = parseBuddyMessage(toolOutput.trim())
+        if (toolMessage.kind === 'break') {
+          message = toolMessage
+          break
         }
       }
     }

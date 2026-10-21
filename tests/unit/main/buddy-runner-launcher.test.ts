@@ -62,6 +62,72 @@ describe('BuddyRunner with fake launcher', () => {
     expect(transcriptRow.meta.elapsed_ms).toEqual(expect.any(Number))
   })
 
+  it('runs a dsh actor through headless JSON, persists the session, and records usage', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-'))
+    const fake = join(root, 'fake-dsh')
+    const stdinFile = join(root, 'stdin.txt')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      `cat > "${stdinFile}"`,
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-test","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_start","turn":1}'`,
+      `printf '%s\\n' '{"type":"thinking","text":"reasoning"}'`,
+      `printf '%s\\n' '{"type":"text","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"done via dsh\\"}"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"step_end","turn":1,"step":1,"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":2}}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"done via dsh\\"}"}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        launchers: {
+          dsh: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'dsh'
+    })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('PAUSED')
+    expect(detail.state.dsh_session_id).toBe('session-dsh-test')
+    expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(true)
+
+    // The Buddy prompt goes over stdin; no positional task argument is needed.
+    const stdinText = await readFile(stdinFile, 'utf8')
+    expect(stdinText).toContain('Buddy Message Protocol')
+
+    const transcriptJsonl = await readFile(join(root, 'workspaces', created.workspace_key, 'tasks', 'demo', 'transcript.jsonl'), 'utf8')
+    const transcriptRow = JSON.parse(transcriptJsonl.split('\n')[0])
+    expect(transcriptRow).toMatchObject({
+      role: 'dsh',
+      content: 'done via dsh',
+      meta: expect.objectContaining({ buddy_type: 'chat' })
+    })
+
+    const runId = transcriptRow.meta.run_id as string
+    const summary = await store.getRoundEvents('demo', runId, created.workspace_key, 'dsh', fake)
+    expect(summary).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 2
+    })
+    expect(summary?.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'thinking', thinkingLength: 9 }),
+      expect.objectContaining({ type: 'text', text: '{"type":"chat","content":"done via dsh"}' })
+    ]))
+  })
+
   it('runs custom launchers with buddy contract flags and environment', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-contract-'))
     const fake = join(root, 'contract-actor.js')

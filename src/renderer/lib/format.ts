@@ -12,6 +12,7 @@ export const ACTOR_LABEL_KEY: Record<string, TranslationKey> = {
   agy: 'actor.agy',
   opencode: 'actor.opencode',
   kimi: 'actor.kimi',
+  dsh: 'actor.dsh',
   wecode_claude: 'actor.wecode_claude',
   wecode_codex: 'actor.wecode_codex',
   wecode_opencode: 'actor.wecode_opencode',
@@ -37,6 +38,7 @@ export const ACTOR_DISPLAY_NAME: Record<string, string> = {
   agy: 'Antigravity',
   opencode: 'OpenCode',
   kimi: 'Kimi Code',
+  dsh: 'DeepSeek Harness',
   wecode_claude: 'WeCode Claude',
   wecode_codex: 'WeCode Codex',
   wecode_opencode: 'WeCode OpenCode'
@@ -53,6 +55,7 @@ const ACTOR_COLOR_TOKEN: Record<string, string> = {
   agy: 'var(--actor-agy)',
   opencode: 'var(--actor-opencode)',
   kimi: 'var(--actor-kimi)',
+  dsh: 'var(--actor-dsh)',
   wecode_claude: 'var(--actor-claude)',
   wecode_codex: 'var(--actor-codex)',
   wecode_opencode: 'var(--actor-opencode)'
@@ -120,7 +123,7 @@ export function eventTypeLabel(type: string, lang: Language): string {
   return key ? translate(lang, key) : type
 }
 
-export type Actor = 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode'
+export type Actor = 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'dsh' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode'
 
 export function taskActors(settings: TaskSettings | null | undefined): {
   impl: Actor

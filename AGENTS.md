@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project
 
-Buddy is a macOS Electron app that orchestrates **dual-AI-agent collaborative coding**. Two AI actors (implementer + reviewer) take turns on a task, with a configurable countdown between rounds for human intervention. The loop ends when both actors confirm "break" (dual-break). Supported actors: Codex, Codex, OpenCode, Kimi.
+Buddy is a macOS Electron app that orchestrates **dual-AI-agent collaborative coding**. Two AI actors (implementer + reviewer) take turns on a task, with a configurable countdown between rounds for human intervention. The loop ends when both actors confirm "break" (dual-break). Supported actors: Claude Code, Codex, Cursor, Antigravity, OpenCode, Kimi Code, DeepSeek Harness (dsh), plus WeCode variants.
 
 This is a TypeScript rewrite of a Python predecessor. Data directories (`~/Library/Application Support/buddy/`) are compatible between both versions.
 
@@ -63,7 +63,7 @@ READY → RUNNING_{ACTOR} → COUNTDOWN → (READY | PAUSED | DONE)
 
 ### Actor launcher system (`launchers.ts`)
 
-Detects whether a command is a "native" CLI (Codex/codex/opencode/kimi) or a generic "contract" command. Native launchers use CLI-specific flags (e.g., `Codex -p --output-format stream-json`). Contract launchers pass `BUDDY_ACTOR`, `BUDDY_MODE` env vars. Session resumption uses `--resume` (Codex), `resume` (Codex), `--session` (OpenCode/Kimi).
+Detects whether a command is a "native" CLI (claude/codex/cursor-agent/agy/opencode/kimi/dsh) or a generic "contract" command. Native launchers use CLI-specific flags (e.g., `claude -p --output-format stream-json`). Contract launchers pass `BUDDY_ACTOR`, `BUDDY_MODE` env vars. Session resumption uses `--resume` (Claude), `resume` (Codex), `--session` (OpenCode/Kimi), `--session-id` (dsh).
 
 ### Data model (filesystem, no database)
 

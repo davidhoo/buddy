@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- 接入 DeepSeek Harness（`dsh`）Actor：以 `dsh headless --json` 非交互运行，prompt 经 stdin 传入；解析 `session`/`thinking`/`text`/`tool_call`/`tool_result`/`status`/`final` NDJSON 事件，按轮次统计 token 用量，并通过 `--session-id` 复用会话
+
 ## [2.0.5] - 2026-09-24
 
 ### Fixed
