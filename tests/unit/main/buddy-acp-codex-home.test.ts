@@ -33,7 +33,7 @@ describe('ACP Codex storage isolation', () => {
       expect(env.CODEX_SQLITE_HOME).toBe(env.CODEX_HOME)
       expect(env.CUSTOM).toBe('kept')
       expect(await readFile(join(env.CODEX_HOME, 'config.toml'), 'utf8')).toContain('test-model')
-      expect((await lstat(join(env.CODEX_HOME, 'auth.json'))).mode & 0o777).toBe(0o600)
+      expect((await lstat(join(env.CODEX_HOME, 'auth.json'))).isSymbolicLink()).toBe(true)
       expect((await lstat(join(env.CODEX_HOME, 'config.toml'))).isSymbolicLink()).toBe(false)
       expect(await readdir(env.CODEX_HOME)).not.toContain('state_5.sqlite')
       await writeFile(join(env.CODEX_HOME, 'config.toml'), 'private provider configuration')
@@ -41,6 +41,45 @@ describe('ACP Codex storage isolation', () => {
       expect(await readFile(join(env.CODEX_HOME, 'config.toml'), 'utf8')).toBe('private provider configuration')
     }
     expect(await readFile(join(source, 'config.toml'), 'utf8')).toBe('model = "test-model"\n')
+  })
+
+  it('shares the rotating desktop credentials instead of copying a stale snapshot', async () => {
+    const home = await prepareCodexHome('codex', root, {}, undefined, source)
+    const linked = join(home, 'auth.json')
+    expect((await lstat(linked)).isSymbolicLink()).toBe(true)
+    await writeFile(join(source, 'auth.json'), '{"tokens":{"access_token":"rotated"}}')
+    expect(await readFile(linked, 'utf8')).toBe('{"tokens":{"access_token":"rotated"}}')
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect((await lstat(linked)).isSymbolicLink()).toBe(true)
+  })
+
+  it('publishes a newer private credential before sharing, so no rotated token is lost', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    await writeFile(
+      join(source, 'auth.json'),
+      '{"last_refresh":"2026-10-08T02:02:25Z","tokens":{"account_id":"acct-1"}}'
+    )
+    const newer = '{"last_refresh":"2026-10-19T03:17:41Z","tokens":{"account_id":"acct-1"}}'
+    await writeFile(join(home, 'auth.json'), newer)
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(newer)
+    expect((await lstat(join(home, 'auth.json'))).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(newer)
+  })
+
+  it('adopts the desktop credential when a private copy belongs to another account', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    const desktop = '{"last_refresh":"2026-10-08T02:02:25Z","tokens":{"account_id":"acct-1"}}'
+    await writeFile(join(source, 'auth.json'), desktop)
+    await writeFile(
+      join(home, 'auth.json'),
+      '{"last_refresh":"2026-10-19T03:17:41Z","tokens":{"account_id":"acct-2"}}'
+    )
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
   })
 
   it('copies only a selected legacy rollout and never overwrites resumed progress', async () => {

@@ -1,11 +1,12 @@
-import { mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 // Copy only bootstrap configuration. Never share session directories or state DBs
 // with the desktop app; WeCode can also rewrite its private configuration safely.
-const bootstrapFiles = ['config.toml', 'auth.json', 'AGENTS.md', 'AGENTS.override.md']
+// auth.json is not copied as a snapshot: see shareAuthFile for why.
+const bootstrapFiles = ['config.toml', 'AGENTS.md', 'AGENTS.override.md']
 const pending = new Map<string, Promise<void>>()
 
 /** CLI overrides take precedence over sqlite_home copied from desktop config. */
@@ -37,6 +38,81 @@ function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
+interface AuthRecord {
+  refresh: number | null
+  account: string | null
+}
+
+async function readAuthRecord(path: string): Promise<AuthRecord | null> {
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as {
+      last_refresh?: unknown
+      tokens?: { account_id?: unknown }
+    }
+    const refresh = typeof parsed.last_refresh === 'string' ? Date.parse(parsed.last_refresh) : NaN
+    return {
+      refresh: Number.isFinite(refresh) ? refresh : null,
+      account: typeof parsed.tokens?.account_id === 'string' ? parsed.tokens.account_id : null
+    }
+  } catch {
+    return null
+  }
+}
+
+async function writePrivateFile(target: string, content: Buffer | string): Promise<void> {
+  const temporary = `${target}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, content, { mode: 0o600, flag: 'wx' })
+    await rename(temporary, target)
+  } finally {
+    await rm(temporary, { force: true })
+  }
+}
+
+/**
+ * Share the desktop auth file instead of copying it once.
+ *
+ * Codex rotates OAuth refresh tokens on every refresh, so a snapshot taken at
+ * first use is invalidated as soon as either side refreshes. The stale copy
+ * then fails with `refresh_token_reused`, which codex-acp reports as
+ * "ACP Error -32000: Authentication required". A symlink keeps a single token
+ * lineage: whoever refreshes writes the file both sides read.
+ *
+ * Existing installs may hold a private copy. When that copy is newer than the
+ * desktop one it is published to the desktop file first, so a token that was
+ * already rotated inside Buddy is not silently discarded.
+ */
+async function shareAuthFile(sourceHome: string, home: string): Promise<void> {
+  const source = join(sourceHome, 'auth.json')
+  const target = join(home, 'auth.json')
+  const [sourceAuth, targetAuth] = await Promise.all([readAuthRecord(source), readAuthRecord(target)])
+  if (!sourceAuth) return
+  try {
+    if ((await lstat(target)).isSymbolicLink()) return
+  } catch (error) {
+    if (!missing(error)) throw error
+  }
+  if (targetAuth) {
+    const sameAccount = !sourceAuth.account || !targetAuth.account || sourceAuth.account === targetAuth.account
+    const targetIsNewer = sameAccount && (targetAuth.refresh ?? 0) > (sourceAuth.refresh ?? 0)
+    if (targetIsNewer) {
+      // Preserve a symlinked desktop auth file rather than replacing the link itself.
+      const destination = await realpath(source).catch(() => source)
+      await writePrivateFile(destination, await readFile(target))
+    }
+  }
+  const temporary = `${target}.${randomUUID()}.tmp`
+  try {
+    await symlink(source, temporary)
+    await rename(temporary, target)
+  } catch {
+    // Filesystems without symlink support still get the freshest snapshot.
+    await writePrivateFile(target, await readFile(source))
+  } finally {
+    await rm(temporary, { force: true })
+  }
+}
+
 /** Stable per-actor home, shared by runs, probes and launcher checks. */
 export async function prepareCodexHome(
   actor: string,
@@ -62,10 +138,11 @@ export async function prepareCodexHome(
       }
     }
     // Skills and rules retain their original relative resources. Runtime state
-    // and credentials are deliberately not linked.
+    // stays private; credentials are shared through a single rotating file.
     for (const name of ['skills', 'rules']) {
       if (!existing.has(name)) await symlink(join(sourceHome, name), join(home, name))
     }
+    await shareAuthFile(sourceHome, home)
     if (sessionId && /^[a-zA-Z0-9_-]+$/.test(sessionId)) {
       await importSession(sourceHome, home, sessionId)
     }
