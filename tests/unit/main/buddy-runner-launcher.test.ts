@@ -2,7 +2,7 @@ import { access, chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { BuddyRunner } from '../../../src/main/buddy/runner'
+import { BuddyRunner, collectOutputText } from '../../../src/main/buddy/runner'
 import { BuddyStore } from '../../../src/main/buddy/store'
 
 function isProcessAlive(pid: number): boolean {
@@ -126,6 +126,110 @@ describe('BuddyRunner with fake launcher', () => {
       expect.objectContaining({ type: 'thinking', thinkingLength: 9 }),
       expect.objectContaining({ type: 'text', text: '{"type":"chat","content":"done via dsh"}' })
     ]))
+  })
+
+  // A `type=break` quoted in tool output is data, not a control signal. The
+  // actor's own reply must decide; otherwise a diff or fixture containing an
+  // example envelope could end the task behind the other actor's back.
+  it('ignores a break envelope quoted in dsh tool output when the reply says chat', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-toolbreak-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-quote","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"grep -r break src"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"example.json: {\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}\\n"}'`,
+      `printf '%s\\n' '{"type":"text","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"still fixing it\\"}"}'`,
+      `printf '%s\\n' '{"type":"final","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"still fixing it\\"}"}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: { launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } } }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.pending_break).toBeNull()
+    expect(detail.state.status).toBe('PAUSED')
+    const transcriptJsonl = await readFile(
+      join(root, 'workspaces', created.workspace_key, 'tasks', 'demo', 'transcript.jsonl'), 'utf8')
+    const transcriptRow = JSON.parse(transcriptJsonl.split('\n')[0])
+    expect(transcriptRow).toMatchObject({
+      role: 'dsh',
+      content: 'still fixing it',
+      meta: expect.objectContaining({ buddy_type: 'chat' })
+    })
+  })
+
+  it('does not read a dsh tool result as the reply when the actor said nothing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'buddy-dsh-collect-'))
+    const outputFile = join(dir, 'output.md')
+    const stdout = [
+      JSON.stringify({ type: 'session', sessionId: 's1', cwd: '/tmp/repo' }),
+      JSON.stringify({
+        type: 'tool_result',
+        callId: 'c1',
+        status: 'completed',
+        result: '{"type":"break","content":"example only"}'
+      }),
+      JSON.stringify({ type: 'final', text: '' })
+    ].join('\n')
+
+    const output = await collectOutputText('dsh', 'native_dsh', outputFile, stdout)
+
+    expect(output).toBe('')
+    expect(await readFile(outputFile, 'utf8')).toBe(JSON.stringify({ type: 'chat', content: '' }))
+  })
+
+  // Full-runner regression: the generic ghost-output fallback used to promote
+  // tool display text into the reply, so a `break` quoted inside a tool_call
+  // argument became a real break request even though the actor replied nothing.
+  // The example lives in the tool *argument* (that is the text the parser
+  // renders) and the failure must be the explicit empty-reply error — a spawn
+  // failure would also reject, so it must not satisfy this assertion.
+  it('never derives a break from a tool_call argument when the dsh reply is empty', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-toolonly-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-toolonly","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_start","turn":1}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"echo {\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"{\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}\\n"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":""}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: { launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } } }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' }))
+      .rejects.toThrow(/Actor exited without an assistant reply/)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round).toBe(0)
+    expect(detail.state.pending_break).toBeNull()
+    expect(detail.transcript.some((row) => row.meta?.buddy_type === 'break')).toBe(false)
+    expect(detail.events.some((event) => event.type === 'break.pending')).toBe(false)
   })
 
   it('runs custom launchers with buddy contract flags and environment', async () => {

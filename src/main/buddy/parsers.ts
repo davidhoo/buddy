@@ -6,6 +6,12 @@ export interface ParsedActorLine {
   /** True for noise events (e.g. system/hook) that carry no actor content */
   noise?: boolean
   /**
+   * True when `text` is a display-only rendering of a tool call, not assistant
+   * prose. Tool text may echo arbitrary command input/output (including example
+   * buddy envelopes) and must never be promoted into the actor reply.
+   */
+  tool?: boolean
+  /**
    * How the renderer should present this chunk:
    * - delta: append onto the current live text row (Cursor partial tokens)
    * - line: always start a new row (tools, reconnect, other actors)
@@ -39,18 +45,24 @@ export function parseClaudeStreamLine(line: string): ParsedActorLine {
 export function parseCodexJsonLine(line: string): ParsedActorLine {
   const json = JSON.parse(line)
   let text: string | undefined
+  let toolOnly = false
 
   if (Array.isArray(json.content)) {
     const parts: string[] = []
+    let sawText = false
     for (const part of json.content as Record<string, unknown>[]) {
       if ((part.type === 'text' || part.type === 'output_text') && part.text) {
         parts.push(part.text as string)
+        sawText = true
       } else if (part.type === 'tool_call' && part.name) {
         const detail = codexToolDetail(part.name as string, part.input)
         parts.push(detail ? `🔧 ${part.name} ${detail}` : `🔧 ${part.name}`)
       }
     }
     text = parts.join('') || undefined
+    // A tool-only item renders the call's arguments verbatim — command text that
+    // may quote an example buddy envelope. Keep it out of reply extraction.
+    toolOnly = Boolean(text) && !sawText
   }
 
   if (!text) {
@@ -65,7 +77,8 @@ export function parseCodexJsonLine(line: string): ParsedActorLine {
     text,
     sessionId: stableSessionIdFromEvent('codex', json),
     threadId: stableThreadIdFromEvent('codex', json) ?? textValue(json.thread_id),
-    rawType: json.type
+    rawType: json.type,
+    ...(toolOnly ? { tool: true } : {})
   }
 }
 
@@ -89,6 +102,7 @@ export function parseCursorStreamLine(line: string): ParsedActorLine {
       text: detail ? `🔧 ${detail}` : '🔧 tool',
       sessionId,
       rawType,
+      tool: true,
       streamMode: 'line'
     }
   }
@@ -216,6 +230,13 @@ export function parseOpenCodeJsonLine(line: string): ParsedActorLine {
       const detail = openCodeToolDetail(toolName, input)
       text = detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`
     }
+    // Display-only: tool arguments/output are data, never the actor's reply.
+    return {
+      text,
+      sessionId: stableSessionIdFromEvent('opencode', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      tool: true
+    }
   }
 
   return {
@@ -261,6 +282,12 @@ export function parseKimiJSONLine(line: string): ParsedActorLine {
       const detail = kimiToolDetail(toolName, input)
       text = detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`
     }
+    return {
+      text,
+      sessionId: stableSessionIdFromEvent('kimi', json) ?? textValue(json.sessionID),
+      rawType: json.type,
+      tool: true
+    }
   } else if (json.role === 'assistant') {
     // Legacy OpenAI-compatible format
     text = textValue(json.content)
@@ -272,7 +299,15 @@ export function parseKimiJSONLine(line: string): ParsedActorLine {
         const detail = kimiToolDetail(name, args)
         return detail ? `🔧 ${name} ${detail}` : `🔧 ${name}`
       })
-      if (toolTexts.length) text = toolTexts.join(' ')
+      if (toolTexts.length) {
+        text = toolTexts.join(' ')
+        return {
+          text,
+          sessionId: stableSessionIdFromEvent('kimi', json) ?? textValue(json.sessionID),
+          rawType: json.type ?? json.role,
+          tool: true
+        }
+      }
     }
   }
 
@@ -347,6 +382,7 @@ export function parseAgyStreamLine(line: string): ParsedActorLine {
         text: detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`,
         sessionId,
         rawType: stepType,
+        tool: true,
         streamMode: 'line'
       }
     }
@@ -428,6 +464,7 @@ export function parseDshJsonLine(line: string): ParsedActorLine {
       text: detail ? `🔧 ${toolName} ${detail}` : `🔧 ${toolName}`,
       sessionId,
       rawType,
+      tool: true,
       streamMode: 'line'
     }
   }
@@ -738,15 +775,6 @@ function extractOpenCodeOutput(rawEvents: string): string {
     } else if (event.type === 'error') {
       const error = stringifyValue(event.error)
       if (error) chunks.push(error)
-    } else if (event.type === 'tool_use') {
-      // Some models (e.g. DeepSeek) output buddy JSON via echo/bash commands.
-      // The buddy message appears in part.state.output of tool_use events.
-      const part = objectValue(event.part)
-      const state = objectValue(part?.state)
-      const output = textValue(state?.output)
-      if (output && BUDDY_JSON_PATTERN.test(output)) {
-        chunks.push('\n' + output.trim())
-      }
     }
   }
   return chunks.join('').trim()
@@ -764,13 +792,6 @@ function extractKimiOutput(rawEvents: string): string {
     } else if (event.type === 'error') {
       const error = stringifyValue(event.error)
       if (error) chunks.push(error)
-    } else if (event.type === 'tool_use') {
-      const part = objectValue(event.part)
-      const state = objectValue(part?.state)
-      const output = textValue(state?.output)
-      if (output && BUDDY_JSON_PATTERN.test(output)) {
-        chunks.push('\n' + output.trim())
-      }
     } else if (event.role === 'assistant') {
       // Legacy OpenAI-compatible format: each event is a full message, keep last
       const content = textValue(event.content)
@@ -783,14 +804,16 @@ function extractKimiOutput(rawEvents: string): string {
 
 /**
  * DeepSeek Harness emits committed assistant text as `text` events and repeats
- * the final answer verbatim in the terminal `final` event. Prefer `final`;
- * fall back to concatenated `text` events, then to a buddy envelope that a
- * model printed through a tool result.
+ * the final answer verbatim in the terminal `final` event.
+ *
+ * Only assistant-authored text may decide the control signal. `tool_result`
+ * carries raw command output (a diff, a test log, or an example envelope the
+ * model merely printed) and must never be promoted into a reply: doing so
+ * would let a quoted `{"type":"break"}` in tool output end a task.
  */
 function extractDshOutput(rawEvents: string): string {
   let finalText = ''
   let streamedText = ''
-  let toolText = ''
   for (const event of parseJsonEvents(rawEvents)) {
     if (event.type === 'final') {
       const text = textValue(event.text)
@@ -798,12 +821,9 @@ function extractDshOutput(rawEvents: string): string {
     } else if (event.type === 'text') {
       const text = textValue(event.text)
       if (text) streamedText += text
-    } else if (event.type === 'tool_result') {
-      const result = textValue(event.result)
-      if (result && BUDDY_JSON_PATTERN.test(result)) toolText = result.trim()
     }
   }
-  return (finalText || streamedText || toolText).trim()
+  return (finalText || streamedText).trim()
 }
 
 function extractGenericJsonOutput(rawEvents: string): string {

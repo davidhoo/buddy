@@ -1439,21 +1439,22 @@ export class BuddyRunner {
         }
       })
       const nonNoiseRaw = nonNoiseEvents.join('\n')
-      // Check if the only parsed text comes from noise events (step_start placeholders)
+      // Text the actor actually wrote. Tool lines are display-only: their
+      // arguments/output can quote an example buddy envelope, so promoting them
+      // to the reply would let command output forge a `break` confirmation.
+      const replyParsedText = parsedLines.filter((l) => l.text && !l.noise && !l.tool).map((l) => l.text).join('\n').trim()
       const nonNoiseParsedText = parsedLines.filter((l) => l.text && !l.noise).map((l) => l.text).join('\n').trim()
       const hasOnlyNoiseOutput = !outputText.trim() && !nonNoiseParsedText && parsedLines.some((l) => l.noise && l.text)
       if (hasOnlyNoiseOutput) {
         throw new Error(`Actor exited with only noise events (likely ${CONTEXT_EXHAUSTED_PHRASE})`)
-      } else if (!outputText.trim() && nonNoiseRaw.trim()) {
-        const parsedText = nonNoiseParsedText || parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
-        if (parsedText) {
-          outputText = parsedText
-        } else {
-          throw new Error(nonNoiseRaw.trim().slice(0, 500))
-        }
-      } else if (!outputText.trim() && rawEvents.trim() && !nonNoiseRaw.trim()) {
-        // All events were noise (e.g. only system/hook events) — actor produced no real output
+      } else if (!outputText.trim() && replyParsedText) {
+        outputText = replyParsedText
+      } else if (!outputText.trim() && !nonNoiseRaw.trim()) {
         throw new Error('Actor exited without producing any output')
+      } else if (!outputText.trim()) {
+        // Raw events exist but no assistant text came out. A tool-only stream
+        // still means "no reply" — raise instead of feeding tool text forward.
+        throw new Error(`Actor exited without an assistant reply: ${nonNoiseRaw.trim().slice(0, 500)}`)
       }
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)
@@ -2406,11 +2407,16 @@ export async function collectOutputText(
     let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
 
-    // Fallback: some models (e.g. DeepSeek via OpenCode/Kimi) output buddy JSON
-    // via echo/bash commands. The buddy message appears in part.state.output
-    // of tool_use events. extractActorOutput may miss it if the text events
-    // contain preamble that masks the break signal.
-    if (message.kind !== 'break' && (kind === 'native_opencode' || kind === 'native_kimi')) {
+    // Fallback: some models output buddy JSON through echo/bash commands. The
+    // message then lives in part.state.output of tool_use events, never in the
+    // assistant's own text.
+    //
+    // Tool output may only supply the signal when the reply carries no buddy
+    // envelope of its own. Otherwise a quoted example envelope (a diff, a test
+    // fixture, documentation) could override the actor's actual answer — e.g.
+    // turn a deliberate `chat` into a false `break` confirmation.
+    const replyHasOwnEnvelope = message.kind === 'break' || message.text !== output
+    if (!replyHasOwnEnvelope && (kind === 'native_opencode' || kind === 'native_kimi')) {
       for (const event of parseJsonlBuffer(stdoutText)) {
         if (event.type === 'tool_use') {
           const part = event.part
@@ -2429,22 +2435,6 @@ export async function collectOutputText(
               }
             }
           }
-        }
-      }
-    }
-
-    // dsh carries tool output directly on `tool_result` events. Models that
-    // print the buddy envelope through a shell command would otherwise be seen
-    // as a plain chat message because the final text only contains preamble.
-    if (message.kind !== 'break' && kind === 'native_dsh') {
-      for (const event of parseJsonlBuffer(stdoutText)) {
-        if (event.type !== 'tool_result') continue
-        const toolOutput = typeof event.result === 'string' ? event.result : undefined
-        if (!toolOutput) continue
-        const toolMessage = parseBuddyMessage(toolOutput.trim())
-        if (toolMessage.kind === 'break') {
-          message = toolMessage
-          break
         }
       }
     }
