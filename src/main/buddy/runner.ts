@@ -160,8 +160,30 @@ export function isAgyMissingResultError(error: unknown): boolean {
   return (error as { code?: unknown }).code === AGY_MISSING_RESULT_CODE
 }
 
+/**
+ * The actor streamed raw events (e.g. tool calls) but no assistant text. This
+ * is a missing reply, not a context-window or upgrade condition: the diagnostic
+ * detail quotes arbitrary tool data, which may happen to contain those phrases.
+ */
+export const EMPTY_ACTOR_REPLY_CODE = 'EMPTY_ACTOR_REPLY' as const
+
+export class EmptyActorReplyError extends Error {
+  readonly code = EMPTY_ACTOR_REPLY_CODE
+
+  constructor(detail?: string) {
+    super(detail ? `Actor exited without an assistant reply: ${detail}` : 'Actor exited without an assistant reply')
+    this.name = 'EmptyActorReplyError'
+  }
+}
+
+export function isEmptyActorReplyError(error: unknown): boolean {
+  if (error instanceof EmptyActorReplyError) return true
+  if (!error || typeof error !== 'object') return false
+  return (error as { code?: unknown }).code === EMPTY_ACTOR_REPLY_CODE
+}
+
 export function isMissingResultError(error: unknown): boolean {
-  return isCursorMissingResultError(error) || isAgyMissingResultError(error)
+  return isCursorMissingResultError(error) || isAgyMissingResultError(error) || isEmptyActorReplyError(error)
 }
 
 export class BuddyRunner {
@@ -1454,7 +1476,7 @@ export class BuddyRunner {
       } else if (!outputText.trim()) {
         // Raw events exist but no assistant text came out. A tool-only stream
         // still means "no reply" — raise instead of feeding tool text forward.
-        throw new Error(`Actor exited without an assistant reply: ${nonNoiseRaw.trim().slice(0, 500)}`)
+        throw new EmptyActorReplyError(nonNoiseRaw.trim().slice(0, 500))
       }
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)

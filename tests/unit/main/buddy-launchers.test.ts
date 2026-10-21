@@ -396,6 +396,23 @@ describe('launcher command builder', () => {
     })
   })
 
+  // `--json` is an app flag: dsh hands every later token to the app, so a
+  // `--patch` written after it would be ignored as a launcher flag. The
+  // builder re-appends `--json` after all launcher flags.
+  it('moves an early --json after launcher flags so a later --patch still applies', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --json --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(command.args).toEqual([
+      '--profile', 'headless',
+      '--patch', '/tmp/extra.yml',
+      '--json'
+    ])
+  })
+
   it('honours a custom profile and keeps its flags, patch values included', () => {
     expect(buildLauncherCommand({
       actor: 'dsh',

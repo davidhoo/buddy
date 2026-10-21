@@ -232,6 +232,47 @@ describe('BuddyRunner with fake launcher', () => {
     expect(detail.events.some((event) => event.type === 'break.pending')).toBe(false)
   })
 
+  // The empty-reply error carries a raw-event preview for diagnosis. That
+  // preview can itself quote "context window" (a grep command, a tool log), so
+  // the failure must be classified before pattern-matching arbitrary data —
+  // otherwise an empty reply silently triggers a session reset and retry.
+  it('never treats context-window text quoted in a dsh tool log as a context limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-contextword-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-contextword","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"grep -rn {\\"context window\\"} src"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"src/foo.ts: context window limit\\n"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":""}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1, max_compact_retries: 1, max_upgrade_retries: 0 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        seed_dsh_session_id: 'session-existing',
+        launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' }))
+      .rejects.toThrow(/Actor exited without an assistant reply/)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round).toBe(0)
+    expect(detail.events.some((event) => event.type === 'actor.context_limit_detected')).toBe(false)
+    expect(detail.transcript.some((row) => row.meta?.kind === 'session_reset')).toBe(false)
+  })
+
   it('runs custom launchers with buddy contract flags and environment', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-contract-'))
     const fake = join(root, 'contract-actor.js')

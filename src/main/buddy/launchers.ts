@@ -358,7 +358,7 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
         '--profile',
         dsh.profile ?? 'headless',
         ...dsh.rest,
-        ...(dsh.rest.includes('--json') ? [] : ['--json']),
+        '--json',
         // Appended last so a persisted session always wins over a stale id
         // left in the launcher command.
         ...(input.sessionId ? ['--session-id', input.sessionId] : [])
@@ -714,6 +714,10 @@ export function splitDshProfileArgs(args: string[]): { profile?: string; rest: s
     // Buddy owns session resumption (task state / seed setting). A stale id
     // baked into the command is dropped so it cannot shadow the real one.
     if (flag === '--session-id') continue
+    // `--json` is an app flag: once dsh sees it, every later token belongs to
+    // the app, so a launcher flag after it would silently become app data.
+    // Drop it here and append one after all launcher flags.
+    if (flag === '--json') continue
 
     rest.push(arg)
     if (inlineValue === undefined && value !== undefined) rest.push(value)
