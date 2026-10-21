@@ -4,13 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-### Fixed
-- 修复 Codex / WeCode Codex 的 ACP 会话在桌面端刷新登录后报 `ACP Error -32000: Authentication required`：`auth.json` 改为与桌面 `CODEX_HOME` 共享同一文件（符号链接），不再使用首次复制的一次性快照；refresh token 轮换后两侧不再互相作废。升级时会保留私有副本中较新的凭据。
-
----
-
 ## [2.0.5] - 2026-09-24
 
 ### Fixed
