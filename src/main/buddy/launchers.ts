@@ -345,12 +345,22 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     // shell quoting. `--json` projects one NDJSON event per line on stdout and
     // keeps stderr for diagnostics only. `--session-id` adopts an existing
     // persisted session (same cwd is required by dsh itself).
+    //
+    // Always emit an explicit `--profile <name>`: dsh only expands a bare
+    // leading profile name (`dsh headless`) when that name is the first argv
+    // token, so `dsh --patch x headless` would otherwise fail with
+    // "--profile <name> is required". A stray positional of our own would be
+    // consumed by the app as task text and mask the prompt sent on stdin.
+    const dsh = splitDshProfileArgs(prefixArgs)
     return {
       command,
       args: [
-        ...prefixArgs,
-        ...(hasDshHeadlessProfile(prefixArgs) ? [] : ['headless']),
-        '--json',
+        '--profile',
+        dsh.profile ?? 'headless',
+        ...dsh.rest,
+        ...(dsh.rest.includes('--json') ? [] : ['--json']),
+        // Appended last so a persisted session always wins over a stale id
+        // left in the launcher command.
         ...(input.sessionId ? ['--session-id', input.sessionId] : [])
       ],
       kind,
@@ -664,16 +674,52 @@ function cleanCodexBaseCommand(baseCmd: string[]): string[] {
 }
 
 /**
- * Whether the user already selected the headless profile in the launcher
- * command (`dsh headless ...` or `dsh --profile headless ...`). In that case
- * the builder must not append a second `headless` token.
+ * Split a configured dsh command into the boot profile and the remaining
+ * launcher flags.
+ *
+ * Two forms are accepted, matching dsh's own parser:
+ * - `dsh --profile <name> ...` / `dsh --profile=<name> ...`
+ * - `dsh <name> ...`, where dsh only honours the shorthand when the profile
+ *   name is the *first* argv token.
+ *
+ * Only options that actually take a value consume the next token; a boolean
+ * option (`--json`, `--dump-config`, ...) never swallows the token after it.
+ * `--` ends the launcher flags. Everything positional is stray task text and
+ * is dropped, because Buddy always supplies the task on stdin — forwarding it
+ * would make the old text the task and silently ignore the fresh prompt.
  */
-export function hasDshHeadlessProfile(command: string | string[]): boolean {
-  const args = Array.isArray(command) ? command : splitCommand(command)
+export function splitDshProfileArgs(args: string[]): { profile?: string; rest: string[] } {
+  let profile: string | undefined
+  const rest: string[] = []
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'headless') return true
-    if (args[i] === '--profile=headless') return true
-    if (args[i] === '--profile' && args[i + 1] === 'headless') return true
+    const arg = args[i]
+    // `--` and anything after it are positional (task text) — never forwarded.
+    if (arg === '--') break
+
+    if (!arg.startsWith('-')) {
+      // dsh's shorthand only applies to the first argv token.
+      if (i === 0) profile = arg
+      continue
+    }
+
+    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1
+    const flag = eq === -1 ? arg : arg.slice(0, eq)
+    const inlineValue = eq === -1 ? undefined : arg.slice(eq + 1)
+    const value = inlineValue ?? (DSH_VALUE_FLAGS.has(flag) ? args[++i] : undefined)
+
+    if (flag === '--profile') {
+      profile = value ?? ''
+      continue
+    }
+    // Buddy owns session resumption (task state / seed setting). A stale id
+    // baked into the command is dropped so it cannot shadow the real one.
+    if (flag === '--session-id') continue
+
+    rest.push(arg)
+    if (inlineValue === undefined && value !== undefined) rest.push(value)
   }
-  return false
+  return { profile: profile || undefined, rest }
 }
+
+/** dsh options that consume the following token as their value. */
+const DSH_VALUE_FLAGS = new Set(['--profile', '--from-default-profile', '--patch', '--session-id'])
