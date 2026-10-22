@@ -6,13 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-22
+
 ### Added
 - 接入 DeepSeek Harness（`dsh`）Actor：以 `dsh headless --json` 非交互运行，prompt 经 stdin 传入；解析 `session`/`thinking`/`text`/`tool_call`/`tool_result`/`status`/`final` NDJSON 事件，按轮次统计 token 用量，并通过 `--session-id` 复用会话
 
 ### Fixed
+- 修复 Codex / WeCode Codex 的 ACP 会话在桌面端刷新登录后报 `ACP Error -32000: Authentication required`：`auth.json` 改为与桌面 `CODEX_HOME` 共享同一文件（符号链接），不再使用首次复制的一次性快照；refresh token 轮换后两侧不再互相作废。升级时会保留私有副本中较新的凭据
+- 收紧 Codex ACP `auth.json` 迁移：仅在双方均为同一 OAuth 账号且私有副本刷新时间明确更新时才回写桌面凭据，避免旧 OAuth 覆盖当前 API Key 登录
 - 修复 DeepSeek Harness 经 `npx [-y] @deepseek-ai/dsh` 启动时包名被当成位置参数删掉的问题；包装前缀与 dsh 参数分离，不支持的包装命令改为明确报错
 - 修复 dsh 启动参数校验失败后任务卡在 `RUNNING_DSH` 的问题：校验异常纳入失败处理，清除 `active_run` 并记录原因，不触发会话重置或自动重试；另一 Actor 已请求结束时也不会误判为完成，保留结束请求供修正配置后重试
-- 收紧 Codex ACP `auth.json` 迁移：仅在双方均为同一 OAuth 账号且私有副本刷新时间明确更新时才回写桌面凭据，避免旧 OAuth 覆盖当前 API Key 登录
+
+---
 
 ## [2.0.5] - 2026-09-24
 
