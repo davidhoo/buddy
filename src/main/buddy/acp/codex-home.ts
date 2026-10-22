@@ -38,25 +38,72 @@ function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
+/** OAuth/ChatGPT token auth that rotates refresh tokens; only this kind may publish. */
+type AuthKind = 'oauth' | 'apikey' | 'other'
+
 interface AuthRecord {
+  kind: AuthKind
   refresh: number | null
   account: string | null
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * Classify Codex auth.json. Missing auth_mode is inferred from structure only;
+ * ambiguous or unsupported shapes are `other` and never trigger a write-back.
+ */
+function classifyAuth(parsed: {
+  auth_mode?: unknown
+  OPENAI_API_KEY?: unknown
+  tokens?: unknown
+}): AuthKind {
+  const mode = typeof parsed.auth_mode === 'string' ? parsed.auth_mode : null
+  if (mode === 'chatgpt' || mode === 'chatgptAuthTokens') return 'oauth'
+  if (mode === 'apikey') return 'apikey'
+  if (mode !== null) return 'other'
+
+  const hasApiKey = nonEmptyString(parsed.OPENAI_API_KEY) !== null
+  const tokens = parsed.tokens && typeof parsed.tokens === 'object' ? (parsed.tokens as Record<string, unknown>) : null
+  const hasOAuthTokens = Boolean(
+    tokens && (nonEmptyString(tokens.refresh_token) || nonEmptyString(tokens.access_token))
+  )
+  if (hasApiKey && !hasOAuthTokens) return 'apikey'
+  if (hasOAuthTokens && !hasApiKey) return 'oauth'
+  return 'other'
 }
 
 async function readAuthRecord(path: string): Promise<AuthRecord | null> {
   try {
     const parsed = JSON.parse(await readFile(path, 'utf8')) as {
+      auth_mode?: unknown
+      OPENAI_API_KEY?: unknown
       last_refresh?: unknown
-      tokens?: { account_id?: unknown }
+      tokens?: { account_id?: unknown; access_token?: unknown; refresh_token?: unknown }
     }
     const refresh = typeof parsed.last_refresh === 'string' ? Date.parse(parsed.last_refresh) : NaN
     return {
+      kind: classifyAuth(parsed),
       refresh: Number.isFinite(refresh) ? refresh : null,
-      account: typeof parsed.tokens?.account_id === 'string' ? parsed.tokens.account_id : null
+      account: nonEmptyString(parsed.tokens?.account_id)
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Publish the private copy only when both sides are confirmed OAuth for the
+ * same non-empty account and the private last_refresh is strictly newer.
+ * Missing account, mode, or refresh timestamps never count as a match.
+ */
+function shouldPublishPrivateAuth(desktop: AuthRecord, privateCopy: AuthRecord): boolean {
+  if (desktop.kind !== 'oauth' || privateCopy.kind !== 'oauth') return false
+  if (!desktop.account || !privateCopy.account || desktop.account !== privateCopy.account) return false
+  if (desktop.refresh === null || privateCopy.refresh === null) return false
+  return privateCopy.refresh > desktop.refresh
 }
 
 async function writePrivateFile(target: string, content: Buffer | string): Promise<void> {
@@ -78,9 +125,10 @@ async function writePrivateFile(target: string, content: Buffer | string): Promi
  * "ACP Error -32000: Authentication required". A symlink keeps a single token
  * lineage: whoever refreshes writes the file both sides read.
  *
- * Existing installs may hold a private copy. When that copy is newer than the
- * desktop one it is published to the desktop file first, so a token that was
- * already rotated inside Buddy is not silently discarded.
+ * Existing installs may hold a private OAuth copy. Publish it to the desktop
+ * file only when both sides are the same ChatGPT account and the private
+ * last_refresh is strictly newer; otherwise keep the desktop credential and
+ * point Buddy at it so an older OAuth snapshot cannot overwrite an API key.
  */
 async function shareAuthFile(sourceHome: string, home: string): Promise<void> {
   const source = join(sourceHome, 'auth.json')
@@ -92,14 +140,10 @@ async function shareAuthFile(sourceHome: string, home: string): Promise<void> {
   } catch (error) {
     if (!missing(error)) throw error
   }
-  if (targetAuth) {
-    const sameAccount = !sourceAuth.account || !targetAuth.account || sourceAuth.account === targetAuth.account
-    const targetIsNewer = sameAccount && (targetAuth.refresh ?? 0) > (sourceAuth.refresh ?? 0)
-    if (targetIsNewer) {
-      // Preserve a symlinked desktop auth file rather than replacing the link itself.
-      const destination = await realpath(source).catch(() => source)
-      await writePrivateFile(destination, await readFile(target))
-    }
+  if (targetAuth && shouldPublishPrivateAuth(sourceAuth, targetAuth)) {
+    // Preserve a symlinked desktop auth file rather than replacing the link itself.
+    const destination = await realpath(source).catch(() => source)
+    await writePrivateFile(destination, await readFile(target))
   }
   const temporary = `${target}.${randomUUID()}.tmp`
   try {

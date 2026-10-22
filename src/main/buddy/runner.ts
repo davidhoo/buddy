@@ -15,7 +15,7 @@ import type {
   Launcher
 } from '../../shared/types'
 import { defaultLauncherFor } from '../../shared/defaults'
-import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind, type LauncherRunResult } from './launchers'
+import { buildLauncherCommand, commandKindFor, isLauncherConfigError, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, type LauncherCommandKind, type LauncherRunResult } from './launchers'
 import { createRunLock, removeRunLock } from './locks'
 import { extractActorOutput, parseActorEvents, parseActorLine, parseBuddyMessage, parseJsonlBuffer, ParsedActorLine } from './parsers'
 import { buildActorPrompt, buildPingPrompt, hashText, nextActor as nextActorForSettings, implementerActor as resolveImplementerActor, actorDisplayName } from './prompts'
@@ -1320,32 +1320,36 @@ export class BuddyRunner {
     const sessionId = actor === 'kimi' && commandKind === 'native_kimi'
       ? existingSessionId
       : (existingSessionId ?? undefined)
-    const command = buildLauncherCommand({
-      actor,
-      command: launcher.command,
-      mode: existingSessionId ? 'resume' : 'start',
-      promptFile,
-      promptText: prompt,
-      eventFile,
-      outputFile,
-      repoRoot: cwd,
-      taskDir: taskDirectory,
-      runId,
-      sessionId,
-      timeoutSeconds: launcher.timeout_seconds
-    })
     const outputLines: string[] = []
     const stderrLines: string[] = []
-    const lockPath = await createRunLock(this.store.dataRoot, {
-      workspace_key: workspaceKey,
-      task_id: taskId,
-      run_id: runId,
-      pid: process.pid
-    })
 
+    // buildLauncherCommand / createRunLock must sit inside this try: a config
+    // validation throw happens after the task is already RUNNING_*, and skipping
+    // markFailed leaves active_run stuck with an empty failure.
+    let lockPath: string | undefined
     let serviceRun: ServiceRun | undefined
     try {
       if (signal.aborted) return
+      const command = buildLauncherCommand({
+        actor,
+        command: launcher.command,
+        mode: existingSessionId ? 'resume' : 'start',
+        promptFile,
+        promptText: prompt,
+        eventFile,
+        outputFile,
+        repoRoot: cwd,
+        taskDir: taskDirectory,
+        runId,
+        sessionId,
+        timeoutSeconds: launcher.timeout_seconds
+      })
+      lockPath = await createRunLock(this.store.dataRoot, {
+        workspace_key: workspaceKey,
+        task_id: taskId,
+        run_id: runId,
+        pid: process.pid
+      })
       serviceRun = await this.services.openRun(taskId, workspaceKey, runId, launcher.env)
       const startedAtMs = Date.now()
       const result = await this.runActorCommand(
@@ -1491,9 +1495,12 @@ export class BuddyRunner {
       const stderrText = stderrLines.join('\n').trim()
       const isOnlyWarning = stderrText && isCliWarningOnly(stderrText)
       const failureMessage = message || (!isOnlyWarning ? stderrText : 'Actor exited without producing any output')
-      // Missing/invalid Cursor/Agy results and deadlines must fail immediately. Do not let stdout chatter
-      // (e.g. the words "new version") trip upgrade or context-window retries.
-      const skipAutoRetry = isMissingResultError(error) || error instanceof LauncherTimeoutError
+      // Missing/invalid Cursor/Agy results, deadlines, and pre-spawn config errors must fail
+      // immediately. Do not let stdout chatter (e.g. the words "new version") trip upgrade or
+      // context-window retries — and never auto-retry a bad launcher command.
+      const skipAutoRetry = isMissingResultError(error)
+        || error instanceof LauncherTimeoutError
+        || isLauncherConfigError(error)
 
       // Auto-reset session on context window limit errors
       // Note: /compact does NOT work in -p (pipe) mode — it's treated as plain text input,
@@ -1547,11 +1554,13 @@ export class BuddyRunner {
         return this.executeActorInner(taskId, workspaceKey, actor, runId, userMessage, signal, compactRetries, upgradeRetries + 1)
       }
 
-      await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId)
+      await this.markFailed(taskId, workspaceKey, actor, failureMessage, runId, {
+        allowBreakConfirmation: !isLauncherConfigError(error)
+      })
       throw error
     } finally {
       serviceRun?.close()
-      await removeRunLock(lockPath)
+      if (lockPath) await removeRunLock(lockPath)
     }
   }
 
@@ -1809,7 +1818,14 @@ export class BuddyRunner {
     // what caused the 40× reconcile burst on a 39-round task.
   }
 
-  private async markFailed(taskId: string, workspaceKey: string, actor: string, message: string, runId?: string): Promise<void> {
+  private async markFailed(
+    taskId: string,
+    workspaceKey: string,
+    actor: string,
+    message: string,
+    runId?: string,
+    options: { allowBreakConfirmation?: boolean } = {}
+  ): Promise<void> {
     // Guard: if the task was interrupted (active_run changed), skip marking failed
     if (runId) {
       const currentState = await this.store.readTaskState(taskId, workspaceKey)
@@ -1826,7 +1842,9 @@ export class BuddyRunner {
     const pendingBreak = stateBefore.pending_break
     const otherActorBreak = pendingBreak?.actor && pendingBreak.actor !== actor ? pendingBreak : null
 
-    if (otherActorBreak) {
+    // A launcher configuration failure happens before the actor can review the
+    // task. Preserve the pending break for a retry instead of confirming it.
+    if (otherActorBreak && options.allowBreakConfirmation !== false) {
       const cleaned = await this.cleanupServices(taskId, workspaceKey)
       const round = stateBefore.round ?? 0
       await this.store.updateTaskState(taskId, workspaceKey, (state) => ({

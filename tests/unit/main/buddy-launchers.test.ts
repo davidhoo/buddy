@@ -7,6 +7,7 @@ import {
   isWecodeClaudeCommand,
   isWecodeCodexCommand,
   isWecodeOpenCodeCommand,
+  LauncherConfigError,
   runLauncher,
   streamDrainMs
 } from '../../../src/main/buddy/launchers'
@@ -499,9 +500,149 @@ describe('launcher command builder', () => {
     expect(command.args).toEqual(['--profile', 'headless', '--json', '--session-id', 'session-live'])
   })
 
-  it('recognizes dsh executable and actor fallback', () => {
+  it('keeps an absolute dsh path and builds the same profile argv', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: '/usr/local/bin/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: '/usr/local/bin/dsh',
+      args: ['--profile', 'headless', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  // Runner tests and some installs use a renamed binary; basename need not be
+  // exactly `dsh` as long as it is not an unparseable package-manager wrapper.
+  it('treats a renamed direct binary as dsh argv, not as an unsupported wrapper', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: '/tmp/fake-dsh headless --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: '/tmp/fake-dsh',
+      args: ['--profile', 'headless', '--patch', '/tmp/extra.yml', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  it('preserves npx package prefix without -y', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx @deepseek-ai/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'npx',
+      args: ['@deepseek-ai/dsh', '--profile', 'headless', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  it('preserves npx -y and a versioned package name', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx -y @deepseek-ai/dsh@0.2.1-rc.2 headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'npx',
+      args: ['-y', '@deepseek-ai/dsh@0.2.1-rc.2', '--profile', 'headless', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  it('applies custom profile, --patch, and session resume after the npx prefix', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx -y @deepseek-ai/dsh --profile=custom-headless --patch /tmp/extra.yml --session-id stale',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt',
+      sessionId: 'session-live'
+    })).toEqual({
+      command: 'npx',
+      args: [
+        '-y',
+        '@deepseek-ai/dsh',
+        '--profile',
+        'custom-headless',
+        '--patch',
+        '/tmp/extra.yml',
+        '--json',
+        '--session-id',
+        'session-live'
+      ],
+      kind: 'native_dsh',
+      stdinText: 'fresh prompt'
+    })
+  })
+
+  it('drops stale task text after an npx dsh package and keeps prompt on stdin', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx -y @deepseek-ai/dsh headless --json "stale task text"',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt'
+    })
+    expect(command.args).toEqual(['-y', '@deepseek-ai/dsh', '--profile', 'headless', '--json'])
+    expect(command.stdinText).toBe('fresh prompt')
+  })
+
+  it('rejects unsupported DeepSeek Harness wrappers instead of mangling argv', () => {
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'yarn dlx @deepseek-ai/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(LauncherConfigError)
+
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'pnpm dlx @deepseek-ai/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(/Unsupported DeepSeek Harness launcher/)
+
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'bunx @deepseek-ai/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(LauncherConfigError)
+
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'pnpx @deepseek-ai/dsh headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(/Unsupported DeepSeek Harness launcher/)
+
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx -y @other/pkg headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(LauncherConfigError)
+
+    expect(() => buildLauncherCommand({
+      actor: 'dsh',
+      command: 'npx -y',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toThrow(/@deepseek-ai\/dsh/)
+  })
+
+  it('recognizes dsh executable, npx package, and actor fallback', () => {
     expect(commandKindFor('dsh', 'dsh')).toBe('native_dsh')
     expect(commandKindFor('dsh', '/usr/local/bin/dsh --profile headless')).toBe('native_dsh')
+    expect(commandKindFor('dsh', 'npx -y @deepseek-ai/dsh')).toBe('native_dsh')
+    expect(commandKindFor('claude', 'npx -y @deepseek-ai/dsh headless')).toBe('native_dsh')
     expect(commandKindFor('dsh', '')).toBe('native_dsh')
   })
 

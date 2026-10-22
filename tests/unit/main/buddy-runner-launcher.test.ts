@@ -1,9 +1,11 @@
 import { access, chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { LauncherConfigError } from '../../../src/main/buddy/launchers'
 import { BuddyRunner, collectOutputText } from '../../../src/main/buddy/runner'
-import { BuddyStore } from '../../../src/main/buddy/store'
+import { atomicWriteJson, BuddyStore } from '../../../src/main/buddy/store'
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -271,6 +273,105 @@ describe('BuddyRunner with fake launcher', () => {
     expect(detail.state.round).toBe(0)
     expect(detail.events.some((event) => event.type === 'actor.context_limit_detected')).toBe(false)
     expect(detail.transcript.some((row) => row.meta?.kind === 'session_reset')).toBe(false)
+  })
+
+  // Config validation throws before spawn. That path used to skip markFailed and leave
+  // the task stuck in RUNNING_DSH with a live active_run and empty failure info.
+  it.each([false, true])('marks FAILED on invalid dsh config and retries after fixing it (pending break: %s)', async (hasPendingBreak) => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-badwrapper-'))
+    const spawnMarker = join(root, 'spawned')
+    const fake = join(root, 'fake-dsh')
+    const replyType = hasPendingBreak ? 'break' : 'chat'
+    await writeFile(fake, [
+      '#!/bin/sh',
+      `touch '${spawnMarker}'`,
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-retry","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"text","text":"{\\"type\\":\\"${replyType}\\",\\"content\\":\\"ok after fix\\"}"}'`,
+      `printf '%s\\n' '{"type":"final","text":"{\\"type\\":\\"${replyType}\\",\\"content\\":\\"ok after fix\\"}"}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    // Allow context/upgrade retries so a misclassified config error would show up.
+    await store.updateGlobalSettings({
+      max_rounds: 1,
+      max_compact_retries: 2,
+      max_upgrade_retries: 2
+    })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        seed_dsh_session_id: 'session-seed',
+        launchers: {
+          dsh: { command: 'pnpm dlx @deepseek-ai/dsh', env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const pendingBreak = hasPendingBreak ? { actor: 'claude', round: 1 } : null
+    if (pendingBreak) {
+      await store.updateTaskState('demo', created.workspace_key, (state) => ({
+        ...state,
+        round: 1,
+        pending_break: pendingBreak
+      }))
+    }
+    const runner = new BuddyRunner(store)
+    const openRun = vi.spyOn(runner.services, 'openRun')
+
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' }))
+      .rejects.toThrow(LauncherConfigError)
+
+    expect(existsSync(spawnMarker)).toBe(false)
+    expect(openRun).not.toHaveBeenCalled()
+
+    const failed = await store.getTaskDetail('demo', created.workspace_key)
+    expect(failed.state.status).toBe('FAILED')
+    expect(failed.state.active_run).toBeNull()
+    expect(failed.state.pending_break).toEqual(pendingBreak)
+    expect(failed.state.dsh_session_id).toBeNull()
+    expect(failed.latest_failure?.message).toMatch(/Unsupported DeepSeek Harness launcher/)
+    expect(failed.latest_failure?.actor).toBe('dsh')
+    expect(failed.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'actor.failed',
+        actor: 'dsh',
+        payload: expect.objectContaining({
+          error: expect.stringMatching(/Unsupported DeepSeek Harness launcher/)
+        })
+      })
+    ]))
+    expect(failed.events.some((event) => event.type === 'actor.context_limit_detected')).toBe(false)
+    expect(failed.events.some((event) => event.type === 'task.done')).toBe(false)
+    expect(failed.events.some((event) => event.type === 'service.cleanup_completed')).toBe(false)
+    expect(failed.events.some((event) => event.type === 'actor.upgrade_detected')).toBe(false)
+    expect(failed.transcript.some((row) => row.meta?.kind === 'session_reset')).toBe(false)
+    expect(failed.transcript.some((row) => row.meta?.kind === 'upgrade_retry')).toBe(false)
+
+    const settings = await store.readTaskSettings('demo', created.workspace_key)
+    await atomicWriteJson(join(root, 'workspaces', created.workspace_key, 'tasks', 'demo', 'settings.json'), {
+      ...settings,
+      launchers: {
+        ...settings.launchers,
+        dsh: { command: fake, env: {}, timeout_seconds: 5 }
+      }
+    })
+
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' })
+
+    expect(existsSync(spawnMarker)).toBe(true)
+    const recovered = await store.getTaskDetail('demo', created.workspace_key)
+    expect(recovered.state.status).toBe(hasPendingBreak ? 'DONE' : 'PAUSED')
+    expect(recovered.state.active_run).toBeNull()
+    expect(recovered.state.pending_break).toBeNull()
+    expect(recovered.events.filter((event) => event.type === 'task.done')).toHaveLength(hasPendingBreak ? 1 : 0)
+    expect(recovered.state.dsh_session_id).toBe('session-dsh-retry')
+    expect(recovered.events.some((event) => event.type === 'actor.completed')).toBe(true)
+    expect(recovered.transcript).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'dsh', content: 'ok after fix' })
+    ]))
   })
 
   it('runs custom launchers with buddy contract flags and environment', async () => {

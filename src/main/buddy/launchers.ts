@@ -82,6 +82,25 @@ export class LauncherTimeoutError extends Error {
 }
 
 /**
+ * Launch command failed validation before any child process was spawned.
+ * Must fail the task immediately — never treat as context-limit or upgrade retry.
+ */
+export class LauncherConfigError extends Error {
+  readonly code = 'LAUNCHER_CONFIG'
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'LauncherConfigError'
+  }
+}
+
+export function isLauncherConfigError(error: unknown): boolean {
+  if (error instanceof LauncherConfigError) return true
+  if (!error || typeof error !== 'object') return false
+  return (error as { code?: unknown }).code === 'LAUNCHER_CONFIG'
+}
+
+/**
  * Ensure node-pty's spawn-helper binary has executable permission (can be 0644 after npm/pnpm extract).
  */
 export function ensurePtySpawnHelperExecutable(): void {
@@ -351,10 +370,15 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     // token, so `dsh --patch x headless` would otherwise fail with
     // "--profile <name> is required". A stray positional of our own would be
     // consumed by the app as task text and mask the prompt sent on stdin.
-    const dsh = splitDshProfileArgs(prefixArgs)
+    //
+    // Wrapper prefixes (npx + package) stay ahead of dsh's own argv; only the
+    // dsh-side tokens go through splitDshProfileArgs.
+    const invocation = splitDshInvocation([command, ...prefixArgs])
+    const dsh = splitDshProfileArgs(invocation.dshArgs)
     return {
-      command,
+      command: invocation.command,
       args: [
+        ...invocation.wrapperArgs,
         '--profile',
         dsh.profile ?? 'headless',
         ...dsh.rest,
@@ -430,7 +454,7 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (executable === 'agy' || executable === 'antigravity') return 'native_agy'
   if (executable === 'opencode' || isWecodeOpenCodeCommand(baseCmd)) return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
-  if (executable === 'dsh') return 'native_dsh'
+  if (executable === 'dsh' || isNpxDeepSeekHarnessCommand(baseCmd)) return 'native_dsh'
   // Fallback: when no command is specified, infer from actor name.
   // Also: the Antigravity settings card always speaks agy's native protocol.
   // Never fall through to contract flags (--actor, etc.) just because the
@@ -673,6 +697,112 @@ function cleanCodexBaseCommand(baseCmd: string[]): string[] {
   return [baseCmd[0], ...baseCmd.slice(1).filter((part) => !legacyBareFlags.has(part))]
 }
 
+/** Scoped npm package that provides the `dsh` binary (optional @version). */
+const DSH_NPX_PACKAGE_RE = /^@deepseek-ai\/dsh(?:@.+)?$/
+
+/**
+ * npx options that consume the following token. Boolean flags like `-y` are
+ * intentionally absent so the next token (the package) stays positional.
+ */
+const NPX_VALUE_FLAGS = new Set([
+  '-p',
+  '--package',
+  '-c',
+  '--call',
+  '--pref',
+  '--userconfig',
+  '--cache',
+  '--shell',
+  '--shell-auto-fallback'
+])
+
+/** True when argv is `npx … @deepseek-ai/dsh[@version] …`. */
+export function isNpxDeepSeekHarnessCommand(baseCmd: string[]): boolean {
+  const executable = basename(baseCmd[0] ?? '')
+  if (executable !== 'npx') return false
+  return findNpxPackageIndex(baseCmd.slice(1)) !== -1
+}
+
+/**
+ * Package-manager CLIs we cannot reliably peel into a dsh argv. Direct
+ * binaries (including renamed copies / test stubs like `fake-dsh`) are fine;
+ * only these wrappers need an explicit error instead of silent mangling.
+ * Includes npx-equivalents (`bunx`, `pnpx`) whose first positional is a
+ * package name — otherwise `@deepseek-ai/dsh` would be dropped as task text.
+ */
+const DSH_UNSUPPORTED_WRAPPERS = new Set(['yarn', 'pnpm', 'pnpx', 'bun', 'bunx', 'npm'])
+
+/**
+ * Split a configured DeepSeek Harness command into the spawn executable, any
+ * wrapper prefix (npx options + package), and the dsh-side argv.
+ *
+ * Supported:
+ * - any direct binary whose argv is dsh-compatible (`dsh`, absolute path,
+ *   renamed copy, test stub, …) — all tokens after the executable are dsh args
+ * - `npx @deepseek-ai/dsh …` / `npx -y @deepseek-ai/dsh[@ver] …`
+ *
+ * Known unparseable wrappers (`yarn` / `pnpm` / `bun` / `npm`) throw — never
+ * silently drop wrapper tokens or invent a runnable argv.
+ */
+export function splitDshInvocation(baseCmd: string[]): {
+  command: string
+  wrapperArgs: string[]
+  dshArgs: string[]
+} {
+  const command = baseCmd[0] ?? ''
+  const executable = basename(command)
+  if (!command) {
+    throw new LauncherConfigError("DeepSeek Harness launcher is empty. Use 'dsh' or 'npx [-y] @deepseek-ai/dsh'.")
+  }
+
+  if (executable === 'npx') {
+    const afterNpx = baseCmd.slice(1)
+    const packageIndex = findNpxPackageIndex(afterNpx)
+    if (packageIndex === -1) {
+      throw new LauncherConfigError(
+        "DeepSeek Harness via npx requires package '@deepseek-ai/dsh' (optional @version). " +
+          "Example: 'npx -y @deepseek-ai/dsh'."
+      )
+    }
+    return {
+      command,
+      wrapperArgs: afterNpx.slice(0, packageIndex + 1),
+      dshArgs: afterNpx.slice(packageIndex + 1)
+    }
+  }
+
+  if (DSH_UNSUPPORTED_WRAPPERS.has(executable)) {
+    throw new LauncherConfigError(
+      `Unsupported DeepSeek Harness launcher '${command}'. ` +
+        "Use 'dsh' (or its absolute path) or 'npx [-y] @deepseek-ai/dsh'."
+    )
+  }
+
+  // Direct executable: basename need not be exactly `dsh` (absolute installs,
+  // renamed binaries, runner test stubs like `fake-dsh`).
+  return { command, wrapperArgs: [], dshArgs: baseCmd.slice(1) }
+}
+
+/**
+ * Index of the `@deepseek-ai/dsh[@ver]` token in npx args, or -1.
+ * Skips npx options (and their values) so `-y` / `-p pkg` do not steal the slot.
+ */
+function findNpxPackageIndex(npxArgs: string[]): number {
+  for (let i = 0; i < npxArgs.length; i++) {
+    const arg = npxArgs[i]
+    if (arg === '--') return -1
+    if (!arg.startsWith('-')) {
+      return DSH_NPX_PACKAGE_RE.test(arg) ? i : -1
+    }
+    const eq = arg.indexOf('=')
+    const flag = eq === -1 ? arg : arg.slice(0, eq)
+    if (eq === -1 && NPX_VALUE_FLAGS.has(flag)) {
+      i += 1 // consume the value token
+    }
+  }
+  return -1
+}
+
 /**
  * Split a configured dsh command into the boot profile and the remaining
  * launcher flags.
@@ -687,6 +817,8 @@ function cleanCodexBaseCommand(baseCmd: string[]): string[] {
  * `--` ends the launcher flags. Everything positional is stray task text and
  * is dropped, because Buddy always supplies the task on stdin — forwarding it
  * would make the old text the task and silently ignore the fresh prompt.
+ *
+ * Callers must pass only dsh-side argv (after any npx wrapper prefix).
  */
 export function splitDshProfileArgs(args: string[]): { profile?: string; rest: string[] } {
   let profile: string | undefined

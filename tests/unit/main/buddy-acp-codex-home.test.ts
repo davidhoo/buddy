@@ -58,9 +58,17 @@ describe('ACP Codex storage isolation', () => {
     await mkdir(home, { recursive: true })
     await writeFile(
       join(source, 'auth.json'),
-      '{"last_refresh":"2026-10-08T02:02:25Z","tokens":{"account_id":"acct-1"}}'
+      JSON.stringify({
+        auth_mode: 'chatgpt',
+        last_refresh: '2026-10-08T02:02:25Z',
+        tokens: { account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }
+      })
     )
-    const newer = '{"last_refresh":"2026-10-19T03:17:41Z","tokens":{"account_id":"acct-1"}}'
+    const newer = JSON.stringify({
+      auth_mode: 'chatgpt',
+      last_refresh: '2026-10-19T03:17:41Z',
+      tokens: { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }
+    })
     await writeFile(join(home, 'auth.json'), newer)
     await prepareCodexHome('codex', root, {}, undefined, source)
     expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(newer)
@@ -71,14 +79,183 @@ describe('ACP Codex storage isolation', () => {
   it('adopts the desktop credential when a private copy belongs to another account', async () => {
     const home = join(root, 'acp', 'codex', 'codex-home')
     await mkdir(home, { recursive: true })
-    const desktop = '{"last_refresh":"2026-10-08T02:02:25Z","tokens":{"account_id":"acct-1"}}'
+    const desktop = JSON.stringify({
+      auth_mode: 'chatgpt',
+      last_refresh: '2026-10-08T02:02:25Z',
+      tokens: { account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }
+    })
     await writeFile(join(source, 'auth.json'), desktop)
     await writeFile(
       join(home, 'auth.json'),
-      '{"last_refresh":"2026-10-19T03:17:41Z","tokens":{"account_id":"acct-2"}}'
+      JSON.stringify({
+        auth_mode: 'chatgpt',
+        last_refresh: '2026-10-19T03:17:41Z',
+        tokens: { account_id: 'acct-2', access_token: 'access-private', refresh_token: 'refresh-private' }
+      })
     )
     await prepareCodexHome('codex', root, {}, undefined, source)
     expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
+  })
+
+  it('keeps a desktop API key when the private copy is stale OAuth', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    const desktop = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-test-desktop-only' })
+    await writeFile(join(source, 'auth.json'), desktop)
+    await writeFile(
+      join(home, 'auth.json'),
+      JSON.stringify({
+        auth_mode: 'chatgpt',
+        last_refresh: '2026-10-19T03:17:41Z',
+        tokens: { account_id: 'acct-1', access_token: 'access-stale', refresh_token: 'refresh-stale' }
+      })
+    )
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    expect((await lstat(join(home, 'auth.json'))).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
+  })
+
+  it('does not publish when either account id is missing or empty', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    for (const [desktopTokens, privateTokens] of [
+      [{ access_token: 'access-desktop', refresh_token: 'refresh-desktop' }, { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }],
+      [{ account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }, { account_id: '', access_token: 'access-private', refresh_token: 'refresh-private' }],
+      [{ account_id: '', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }, { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }],
+      // PR #10 root cause: both sides missing or both empty must never count as the same account.
+      [{ access_token: 'access-desktop', refresh_token: 'refresh-desktop' }, { access_token: 'access-private', refresh_token: 'refresh-private' }],
+      [{ account_id: '', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }, { account_id: '', access_token: 'access-private', refresh_token: 'refresh-private' }]
+    ] as const) {
+      await rm(home, { recursive: true, force: true })
+      await mkdir(home, { recursive: true })
+      const desktop = JSON.stringify({
+        auth_mode: 'chatgpt',
+        last_refresh: '2026-10-08T02:02:25Z',
+        tokens: desktopTokens
+      })
+      await writeFile(join(source, 'auth.json'), desktop)
+      await writeFile(
+        join(home, 'auth.json'),
+        JSON.stringify({
+          auth_mode: 'chatgpt',
+          last_refresh: '2026-10-19T03:17:41Z',
+          tokens: privateTokens
+        })
+      )
+      await prepareCodexHome('codex', root, {}, undefined, source)
+      expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+      expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
+    }
+  })
+
+  it('does not publish when auth kinds differ even if refresh looks newer', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    const desktop = JSON.stringify({
+      auth_mode: 'apikey',
+      OPENAI_API_KEY: 'sk-test-desktop-only',
+      last_refresh: '2026-10-08T02:02:25Z'
+    })
+    await writeFile(join(source, 'auth.json'), desktop)
+    await writeFile(
+      join(home, 'auth.json'),
+      JSON.stringify({
+        auth_mode: 'chatgpt',
+        last_refresh: '2026-10-19T03:17:41Z',
+        tokens: { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }
+      })
+    )
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+  })
+
+  it('does not publish when refresh timestamps are missing, invalid, or equal', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    const privateBase = {
+      auth_mode: 'chatgpt' as const,
+      tokens: { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }
+    }
+    for (const [desktopRefresh, privateRefresh] of [
+      ['2026-10-08T02:02:25Z', undefined],
+      [undefined, '2026-10-19T03:17:41Z'],
+      [undefined, undefined],
+      ['not-a-date', '2026-10-19T03:17:41Z'],
+      ['2026-10-08T02:02:25Z', 'not-a-date'],
+      ['2026-10-19T03:17:41Z', '2026-10-19T03:17:41Z'],
+      ['2026-10-19T03:17:41Z', '2026-10-08T02:02:25Z']
+    ] as const) {
+      await rm(home, { recursive: true, force: true })
+      await mkdir(home, { recursive: true })
+      const desktop = JSON.stringify({
+        auth_mode: 'chatgpt',
+        ...(desktopRefresh !== undefined ? { last_refresh: desktopRefresh } : {}),
+        tokens: { account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }
+      })
+      await writeFile(join(source, 'auth.json'), desktop)
+      await writeFile(
+        join(home, 'auth.json'),
+        JSON.stringify({
+          ...privateBase,
+          ...(privateRefresh !== undefined ? { last_refresh: privateRefresh } : {})
+        })
+      )
+      await prepareCodexHome('codex', root, {}, undefined, source)
+      expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    }
+  })
+
+  it('migrates a newer legacy OAuth copy that omits auth_mode', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    await writeFile(
+      join(source, 'auth.json'),
+      JSON.stringify({
+        last_refresh: '2026-10-08T02:02:25Z',
+        tokens: { account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }
+      })
+    )
+    const newer = JSON.stringify({
+      last_refresh: '2026-10-19T03:17:41Z',
+      tokens: { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }
+    })
+    await writeFile(join(home, 'auth.json'), newer)
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(newer)
+    expect((await lstat(join(home, 'auth.json'))).isSymbolicLink()).toBe(true)
+  })
+
+  it('does not treat a legacy API key without auth_mode as publishable OAuth', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    const desktop = JSON.stringify({ OPENAI_API_KEY: 'sk-test-legacy-desktop' })
+    await writeFile(join(source, 'auth.json'), desktop)
+    await writeFile(
+      join(home, 'auth.json'),
+      JSON.stringify({
+        last_refresh: '2026-10-19T03:17:41Z',
+        tokens: { account_id: 'acct-1', access_token: 'access-private', refresh_token: 'refresh-private' }
+      })
+    )
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
+  })
+
+  it('keeps desktop OAuth when the private copy is a legacy API key without auth_mode', async () => {
+    const home = join(root, 'acp', 'codex', 'codex-home')
+    await mkdir(home, { recursive: true })
+    const desktop = JSON.stringify({
+      auth_mode: 'chatgpt',
+      last_refresh: '2026-10-08T02:02:25Z',
+      tokens: { account_id: 'acct-1', access_token: 'access-desktop', refresh_token: 'refresh-desktop' }
+    })
+    await writeFile(join(source, 'auth.json'), desktop)
+    await writeFile(join(home, 'auth.json'), JSON.stringify({ OPENAI_API_KEY: 'sk-test-legacy-private' }))
+    await prepareCodexHome('codex', root, {}, undefined, source)
+    expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(desktop)
+    expect((await lstat(join(home, 'auth.json'))).isSymbolicLink()).toBe(true)
     expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(desktop)
   })
 
