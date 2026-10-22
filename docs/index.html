@@ -130,6 +130,10 @@
         <h4 class="card-feature-title">上下文耗尽自动重置续跑</h4>
         <p class="card-feature-text">长任务跑到上下文窗口耗尽时，自动识别中英文超限错误，重置会话并用 LLM 生成精简摘要在新会话续跑；摘要失败则回退截断摘要并备份原上下文。无需全程盯防，长任务自己跑完。</p>
       </div>
+      <div class="card-feature">
+        <h4 class="card-feature-title">跨轮后台服务</h4>
+        <p class="card-feature-text">开发服务器可以交给 Buddy 记下，后续轮次继续复用。双方确认完成、取消或删除任务时，会清掉没有要求保留的服务。</p>
+      </div>
     </div>
     <div class="card card-tall">
       <div class="card-tag">Transparency</div>
@@ -157,12 +161,16 @@
       <svg class="guide-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>
       使用前必须准备
     </h3>
-    <p class="guide-box-text">Buddy 本身不内置 AI 能力。你需要先在自己的电脑上安装准备使用的 AI 命令行工具，并确认这些工具已经登录、授权可用。默认双 AI 协作建议先装好 Claude Code 和 Codex CLI。</p>
+    <p class="guide-box-text">Buddy 本身不内置 AI 能力。你需要先在自己的电脑上安装准备使用的 AI 命令行工具，并确认这些工具已经登录、授权可用。默认组合是 Claude Code 写代码、Codex 审查；也可以换成下面任意两个。</p>
     <div class="actor-chips">
-      <span class="actor-chip"><span class="dot dot-claude"></span> Claude Code — Anthropic 出品的编程命令行工具</span>
-      <span class="actor-chip"><span class="dot dot-codex"></span> Codex CLI — OpenAI 出品的编程命令行工具</span>
-      <span class="actor-chip"><span class="dot dot-opencode"></span> OpenCode — 开源编程命令行工具</span>
-      <span class="actor-chip"><span class="dot dot-kimi"></span> Kimi Code — 月之暗面出品的编程命令行工具</span>
+      <span class="actor-chip"><span class="dot dot-claude"></span> Claude Code — Anthropic 编程命令行</span>
+      <span class="actor-chip"><span class="dot dot-codex"></span> Codex — OpenAI 编程命令行</span>
+      <span class="actor-chip"><span class="dot dot-cursor"></span> Cursor — Cursor Agent 命令行</span>
+      <span class="actor-chip"><span class="dot dot-agy"></span> Antigravity — agy 命令行</span>
+      <span class="actor-chip"><span class="dot dot-opencode"></span> OpenCode — 开源编程命令行</span>
+      <span class="actor-chip"><span class="dot dot-kimi"></span> Kimi Code — 月之暗面编程命令行</span>
+      <span class="actor-chip"><span class="dot dot-dsh"></span> DeepSeek Harness — dsh 命令行</span>
+      <span class="actor-chip"><span class="dot dot-wecode"></span> WeCode — Claude、Codex、OpenCode 三种变体</span>
     </div>
     <p class="guide-tip">
       <svg class="guide-tip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
@@ -175,7 +183,7 @@
       <div class="guide-step-num">1</div>
       <div class="guide-step-body">
         <h4 class="guide-step-title">安装并登录 AI 命令行工具</h4>
-        <p class="guide-step-text">先安装你想用的 AI 工具，比如 Claude Code 或 Codex。安装后在终端里运行一次，确认已经登录且能正常使用。</p>
+        <p class="guide-step-text">先安装你想用的 AI 工具，比如 Claude Code、Codex 或 Cursor。安装后在终端里运行一次，确认已经登录且能正常使用。</p>
       </div>
     </div>
     <div class="guide-step">
@@ -208,15 +216,20 @@
     <h2 class="section-title">为协作而生的每一个细节</h2>
   </div>
   <div class="card-grid card-grid-bento">
+    <div class="card card-span-3">
+      <div class="card-tag">Model Choice</div>
+      <h3 class="card-title">按任务选模型</h3>
+      <p class="card-text">创建任务时，可以给这一对演员单独指定模型，不用改全局设置。Claude、Codex、Cursor、OpenCode，以及 WeCode 的三个变体，还可以改走 ACP，不只能用原来的命令行。Antigravity、Kimi Code、DeepSeek Harness 继续用各自的命令行。</p>
+    </div>
     <div class="card card-wide">
       <div class="card-tag">Session Persistence</div>
-      <h3 class="card-title">会话持久化</h3>
-      <p class="card-text">复用原生 CLI 会话（Claude Session ID / Codex Thread ID），上下文跨轮次保留，中断后无缝恢复</p>
+      <h3 class="card-title">会话接着用</h3>
+      <p class="card-text">每个工具自己的对话都能跨轮接着用。停下来或重新打开之后，可以从上次的上下文继续，不用从头再讲一遍。</p>
     </div>
     <div class="card">
       <div class="card-tag">Git Integration</div>
       <h3 class="card-title">Git 集成</h3>
-      <p class="card-text">本地化 conventional commit 消息生成、变更查看、提交与推送</p>
+      <p class="card-text">在应用里查看变更、生成 conventional commit、提交和推送。能看到分支上游，以及本地还没推上去的提交。</p>
     </div>
     <div class="card">
       <div class="card-tag">Desktop Notifications</div>
@@ -251,29 +264,48 @@
     <div class="section-label">Supported Actors</div>
     <h2 class="section-title">接入你熟悉的 AI 工具</h2>
   </div>
-  <div class="card-grid card-grid-4">
-    <div class="card card-actor">
-      <div class="actor-name text-claude">Claude Code</div>
-      <div class="actor-role">Default Implementer</div>
-      <p class="card-text">Anthropic 旗舰编程 Agent，会话持久化，上下文深度最强</p>
+  <div class="actors-layout">
+    <div class="actors-primary">
+      <div class="card card-actor">
+        <div class="actor-name text-claude">Claude Code</div>
+        <div class="actor-role">默认执行者</div>
+        <p class="card-text">Anthropic 的编程助手。默认负责写代码，也可以换成审查。</p>
+      </div>
+      <div class="card card-actor">
+        <div class="actor-name text-codex">Codex</div>
+        <div class="actor-role">默认审查者</div>
+        <p class="card-text">OpenAI 的编程助手。默认负责挑问题，和执行者看法互补。</p>
+      </div>
     </div>
-    <div class="card card-actor">
-      <div class="actor-name text-codex">Codex</div>
-      <div class="actor-role">Default Reviewer</div>
-      <p class="card-text">OpenAI CLI 编程助手，线程级上下文，审查视角互补</p>
-    </div>
-    <div class="card card-actor">
-      <div class="actor-name text-opencode">OpenCode</div>
-      <div class="actor-role">Alternative</div>
-      <p class="card-text">开源编程 Agent，灵活可定制，支持多种 LLM 后端</p>
-    </div>
-    <div class="card card-actor">
-      <div class="actor-name text-kimi">Kimi Code</div>
-      <div class="actor-role">Alternative</div>
-      <p class="card-text">月之暗面出品，中文场景优化，自动检测 kimi-code/kimi-cli</p>
+    <div class="actors-rest">
+      <div class="card card-actor">
+        <div class="actor-name text-cursor">Cursor</div>
+        <div class="actor-role">编辑器同款</div>
+        <p class="card-text">编辑器里那个 Cursor Agent，可以直接拉进来，和另一个工具轮流干活。</p>
+      </div>
+      <div class="card card-actor">
+        <div class="actor-name text-agy">Antigravity</div>
+        <div class="actor-role">自主执行</div>
+        <p class="card-text">Google 的 Antigravity。能自己拆任务、改代码、跑命令，适合一段比较长的工作。</p>
+      </div>
+      <div class="card card-actor">
+        <div class="actor-name text-opencode">OpenCode</div>
+        <div class="actor-role">开源</div>
+        <p class="card-text">开源编程助手，背后可以换不同的模型。</p>
+      </div>
+      <div class="card card-actor">
+        <div class="actor-name text-kimi">Kimi Code</div>
+        <div class="actor-role">中文场景</div>
+        <p class="card-text">月之暗面的编程助手，中文任务更顺手。</p>
+      </div>
+      <div class="card card-actor">
+        <div class="actor-name text-dsh">DeepSeek Harness</div>
+        <div class="actor-role">官方助手</div>
+        <p class="card-text">DeepSeek 官方的编程助手，把 DeepSeek 接进这套双人协作。</p>
+      </div>
     </div>
   </div>
-  <p class="actors-note">支持任意遵循 Launcher Protocol 的自定义命令</p>
+  <p class="actors-note">另外还有 WeCode Claude、WeCode Codex、WeCode OpenCode，用法和对应的基础工具一样。也可以接遵循启动协议的自定义命令。</p>
 </section>
 
 <section id="faq" class="section">
@@ -285,6 +317,10 @@
     <details class="faq-item" open>
       <summary>Buddy 和单个 AI CLI 工具有什么区别？</summary>
       <p>Buddy 让两个 AI Actor（执行方 + 审查方）轮流工作：执行方写代码，审查方挑毛病，循环推进。这比单次对话更接近真实团队协作，能显著提升一次通过率与代码质量。</p>
+    </details>
+    <details class="faq-item" open>
+      <summary>可以接哪些 AI 工具？</summary>
+      <p>Claude Code、Codex、Cursor、Antigravity、OpenCode、Kimi Code、DeepSeek Harness，以及 WeCode 的 Claude、Codex、OpenCode。默认是 Claude 做执行者、Codex 做审查者，创建任务时可以换成任意组合。Claude、Codex、Cursor、OpenCode 和三个 WeCode 变体还可以改用 ACP，并在任务里选择模型。</p>
     </details>
     <details class="faq-item" open>
       <summary>任务什么时候会结束？</summary>
@@ -312,7 +348,7 @@
     <a href="https://github.com/davidhoo/buddy/releases/latest" target="_blank" rel="noopener" class="btn btn-accent btn-lg">下载 macOS 版</a>
     <a href="https://github.com/davidhoo/buddy" target="_blank" rel="noopener" class="btn btn-outline-dark btn-lg">查看源码</a>
   </div>
-  <p class="download-note">系统要求：macOS 12+ (Monterey)</p>
+  <p class="download-note">系统要求：macOS 12+ (Monterey) · 当前版本 2.0.6</p>
 </section>
 
 </main>
