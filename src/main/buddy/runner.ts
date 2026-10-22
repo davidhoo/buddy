@@ -32,6 +32,7 @@ const ACTOR_STATUS: Record<string, TaskState['status']> = {
   agy: 'RUNNING_AGY',
   opencode: 'RUNNING_OPENCODE',
   kimi: 'RUNNING_KIMI',
+  dsh: 'RUNNING_DSH',
   wecode_claude: 'RUNNING_WECODE_CLAUDE',
   wecode_codex: 'RUNNING_WECODE_CODEX',
   wecode_opencode: 'RUNNING_WECODE_OPENCODE'
@@ -159,8 +160,30 @@ export function isAgyMissingResultError(error: unknown): boolean {
   return (error as { code?: unknown }).code === AGY_MISSING_RESULT_CODE
 }
 
+/**
+ * The actor streamed raw events (e.g. tool calls) but no assistant text. This
+ * is a missing reply, not a context-window or upgrade condition: the diagnostic
+ * detail quotes arbitrary tool data, which may happen to contain those phrases.
+ */
+export const EMPTY_ACTOR_REPLY_CODE = 'EMPTY_ACTOR_REPLY' as const
+
+export class EmptyActorReplyError extends Error {
+  readonly code = EMPTY_ACTOR_REPLY_CODE
+
+  constructor(detail?: string) {
+    super(detail ? `Actor exited without an assistant reply: ${detail}` : 'Actor exited without an assistant reply')
+    this.name = 'EmptyActorReplyError'
+  }
+}
+
+export function isEmptyActorReplyError(error: unknown): boolean {
+  if (error instanceof EmptyActorReplyError) return true
+  if (!error || typeof error !== 'object') return false
+  return (error as { code?: unknown }).code === EMPTY_ACTOR_REPLY_CODE
+}
+
 export function isMissingResultError(error: unknown): boolean {
-  return isCursorMissingResultError(error) || isAgyMissingResultError(error)
+  return isCursorMissingResultError(error) || isAgyMissingResultError(error) || isEmptyActorReplyError(error)
 }
 
 export class BuddyRunner {
@@ -860,6 +883,7 @@ export class BuddyRunner {
         if (actor === 'agy' && sid) sessionUpdates.agy_session_id = sid
         if (actor === 'opencode' && sid) sessionUpdates.opencode_session_id = sid
         if (actor === 'kimi' && sid) sessionUpdates.kimi_session_id = sid
+        if (actor === 'dsh' && sid) sessionUpdates.dsh_session_id = sid
         if (actor === 'wecode_claude' && sid) sessionUpdates.wecode_claude_session_id = sid
         if (actor === 'wecode_codex' && (tid ?? sid)) sessionUpdates.wecode_codex_thread_id = tid ?? sid
         if (actor === 'wecode_opencode' && sid) sessionUpdates.wecode_opencode_session_id = sid
@@ -915,6 +939,7 @@ export class BuddyRunner {
                 : a === 'agy' ? sessionUpdates.agy_session_id
                   : a === 'opencode' ? sessionUpdates.opencode_session_id
                     : a === 'kimi' ? sessionUpdates.kimi_session_id
+                      : a === 'dsh' ? sessionUpdates.dsh_session_id
                       : a === 'wecode_claude' ? sessionUpdates.wecode_claude_session_id
                         : a === 'wecode_opencode' ? sessionUpdates.wecode_opencode_session_id
                           : sessionUpdates.actor_sessions?.[a])
@@ -1436,21 +1461,22 @@ export class BuddyRunner {
         }
       })
       const nonNoiseRaw = nonNoiseEvents.join('\n')
-      // Check if the only parsed text comes from noise events (step_start placeholders)
+      // Text the actor actually wrote. Tool lines are display-only: their
+      // arguments/output can quote an example buddy envelope, so promoting them
+      // to the reply would let command output forge a `break` confirmation.
+      const replyParsedText = parsedLines.filter((l) => l.text && !l.noise && !l.tool).map((l) => l.text).join('\n').trim()
       const nonNoiseParsedText = parsedLines.filter((l) => l.text && !l.noise).map((l) => l.text).join('\n').trim()
       const hasOnlyNoiseOutput = !outputText.trim() && !nonNoiseParsedText && parsedLines.some((l) => l.noise && l.text)
       if (hasOnlyNoiseOutput) {
         throw new Error(`Actor exited with only noise events (likely ${CONTEXT_EXHAUSTED_PHRASE})`)
-      } else if (!outputText.trim() && nonNoiseRaw.trim()) {
-        const parsedText = nonNoiseParsedText || parsedLines.filter((l) => l.text).map((l) => l.text).join('\n').trim()
-        if (parsedText) {
-          outputText = parsedText
-        } else {
-          throw new Error(nonNoiseRaw.trim().slice(0, 500))
-        }
-      } else if (!outputText.trim() && rawEvents.trim() && !nonNoiseRaw.trim()) {
-        // All events were noise (e.g. only system/hook events) — actor produced no real output
+      } else if (!outputText.trim() && replyParsedText) {
+        outputText = replyParsedText
+      } else if (!outputText.trim() && !nonNoiseRaw.trim()) {
         throw new Error('Actor exited without producing any output')
+      } else if (!outputText.trim()) {
+        // Raw events exist but no assistant text came out. A tool-only stream
+        // still means "no reply" — raise instead of feeding tool text forward.
+        throw new EmptyActorReplyError(nonNoiseRaw.trim().slice(0, 500))
       }
 
       await this.completeActor(taskId, workspaceKey, actor, runId, outputText, parsedLines, elapsedMs, result.exitCode ?? 0)
@@ -1620,6 +1646,7 @@ export class BuddyRunner {
       if (actor === 'agy' && sessionId) next.agy_session_id = sessionId
       if (actor === 'opencode' && sessionId) next.opencode_session_id = sessionId
       if (actor === 'kimi' && sessionId) next.kimi_session_id = sessionId
+      if (actor === 'dsh' && sessionId) next.dsh_session_id = sessionId
       if (actor === 'wecode_claude' && sessionId) next.wecode_claude_session_id = sessionId
       if (actor === 'wecode_codex' && (threadId || sessionId)) next.wecode_codex_thread_id = (threadId || sessionId)
       if (actor === 'wecode_opencode' && sessionId) next.wecode_opencode_session_id = sessionId
@@ -1907,6 +1934,7 @@ export class BuddyRunner {
       : actor === 'agy' ? 'agy_session_id'
       : actor === 'opencode' ? 'opencode_session_id'
       : actor === 'kimi' ? 'kimi_session_id'
+      : actor === 'dsh' ? 'dsh_session_id'
       : actor === 'wecode_claude' ? 'wecode_claude_session_id'
       : actor === 'wecode_codex' ? 'wecode_codex_thread_id'
       : actor === 'wecode_opencode' ? 'wecode_opencode_session_id'
@@ -2284,6 +2312,7 @@ function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<T
   if (actor === 'agy') return state.agy_session_id ?? stringSetting(settings, 'seed_agy_session_id')
   if (actor === 'opencode') return state.opencode_session_id ?? stringSetting(settings, 'seed_opencode_session_id')
   if (actor === 'kimi') return state.kimi_session_id ?? stringSetting(settings, 'seed_kimi_session_id')
+  if (actor === 'dsh') return state.dsh_session_id ?? stringSetting(settings, 'seed_dsh_session_id')
   if (actor === 'wecode_claude') return state.wecode_claude_session_id ?? stringSetting(settings, 'seed_wecode_claude_session_id')
   if (actor === 'wecode_codex') return state.wecode_codex_thread_id ?? stringSetting(settings, 'seed_wecode_codex_thread_id')
   if (actor === 'wecode_opencode') return state.wecode_opencode_session_id ?? stringSetting(settings, 'seed_wecode_opencode_session_id')
@@ -2303,6 +2332,7 @@ function normalizeActorRole(actor: string): TranscriptEntry['role'] {
     actor === 'agy' ||
     actor === 'opencode' ||
     actor === 'kimi' ||
+    actor === 'dsh' ||
     actor === 'wecode_claude' ||
     actor === 'wecode_codex' ||
     actor === 'wecode_opencode'
@@ -2394,16 +2424,21 @@ export async function collectOutputText(
   outputFile: string,
   stdoutText: string
 ): Promise<string> {
-  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_agy' || kind === 'native_opencode' || kind === 'native_kimi') {
+  if (kind === 'native_claude' || kind === 'native_cursor' || kind === 'native_agy' || kind === 'native_opencode' || kind === 'native_kimi' || kind === 'native_dsh') {
     const parserActor = parserActorForKind(actor, kind)
     let output = extractActorOutput(parserActor, stdoutText)
     let message = parseBuddyMessage(output)
 
-    // Fallback: some models (e.g. DeepSeek via OpenCode/Kimi) output buddy JSON
-    // via echo/bash commands. The buddy message appears in part.state.output
-    // of tool_use events. extractActorOutput may miss it if the text events
-    // contain preamble that masks the break signal.
-    if (message.kind !== 'break' && (kind === 'native_opencode' || kind === 'native_kimi')) {
+    // Fallback: some models output buddy JSON through echo/bash commands. The
+    // message then lives in part.state.output of tool_use events, never in the
+    // assistant's own text.
+    //
+    // Tool output may only supply the signal when the reply carries no buddy
+    // envelope of its own. Otherwise a quoted example envelope (a diff, a test
+    // fixture, documentation) could override the actor's actual answer — e.g.
+    // turn a deliberate `chat` into a false `break` confirmation.
+    const replyHasOwnEnvelope = message.kind === 'break' || message.text !== output
+    if (!replyHasOwnEnvelope && (kind === 'native_opencode' || kind === 'native_kimi')) {
       for (const event of parseJsonlBuffer(stdoutText)) {
         if (event.type === 'tool_use') {
           const part = event.part

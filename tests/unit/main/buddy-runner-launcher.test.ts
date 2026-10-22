@@ -2,7 +2,7 @@ import { access, chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { BuddyRunner } from '../../../src/main/buddy/runner'
+import { BuddyRunner, collectOutputText } from '../../../src/main/buddy/runner'
 import { BuddyStore } from '../../../src/main/buddy/store'
 
 function isProcessAlive(pid: number): boolean {
@@ -60,6 +60,217 @@ describe('BuddyRunner with fake launcher', () => {
       meta: expect.objectContaining({ buddy_type: 'chat' })
     })
     expect(transcriptRow.meta.elapsed_ms).toEqual(expect.any(Number))
+  })
+
+  it('runs a dsh actor through headless JSON, persists the session, and records usage', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-'))
+    const fake = join(root, 'fake-dsh')
+    const stdinFile = join(root, 'stdin.txt')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      `cat > "${stdinFile}"`,
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-test","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_start","turn":1}'`,
+      `printf '%s\\n' '{"type":"thinking","text":"reasoning"}'`,
+      `printf '%s\\n' '{"type":"text","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"done via dsh\\"}"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"step_end","turn":1,"step":1,"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":2}}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"done via dsh\\"}"}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        launchers: {
+          dsh: { command: fake, env: {}, timeout_seconds: 5 }
+        }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', {
+      workspace_key: created.workspace_key,
+      actor: 'dsh'
+    })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('PAUSED')
+    expect(detail.state.dsh_session_id).toBe('session-dsh-test')
+    expect(detail.events.some((event) => event.type === 'actor.completed')).toBe(true)
+
+    // The Buddy prompt goes over stdin; no positional task argument is needed.
+    const stdinText = await readFile(stdinFile, 'utf8')
+    expect(stdinText).toContain('Buddy Message Protocol')
+
+    const transcriptJsonl = await readFile(join(root, 'workspaces', created.workspace_key, 'tasks', 'demo', 'transcript.jsonl'), 'utf8')
+    const transcriptRow = JSON.parse(transcriptJsonl.split('\n')[0])
+    expect(transcriptRow).toMatchObject({
+      role: 'dsh',
+      content: 'done via dsh',
+      meta: expect.objectContaining({ buddy_type: 'chat' })
+    })
+
+    const runId = transcriptRow.meta.run_id as string
+    const summary = await store.getRoundEvents('demo', runId, created.workspace_key, 'dsh', fake)
+    expect(summary).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 2
+    })
+    expect(summary?.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'thinking', thinkingLength: 9 }),
+      expect.objectContaining({ type: 'text', text: '{"type":"chat","content":"done via dsh"}' })
+    ]))
+  })
+
+  // A `type=break` quoted in tool output is data, not a control signal. The
+  // actor's own reply must decide; otherwise a diff or fixture containing an
+  // example envelope could end the task behind the other actor's back.
+  it('ignores a break envelope quoted in dsh tool output when the reply says chat', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-toolbreak-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-quote","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"grep -r break src"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"example.json: {\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}\\n"}'`,
+      `printf '%s\\n' '{"type":"text","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"still fixing it\\"}"}'`,
+      `printf '%s\\n' '{"type":"final","text":"{\\"type\\":\\"chat\\",\\"content\\":\\"still fixing it\\"}"}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: { launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } } }
+    })
+    const runner = new BuddyRunner(store)
+
+    await runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' })
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.pending_break).toBeNull()
+    expect(detail.state.status).toBe('PAUSED')
+    const transcriptJsonl = await readFile(
+      join(root, 'workspaces', created.workspace_key, 'tasks', 'demo', 'transcript.jsonl'), 'utf8')
+    const transcriptRow = JSON.parse(transcriptJsonl.split('\n')[0])
+    expect(transcriptRow).toMatchObject({
+      role: 'dsh',
+      content: 'still fixing it',
+      meta: expect.objectContaining({ buddy_type: 'chat' })
+    })
+  })
+
+  it('does not read a dsh tool result as the reply when the actor said nothing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'buddy-dsh-collect-'))
+    const outputFile = join(dir, 'output.md')
+    const stdout = [
+      JSON.stringify({ type: 'session', sessionId: 's1', cwd: '/tmp/repo' }),
+      JSON.stringify({
+        type: 'tool_result',
+        callId: 'c1',
+        status: 'completed',
+        result: '{"type":"break","content":"example only"}'
+      }),
+      JSON.stringify({ type: 'final', text: '' })
+    ].join('\n')
+
+    const output = await collectOutputText('dsh', 'native_dsh', outputFile, stdout)
+
+    expect(output).toBe('')
+    expect(await readFile(outputFile, 'utf8')).toBe(JSON.stringify({ type: 'chat', content: '' }))
+  })
+
+  // Full-runner regression: the generic ghost-output fallback used to promote
+  // tool display text into the reply, so a `break` quoted inside a tool_call
+  // argument became a real break request even though the actor replied nothing.
+  // The example lives in the tool *argument* (that is the text the parser
+  // renders) and the failure must be the explicit empty-reply error — a spawn
+  // failure would also reject, so it must not satisfy this assertion.
+  it('never derives a break from a tool_call argument when the dsh reply is empty', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-toolonly-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-toolonly","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_start","turn":1}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"echo {\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"{\\"type\\":\\"break\\",\\"content\\":\\"example only\\"}\\n"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":""}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: { launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } } }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' }))
+      .rejects.toThrow(/Actor exited without an assistant reply/)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round).toBe(0)
+    expect(detail.state.pending_break).toBeNull()
+    expect(detail.transcript.some((row) => row.meta?.buddy_type === 'break')).toBe(false)
+    expect(detail.events.some((event) => event.type === 'break.pending')).toBe(false)
+  })
+
+  // The empty-reply error carries a raw-event preview for diagnosis. That
+  // preview can itself quote "context window" (a grep command, a tool log), so
+  // the failure must be classified before pattern-matching arbitrary data —
+  // otherwise an empty reply silently triggers a session reset and retry.
+  it('never treats context-window text quoted in a dsh tool log as a context limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-dsh-contextword-'))
+    const fake = join(root, 'fake-dsh')
+    await writeFile(fake, [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"session","sessionId":"session-dsh-contextword","cwd":"/tmp/repo"}'`,
+      `printf '%s\\n' '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"grep -rn {\\"context window\\"} src"}}'`,
+      `printf '%s\\n' '{"type":"tool_result","callId":"c1","status":"completed","result":"src/foo.ts: context window limit\\n"}'`,
+      `printf '%s\\n' '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}'`,
+      `printf '%s\\n' '{"type":"final","text":""}'`,
+      ''
+    ].join('\n'))
+    await chmod(fake, 0o755)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 1, max_compact_retries: 1, max_upgrade_retries: 0 })
+    const created = await store.createTask({
+      task_id: 'demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        seed_dsh_session_id: 'session-existing',
+        launchers: { dsh: { command: fake, env: {}, timeout_seconds: 5 } }
+      }
+    })
+    const runner = new BuddyRunner(store)
+
+    await expect(runner.startTask('demo', { workspace_key: created.workspace_key, actor: 'dsh' }))
+      .rejects.toThrow(/Actor exited without an assistant reply/)
+
+    const detail = await store.getTaskDetail('demo', created.workspace_key)
+    expect(detail.state.status).toBe('FAILED')
+    expect(detail.state.round).toBe(0)
+    expect(detail.events.some((event) => event.type === 'actor.context_limit_detected')).toBe(false)
+    expect(detail.transcript.some((row) => row.meta?.kind === 'session_reset')).toBe(false)
   })
 
   it('runs custom launchers with buddy contract flags and environment', async () => {

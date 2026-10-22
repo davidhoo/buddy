@@ -252,6 +252,7 @@ describe('CommitModal actor selection', () => {
       'agy',
       'opencode',
       'kimi',
+      'dsh',
       'wecode_claude',
       'wecode_codex',
       'wecode_opencode'

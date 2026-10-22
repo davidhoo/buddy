@@ -36,6 +36,7 @@ const SUPPORTED_ACTORS = [
   'agy',
   'opencode',
   'kimi',
+  'dsh',
   'wecode_claude',
   'wecode_codex',
   'wecode_opencode'

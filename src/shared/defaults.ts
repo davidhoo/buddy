@@ -7,6 +7,7 @@ export const DEFAULT_LAUNCHER_ORDER = [
   'agy',
   'opencode',
   'kimi',
+  'dsh',
   'wecode_claude',
   'wecode_codex',
   'wecode_opencode'
@@ -80,6 +81,7 @@ const DEFAULT_LAUNCHER_COMMANDS: Record<string, string> = {
   agy: 'agy',
   opencode: 'opencode',
   kimi: 'kimi',
+  dsh: 'dsh',
   wecode_claude: 'wecode',
   wecode_codex: 'wecode codex',
   wecode_opencode: 'wecode opencode'
@@ -151,6 +153,7 @@ export function normalizeGlobalSettings(settings?: GlobalSettings | null): Globa
     seed_agy_session_id: settings?.seed_agy_session_id ?? '',
     seed_opencode_session_id: settings?.seed_opencode_session_id ?? '',
     seed_kimi_session_id: settings?.seed_kimi_session_id ?? '',
+    seed_dsh_session_id: settings?.seed_dsh_session_id ?? '',
     seed_wecode_claude_session_id: settings?.seed_wecode_claude_session_id ?? '',
     seed_wecode_codex_thread_id: settings?.seed_wecode_codex_thread_id ?? '',
     seed_wecode_opencode_session_id: settings?.seed_wecode_opencode_session_id ?? '',

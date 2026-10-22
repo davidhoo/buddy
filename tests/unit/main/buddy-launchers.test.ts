@@ -335,6 +335,176 @@ describe('launcher command builder', () => {
     })
   })
 
+  it('builds DeepSeek Harness headless JSON command with prompt on stdin', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt'
+    })).toEqual({
+      command: 'dsh',
+      args: ['--profile', 'headless', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello from prompt'
+    })
+  })
+
+  it('resumes a DeepSeek Harness session with --session-id', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'continue',
+      sessionId: 'session-123'
+    })).toEqual({
+      command: 'dsh',
+      args: ['--profile', 'headless', '--json', '--session-id', 'session-123'],
+      kind: 'native_dsh',
+      stdinText: 'continue'
+    })
+  })
+
+  it('does not duplicate the headless profile when already configured', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --profile headless',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'continue',
+      sessionId: 'session-123'
+    })).toEqual({
+      command: 'dsh',
+      args: ['--profile', 'headless', '--json', '--session-id', 'session-123'],
+      kind: 'native_dsh',
+      stdinText: 'continue'
+    })
+  })
+
+  // dsh only expands a bare leading profile name (`dsh headless`) when it is
+  // the first argv token. Any launcher flag before it must be expressed as an
+  // explicit --profile, otherwise dsh aborts with "--profile <name> is required".
+  it('keeps launcher flags ahead of the profile and still boots headless', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'dsh',
+      args: ['--profile', 'headless', '--patch', '/tmp/extra.yml', '--json'],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  // `--json` is an app flag: dsh hands every later token to the app, so a
+  // `--patch` written after it would be ignored as a launcher flag. The
+  // builder re-appends `--json` after all launcher flags.
+  it('moves an early --json after launcher flags so a later --patch still applies', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --json --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(command.args).toEqual([
+      '--profile', 'headless',
+      '--patch', '/tmp/extra.yml',
+      '--json'
+    ])
+  })
+
+  it('honours a custom profile and keeps its flags, patch values included', () => {
+    expect(buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --profile custom-headless --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello',
+      sessionId: 'session-123'
+    })).toEqual({
+      command: 'dsh',
+      args: [
+        '--profile', 'custom-headless',
+        '--patch', '/tmp/extra.yml',
+        '--json',
+        '--session-id', 'session-123'
+      ],
+      kind: 'native_dsh',
+      stdinText: 'hello'
+    })
+  })
+
+  it('accepts the --profile=<name> form and the leading profile shorthand', () => {
+    const inline = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --profile=custom-headless --json',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(inline.args).toEqual(['--profile', 'custom-headless', '--json'])
+
+    const shorthand = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --patch /tmp/extra.yml',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })
+    expect(shorthand.args).toEqual(['--profile', 'headless', '--patch', '/tmp/extra.yml', '--json'])
+  })
+
+  it('drops a stray positional so the stdin prompt is the only task text', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh --profile headless "stale task text"',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt'
+    })
+    expect(command.args).toEqual(['--profile', 'headless', '--json'])
+    expect(command.stdinText).toBe('fresh prompt')
+  })
+
+  // A boolean option takes no value, so the token after it is positional task
+  // text and must not be forwarded — otherwise dsh answers the stale task and
+  // never reads the prompt Buddy writes to stdin.
+  it('drops a positional that follows a value-less option', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --json "stale task text"',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt'
+    })
+    expect(command.args).toEqual(['--profile', 'headless', '--json'])
+    expect(command.stdinText).toBe('fresh prompt')
+  })
+
+  it('drops everything after a -- terminator and keeps --json effective', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --json -- "stale task text"',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt'
+    })
+    expect(command.args).toEqual(['--profile', 'headless', '--json'])
+    expect(command.args[command.args.length - 1]).toBe('--json')
+    expect(command.stdinText).toBe('fresh prompt')
+  })
+
+  it('keeps a stale --session-id out of the argv so the persisted session wins', () => {
+    const command = buildLauncherCommand({
+      actor: 'dsh',
+      command: 'dsh headless --session-id stale-session',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'fresh prompt',
+      sessionId: 'session-live'
+    })
+    expect(command.args).toEqual(['--profile', 'headless', '--json', '--session-id', 'session-live'])
+  })
+
+  it('recognizes dsh executable and actor fallback', () => {
+    expect(commandKindFor('dsh', 'dsh')).toBe('native_dsh')
+    expect(commandKindFor('dsh', '/usr/local/bin/dsh --profile headless')).toBe('native_dsh')
+    expect(commandKindFor('dsh', '')).toBe('native_dsh')
+  })
+
   it('builds custom launcher contract flags and environment', () => {
     expect(buildLauncherCommand({
       actor: 'claude',

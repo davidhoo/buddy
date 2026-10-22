@@ -21,6 +21,7 @@ export type TaskStatus =
   | 'RUNNING_AGY'
   | 'RUNNING_OPENCODE'
   | 'RUNNING_KIMI'
+  | 'RUNNING_DSH'
   | 'RUNNING_WECODE_CLAUDE'
   | 'RUNNING_WECODE_CODEX'
   | 'RUNNING_WECODE_OPENCODE'
@@ -84,6 +85,7 @@ export interface TaskState {
   agy_session_id?: string | null
   opencode_session_id?: string | null
   kimi_session_id?: string | null
+  dsh_session_id?: string | null
   wecode_claude_session_id?: string | null
   wecode_codex_thread_id?: string | null
   wecode_opencode_session_id?: string | null
@@ -137,6 +139,7 @@ export interface TaskSettings {
   seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  seed_dsh_session_id?: string
   seed_wecode_claude_session_id?: string
   seed_wecode_codex_thread_id?: string
   seed_wecode_opencode_session_id?: string
@@ -172,7 +175,7 @@ export interface AcpPreset {
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode' | 'system'
+  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'dsh' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode' | 'system'
   content: string
   ts: string
   round?: number
@@ -229,6 +232,7 @@ export interface GlobalSettings {
   seed_agy_session_id?: string
   seed_opencode_session_id?: string
   seed_kimi_session_id?: string
+  seed_dsh_session_id?: string
   seed_wecode_claude_session_id?: string
   seed_wecode_codex_thread_id?: string
   seed_wecode_opencode_session_id?: string

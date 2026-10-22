@@ -11,6 +11,7 @@ export type LauncherCommandKind =
   | 'native_agy'
   | 'native_opencode'
   | 'native_kimi'
+  | 'native_dsh'
   | 'contract'
 
 export interface LauncherCommandInput {
@@ -50,6 +51,7 @@ export function kindNeedsPty(kind: LauncherCommandKind): boolean {
 export function parserActorForKind(actor: string, kind: LauncherCommandKind): string {
   if (kind === 'native_opencode') return 'opencode'
   if (kind === 'native_kimi') return 'kimi'
+  if (kind === 'native_dsh') return 'dsh'
   if (kind === 'native_claude') return 'claude'
   if (kind === 'native_codex') return 'codex'
   if (kind === 'native_cursor') return 'cursor'
@@ -337,6 +339,35 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     }
   }
 
+  if (kind === 'native_dsh') {
+    // dsh headless draws the task from stdin when no positional task is given,
+    // so the (potentially large) Buddy prompt never has to survive ARG_MAX or
+    // shell quoting. `--json` projects one NDJSON event per line on stdout and
+    // keeps stderr for diagnostics only. `--session-id` adopts an existing
+    // persisted session (same cwd is required by dsh itself).
+    //
+    // Always emit an explicit `--profile <name>`: dsh only expands a bare
+    // leading profile name (`dsh headless`) when that name is the first argv
+    // token, so `dsh --patch x headless` would otherwise fail with
+    // "--profile <name> is required". A stray positional of our own would be
+    // consumed by the app as task text and mask the prompt sent on stdin.
+    const dsh = splitDshProfileArgs(prefixArgs)
+    return {
+      command,
+      args: [
+        '--profile',
+        dsh.profile ?? 'headless',
+        ...dsh.rest,
+        '--json',
+        // Appended last so a persisted session always wins over a stale id
+        // left in the launcher command.
+        ...(input.sessionId ? ['--session-id', input.sessionId] : [])
+      ],
+      kind,
+      stdinText: input.promptText
+    }
+  }
+
   const mode = input.mode ?? (input.sessionId ? 'resume' : 'start')
   const repoRoot = input.repoRoot ?? ''
   const taskDir = input.taskDir ?? ''
@@ -399,18 +430,20 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   if (executable === 'agy' || executable === 'antigravity') return 'native_agy'
   if (executable === 'opencode' || isWecodeOpenCodeCommand(baseCmd)) return 'native_opencode'
   if (executable === 'kimi') return 'native_kimi'
+  if (executable === 'dsh') return 'native_dsh'
   // Fallback: when no command is specified, infer from actor name.
   // Also: the Antigravity settings card always speaks agy's native protocol.
   // Never fall through to contract flags (--actor, etc.) just because the
   // command string used a wrapper basename we do not recognize — that is
   // exactly what produces "flags provided but not defined: -actor".
-  if (executable === '' || executable === 'wecode' || actor === 'agy') {
+  if (executable === '' || executable === 'wecode' || actor === 'agy' || actor === 'dsh') {
     if (actor === 'claude' || actor === 'wecode_claude') return 'native_claude'
     if (actor === 'codex' || actor === 'wecode_codex') return 'native_codex'
     if (actor === 'cursor') return 'native_cursor'
     if (actor === 'agy') return 'native_agy'
     if (actor === 'opencode' || actor === 'wecode_opencode') return 'native_opencode'
     if (actor === 'kimi') return 'native_kimi'
+    if (actor === 'dsh') return 'native_dsh'
   }
   return 'contract'
 }
@@ -639,3 +672,58 @@ function cleanCodexBaseCommand(baseCmd: string[]): string[] {
   const legacyBareFlags = new Set(['--full-auto'])
   return [baseCmd[0], ...baseCmd.slice(1).filter((part) => !legacyBareFlags.has(part))]
 }
+
+/**
+ * Split a configured dsh command into the boot profile and the remaining
+ * launcher flags.
+ *
+ * Two forms are accepted, matching dsh's own parser:
+ * - `dsh --profile <name> ...` / `dsh --profile=<name> ...`
+ * - `dsh <name> ...`, where dsh only honours the shorthand when the profile
+ *   name is the *first* argv token.
+ *
+ * Only options that actually take a value consume the next token; a boolean
+ * option (`--json`, `--dump-config`, ...) never swallows the token after it.
+ * `--` ends the launcher flags. Everything positional is stray task text and
+ * is dropped, because Buddy always supplies the task on stdin — forwarding it
+ * would make the old text the task and silently ignore the fresh prompt.
+ */
+export function splitDshProfileArgs(args: string[]): { profile?: string; rest: string[] } {
+  let profile: string | undefined
+  const rest: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    // `--` and anything after it are positional (task text) — never forwarded.
+    if (arg === '--') break
+
+    if (!arg.startsWith('-')) {
+      // dsh's shorthand only applies to the first argv token.
+      if (i === 0) profile = arg
+      continue
+    }
+
+    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1
+    const flag = eq === -1 ? arg : arg.slice(0, eq)
+    const inlineValue = eq === -1 ? undefined : arg.slice(eq + 1)
+    const value = inlineValue ?? (DSH_VALUE_FLAGS.has(flag) ? args[++i] : undefined)
+
+    if (flag === '--profile') {
+      profile = value ?? ''
+      continue
+    }
+    // Buddy owns session resumption (task state / seed setting). A stale id
+    // baked into the command is dropped so it cannot shadow the real one.
+    if (flag === '--session-id') continue
+    // `--json` is an app flag: once dsh sees it, every later token belongs to
+    // the app, so a launcher flag after it would silently become app data.
+    // Drop it here and append one after all launcher flags.
+    if (flag === '--json') continue
+
+    rest.push(arg)
+    if (inlineValue === undefined && value !== undefined) rest.push(value)
+  }
+  return { profile: profile || undefined, rest }
+}
+
+/** dsh options that consume the following token as their value. */
+const DSH_VALUE_FLAGS = new Set(['--profile', '--from-default-profile', '--patch', '--session-id'])

@@ -209,25 +209,25 @@ describe('buddy actor parsers', () => {
     expect(reasoning).toBe('')
   })
 
-  it('extracts buddy messages from OpenCode tool_use output (echo commands)', () => {
+  it('keeps OpenCode tool_use output out of the extracted reply', () => {
+    // Tool output is raw command output (a diff, a log, a quoted example) and
+    // must not be promoted into the actor reply. The runner recovers an echo
+    // envelope only when the reply itself carries no buddy message.
     const output = extractActorOutput('opencode', [
       JSON.stringify({ type: 'text', sessionID: 's1', part: { type: 'text', text: 'Task done.' } }),
       JSON.stringify({ type: 'tool_use', sessionID: 's1', part: { type: 'tool', tool: 'bash', callID: 'c1', state: { status: 'completed', input: { command: "echo '{\"type\": \"break\", \"content\": \"All done.\"}'" }, output: '{"type": "break", "content": "All done."}' } } }),
     ].join('\n'))
-    const message = parseBuddyMessage(output)
 
-    expect(message).toEqual({ kind: 'break', content: 'All done.' })
+    expect(output).toBe('Task done.')
   })
 
-  it('extracts buddy messages from OpenCode tool_use when text events have no buddy JSON', () => {
+  it('does not mistake a quoted break example for the OpenCode reply', () => {
     const output = extractActorOutput('opencode', [
-      JSON.stringify({ type: 'text', sessionID: 's1', part: { type: 'text', text: 'I will signal completion.' } }),
-      JSON.stringify({ type: 'tool_use', sessionID: 's1', part: { type: 'tool', tool: 'bash', callID: 'c1', state: { status: 'completed', input: { command: "echo hi" }, output: '{"type": "break", "content": "Done."}' } } }),
-      JSON.stringify({ type: 'text', sessionID: 's1', part: { type: 'text', text: 'Echo command executed.' } }),
+      JSON.stringify({ type: 'text', sessionID: 's1', part: { type: 'text', text: '{"type":"chat","content":"still fixing it"}' } }),
+      JSON.stringify({ type: 'tool_use', sessionID: 's1', part: { type: 'tool', tool: 'bash', callID: 'c1', state: { status: 'completed', input: { command: 'grep break example.json' }, output: '{"type": "break", "content": "example only"}' } } }),
     ].join('\n'))
-    const message = parseBuddyMessage(output)
 
-    expect(message.kind).toBe('break')
+    expect(parseBuddyMessage(output)).toEqual({ kind: 'message', text: 'still fixing it' })
   })
 
   it('streams buddy messages from OpenCode tool_use events', () => {
@@ -280,6 +280,81 @@ describe('buddy actor parsers', () => {
       sessionId: 'session_f811580a-d17e-4e01-b900-92048f4b1455',
       text: undefined
     })
+  })
+
+  it('parses dsh session, thinking, text, tool, and final events', () => {
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'session',
+      sessionId: 'session-e6a6d7f3',
+      cwd: '/tmp/repo'
+    }))).toEqual({ sessionId: 'session-e6a6d7f3', rawType: 'session', noise: true })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'thinking',
+      text: 'reasoning hidden from actor content'
+    }))).toEqual({ sessionId: undefined, rawType: 'thinking', noise: true })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'text',
+      text: 'hello'
+    }))).toMatchObject({ text: 'hello', rawType: 'text' })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'tool_call',
+      callId: 'c1',
+      tool: 'bash',
+      input: { command: 'pnpm test' }
+    }))).toMatchObject({ text: '🔧 bash pnpm test', rawType: 'tool_call', tool: true, streamMode: 'line' })
+
+    expect(parseActorLine('dsh', JSON.stringify({
+      type: 'final',
+      text: '{"type":"chat","content":"done"}'
+    }))).toEqual({ sessionId: undefined, rawType: 'final', noise: true })
+  })
+
+  it('extracts dsh final text and only falls back to streamed text when final is empty', () => {
+    const events = [
+      JSON.stringify({ type: 'session', sessionId: 's1', cwd: '/tmp/repo' }),
+      JSON.stringify({ type: 'text', text: 'streamed ' }),
+      JSON.stringify({ type: 'text', text: 'reply' }),
+      JSON.stringify({ type: 'final', text: '{"type":"chat","content":"done"}' })
+    ].join('\n')
+
+    expect(extractActorOutput('dsh', events)).toBe('{"type":"chat","content":"done"}')
+    expect(extractActorOutput('dsh', [
+      JSON.stringify({ type: 'text', text: 'without final' })
+    ].join('\n'))).toBe('without final')
+  })
+
+  it('never turns a quoted break envelope in dsh tool output into the reply', () => {
+    const output = extractActorOutput('dsh', [
+      JSON.stringify({ type: 'tool_call', callId: 'c1', tool: 'bash', input: { command: 'grep -r break src' } }),
+      JSON.stringify({
+        type: 'tool_result',
+        callId: 'c1',
+        status: 'completed',
+        result: 'example.json: {"type":"break","content":"example only"}\n'
+      }),
+      JSON.stringify({ type: 'text', text: '{"type":"chat","content":"still fixing it"}' }),
+      JSON.stringify({ type: 'final', text: '{"type":"chat","content":"still fixing it"}' })
+    ].join('\n'))
+
+    expect(parseBuddyMessage(output)).toEqual({ kind: 'message', text: 'still fixing it' })
+  })
+
+  it('never surfaces quoted break envelopes from dsh tool output as standalone text', () => {
+    // final/text empty: the tool log must not become the actor reply either.
+    const output = extractActorOutput('dsh', [
+      JSON.stringify({
+        type: 'tool_result',
+        callId: 'c1',
+        status: 'completed',
+        result: '{"type":"break","content":"example only"}'
+      }),
+      JSON.stringify({ type: 'final', text: '' })
+    ].join('\n'))
+
+    expect(output).toBe('')
   })
 
   it('detects break messages', () => {

@@ -83,6 +83,13 @@ function launcherInfoFor(actor: string, t: TFunction): LauncherInfo {
         placeholder: 'kimi',
         hint: <HintWithCode template={t('settings.launcher.kimi.hint')} />
       }
+    case 'dsh':
+      return {
+        title: t('settings.launcher.dsh.title'),
+        label: t('settings.launcher.dsh.label'),
+        placeholder: 'dsh',
+        hint: <HintWithCode template={t('settings.launcher.dsh.hint')} />
+      }
     case 'wecode_claude':
       return {
         title: t('settings.launcher.wecode_claude.title'),
@@ -766,13 +773,15 @@ function LauncherSection({
         )
       )}
 
-      {protocol === 'acp' && (actor === 'agy' || actor === 'kimi') && (
+      {protocol === 'acp' && (actor === 'agy' || actor === 'kimi' || actor === 'dsh') && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 flex items-start gap-2">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
           <span>
             {actor === 'agy'
               ? t('settings.launcher.agyAcpWarning')
-              : t('settings.launcher.kimiAcpWarning')}
+              : actor === 'dsh'
+                ? t('settings.launcher.dshAcpWarning')
+                : t('settings.launcher.kimiAcpWarning')}
           </span>
         </div>
       )}
