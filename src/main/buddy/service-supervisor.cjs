@@ -20,16 +20,34 @@ async function main(config) {
     })
     return writes
   }
-  const groupAlive = () => {
-    if (!child?.pid) return false
-    try { process.kill(-child.pid, 0); return true } catch (e) {
-      if (e.code === 'ESRCH') return false
+  // macOS signal 0 against a process group returns EPERM while the leader is
+  // still exiting, even after a real signal was accepted. ESRCH means gone.
+  // EPERM on the group is not gone when the leader pid still answers.
+  const probe = (pid) => {
+    try { process.kill(pid, 0); return 'ok' } catch (e) {
+      if (e.code === 'ESRCH' || e.code === 'EPERM') return e.code
       throw e
     }
   }
+  const deliver = (pid, signal) => {
+    try { process.kill(pid, signal); return 'ok' } catch (e) {
+      if (e.code === 'ESRCH' || e.code === 'EPERM') return e.code
+      throw e
+    }
+  }
+  const groupAlive = () => {
+    if (!child?.pid) return false
+    const group = probe(-child.pid)
+    if (group === 'ok') return true
+    if (group === 'ESRCH') return false
+    return probe(child.pid) === 'ok'
+  }
   const signalGroup = (signal) => {
     if (!child?.pid) return
-    try { process.kill(-child.pid, signal) } catch (e) { if (e.code !== 'ESRCH') throw e }
+    const group = deliver(-child.pid, signal)
+    if (group === 'ok' || group === 'ESRCH') return
+    const leader = deliver(child.pid, signal)
+    if (leader === 'ok' || leader === 'ESRCH' || leader === 'EPERM') return
   }
   const stop = (reason) => {
     if (stopping) return stopping

@@ -56,6 +56,8 @@ import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
 import { mergeChildEnv } from './shell-path'
 import { redactSensitiveText } from './redact'
+import { ExtensionService } from './extensions/service'
+import type { ExtensionActionResult, ExtensionLibraryDir, ExtensionPage, ExtensionQuery, LibrarySnapshot, ResolvedTarget } from '../../shared/extensions'
 
 export interface BuddyCoreServiceOptions {
   dataRoot?: string
@@ -69,6 +71,7 @@ export class BuddyCoreService {
   private coordinator?: QueueCoordinator
   private readonly acpModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
   private readonly acpModelInflight = new Map<string, Promise<AcpModelList>>()
+  private readonly extensions: ExtensionService
 
   constructor(options: BuddyCoreServiceOptions | string = {}) {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
@@ -80,6 +83,15 @@ export class BuddyCoreService {
     this.runner.onTaskTerminal = (workspaceKey) => {
       void this.coordinator?.onTaskTerminal(workspaceKey)
     }
+    this.extensions = new ExtensionService({
+      dataRoot: this.store.dataRoot,
+      readGlobalSettings: () => this.store.readGlobalSettings(),
+      readTaskContext: async (taskId, workspaceKey) => {
+        const settings = await this.store.readTaskSettings(taskId, workspaceKey)
+        const state = await this.store.readTaskState(taskId, workspaceKey)
+        return { launchers: settings.launchers, repoRoot: state.repo_root ?? '' }
+      }
+    })
   }
 
   getCoordinator(): QueueCoordinator | undefined {
@@ -107,7 +119,28 @@ export class BuddyCoreService {
     return true
   }
 
+  listExtensionTargets(query: ExtensionQuery = {}): Promise<ResolvedTarget[]> {
+    return this.extensions.listTargets(query)
+  }
+
+  discoverExtensions(query: ExtensionQuery): Promise<ExtensionPage> {
+    return this.extensions.discover(query)
+  }
+
+  readExtensionLibrary(): Promise<LibrarySnapshot> {
+    return this.extensions.readLibrary()
+  }
+
+  ensureExtensionLibraryDir(): Promise<ExtensionLibraryDir> {
+    return this.extensions.ensureLibraryDir()
+  }
+
+  planExtensionAction(action: unknown): Promise<ExtensionActionResult> {
+    return this.extensions.apply(action)
+  }
+
   async bootstrap(): Promise<BootstrapResponse> {
+    await this.extensions.initialize()
     let locale: string | undefined
     try { locale = app?.getLocale() } catch { /* not available in test env */ }
     return {

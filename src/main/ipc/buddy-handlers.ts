@@ -14,6 +14,7 @@ import type {
   TestLauncherResult,
   GlobalAcpAdaptersStatus
 } from '../../shared/types'
+import type { ExtensionQuery } from '../../shared/extensions'
 
 export interface BuddyHandlerService {
   checkHealth(): Promise<boolean>
@@ -55,6 +56,11 @@ export interface BuddyHandlerService {
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
   updateTaskLauncherModel(taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings>
   checkAcpGlobalAdapters(): Promise<GlobalAcpAdaptersStatus> | GlobalAcpAdaptersStatus
+  listExtensionTargets(query?: ExtensionQuery): Promise<unknown>
+  discoverExtensions(query: ExtensionQuery): Promise<unknown>
+  readExtensionLibrary(): Promise<unknown>
+  ensureExtensionLibraryDir(): Promise<unknown>
+  planExtensionAction(action: unknown): unknown
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
@@ -172,5 +178,20 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:checkAcpGlobalAdapters', () =>
     service.checkAcpGlobalAdapters()
+  )
+  ipcMain.handle('buddy:extensions:listTargets', (_event, query?: ExtensionQuery) =>
+    service.listExtensionTargets(query)
+  )
+  ipcMain.handle('buddy:extensions:discover', (_event, query: ExtensionQuery) =>
+    service.discoverExtensions(query)
+  )
+  ipcMain.handle('buddy:extensions:readLibrary', () =>
+    service.readExtensionLibrary()
+  )
+  ipcMain.handle('buddy:extensions:ensureLibraryDir', () =>
+    service.ensureExtensionLibraryDir()
+  )
+  ipcMain.handle('buddy:extensions:planAction', (_event, action: string) =>
+    service.planExtensionAction(action)
   )
 }

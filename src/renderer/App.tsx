@@ -16,6 +16,8 @@ import { Sidebar } from './components/Sidebar'
 import { ChatArea } from './components/ChatArea'
 import { StatusBar } from './components/StatusBar'
 import { SettingsContent, SettingsTab } from './components/SettingsContent'
+import { LibraryPage } from './components/library/LibraryPage'
+import type { LibrarySection } from '../shared/extensions'
 import { Switch } from './components/Switch'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useUpdater } from './hooks/useUpdater'
@@ -41,8 +43,9 @@ export default function App() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showTaskDoneChanges, setShowTaskDoneChanges] = useState(false)
   const [pendingRepoRoot, setPendingRepoRoot] = useState<string | null>(null)
-  const [view, setView] = useState<'chat' | 'settings'>('chat')
+  const [view, setView] = useState<'chat' | 'settings' | 'library'>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [librarySection, setLibrarySection] = useState<LibrarySection>('skills')
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [taskAttachments, setTaskAttachments] = useState<Record<string, Attachment[]>>({})
@@ -598,7 +601,7 @@ export default function App() {
       if (showCreateModal) {
         setShowCreateModal(false)
         setPendingRepoRoot(null)
-      } else if (view === 'settings') {
+      } else if (view === 'settings' || view === 'library') {
         setView('chat')
       }
     },
@@ -639,6 +642,7 @@ export default function App() {
         isFullScreen={isFullScreen}
         view={view}
         settingsTab={settingsTab}
+        librarySection={librarySection}
         updateStatus={updater.status}
         updateVersion={updater.version}
         updateErrorPhase={updater.errorPhase}
@@ -653,8 +657,10 @@ export default function App() {
         onCreateTask={handleOpenCreateModal}
         onDeleteTask={handleDeleteTask}
         onOpenSettings={() => { setView('settings'); setSettingsTab('general') }}
+        onOpenLibrary={() => { setView('library'); setLibrarySection('skills') }}
         onBackToApp={() => setView('chat')}
         onSelectSettingsTab={setSettingsTab}
+        onSelectLibrarySection={setLibrarySection}
         onResize={handleSidebarResize}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onRenameProject={handleRenameProject}
@@ -675,8 +681,8 @@ export default function App() {
           isSidebarOpen={isSidebarOpen}
           isStatusBarOpen={isStatusBarOpen}
           isFullScreen={isFullScreen}
-          showToggles={view !== 'settings'}
-          bare={view === 'settings'}
+          showToggles={view === 'chat'}
+          bare={view !== 'chat'}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           onToggleStatusBar={() => setIsStatusBarOpen(!isStatusBarOpen)}
           onCancelTask={handleCancelTask}
@@ -691,6 +697,14 @@ export default function App() {
             <SettingsContent
               tab={settingsTab}
               globalSettings={bootstrap?.global_settings ?? null}
+            />
+          ) : view === 'library' ? (
+            <LibraryPage
+              section={librarySection}
+              cwd={taskDetail?.state?.repo_root}
+              taskId={selectedTaskId}
+              workspaceKey={selectedWorkspaceKey}
+              onOpenLauncherSettings={() => { setView('settings'); setSettingsTab('general') }}
             />
           ) : (
             <>

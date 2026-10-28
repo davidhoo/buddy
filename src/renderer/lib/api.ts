@@ -12,7 +12,14 @@ import type {
   StartTaskInput,
   TaskEventEnvelope,
   TaskSettings,
-  TaskStats
+  TaskStats,
+  ExtensionActionRequest,
+  ExtensionActionResult,
+  ExtensionLibraryDir,
+  ExtensionPage,
+  ExtensionQuery,
+  LibrarySnapshot,
+  ResolvedTarget
 } from '../../shared/types'
 
 function buddy() {
@@ -106,6 +113,16 @@ export const api = {
     buddy().updateTaskLauncherModel(taskId, workspaceKey, actor, model) as Promise<TaskSettings>,
   checkAcpGlobalAdapters: () =>
     buddy().checkAcpGlobalAdapters(),
+  listExtensionTargets: (query?: ExtensionQuery): Promise<ResolvedTarget[]> =>
+    buddy().listExtensionTargets(query),
+  discoverExtensions: (query: ExtensionQuery): Promise<ExtensionPage> =>
+    buddy().discoverExtensions(query),
+  readExtensionLibrary: (): Promise<LibrarySnapshot> =>
+    buddy().readExtensionLibrary(),
+  ensureExtensionLibraryDir: (): Promise<ExtensionLibraryDir> =>
+    buddy().ensureExtensionLibraryDir(),
+  planExtensionAction: (action: ExtensionActionRequest | string): Promise<ExtensionActionResult> =>
+    buddy().planExtensionAction(action),
   onTaskEvent: (callback: (payload: TaskEventEnvelope) => void) =>
     buddy().onTaskEvent(callback)
 }

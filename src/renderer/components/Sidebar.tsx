@@ -4,10 +4,16 @@ import {
   ChevronLeft,
   Copy,
   Ellipsis,
+  Bot,
+  FileText,
   Folder,
   FolderOpen,
   Keyboard,
+  Library,
   MessageSquare,
+  Server,
+  Sparkles,
+  Webhook,
   PanelLeft,
   Pin,
   Settings as SettingsIcon,
@@ -30,6 +36,7 @@ import { projectNameForTask, readStringArraySetting, writeStringArraySetting, is
 import logo from '../assets/logo.png'
 
 import type { SettingsTab } from './SettingsContent'
+import type { LibrarySection } from '../../shared/extensions'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
 interface SidebarProps {
@@ -40,8 +47,9 @@ interface SidebarProps {
   isLoading: boolean
   error: Error | null
   isHealthy: boolean
-  view: 'chat' | 'settings'
+  view: 'chat' | 'settings' | 'library'
   settingsTab: SettingsTab
+  librarySection: LibrarySection
   updateStatus: UpdateStatus
   updateVersion: string
   updateErrorPhase: UpdaterErrorPhase
@@ -50,8 +58,10 @@ interface SidebarProps {
   onCreateTask: (repoRoot?: string) => void
   onDeleteTask: (taskId: string, workspaceKey: string) => void
   onOpenSettings: () => void
+  onOpenLibrary: () => void
   onBackToApp: () => void
   onSelectSettingsTab: (tab: SettingsTab) => void
+  onSelectLibrarySection: (section: LibrarySection) => void
   onResize: (delta: number) => void
   onToggleSidebar: () => void
   isFullScreen: boolean
@@ -74,6 +84,7 @@ export function Sidebar({
   isHealthy,
   view,
   settingsTab,
+  librarySection,
   updateStatus,
   updateVersion,
   updateErrorPhase,
@@ -82,8 +93,10 @@ export function Sidebar({
   onCreateTask,
   onDeleteTask,
   onOpenSettings,
+  onOpenLibrary,
   onBackToApp,
   onSelectSettingsTab,
+  onSelectLibrarySection,
   onResize,
   onToggleSidebar,
   isFullScreen,
@@ -104,7 +117,7 @@ export function Sidebar({
       {/* 顶部红绿灯区域 + 收起按钮 */}
       <div className="h-[50px] flex-shrink-0 flex items-center drag-region">
         <div className={`flex-shrink-0 ${isFullScreen ? 'w-4' : 'w-[76px]'}`} />
-        {view !== 'settings' && (
+        {view === 'chat' && (
           <button
             onClick={onToggleSidebar}
             className="w-5 h-5 mt-[4px] flex items-center justify-center rounded hover:bg-bg-muted no-drag"
@@ -123,6 +136,14 @@ export function Sidebar({
           onBackToApp={onBackToApp}
           t={t}
         />
+      ) : view === 'library' ? (
+        <LibrarySidebar
+          section={librarySection}
+          onSelectSection={onSelectLibrarySection}
+          onBackToApp={onBackToApp}
+          onOpenSettings={onOpenSettings}
+          t={t}
+        />
       ) : (
         <ChatSidebar
           tasks={tasks}
@@ -138,6 +159,7 @@ export function Sidebar({
           onCreateTask={onCreateTask}
           onDeleteTask={onDeleteTask}
           onOpenSettings={onOpenSettings}
+          onOpenLibrary={onOpenLibrary}
           onRenameProject={onRenameProject}
           onRenameTask={onRenameTask}
           onOpenInFinder={onOpenInFinder}
@@ -149,7 +171,7 @@ export function Sidebar({
         />
       )}
     </div>
-    {view !== 'settings' && <ResizeHandle direction="right" onResize={onResize} />}
+    {view === 'chat' && <ResizeHandle direction="right" onResize={onResize} />}
     </div>
   )
 }
@@ -229,6 +251,61 @@ function SettingsMenuItem({ label, icon, active, onClick }: {
   )
 }
 
+function LibrarySidebar({
+  section,
+  onSelectSection,
+  onBackToApp,
+  onOpenSettings,
+  t
+}: {
+  section: LibrarySection
+  onSelectSection: (section: LibrarySection) => void
+  onBackToApp: () => void
+  onOpenSettings: () => void
+  t: TFunction
+}) {
+  const items: Array<{ id: LibrarySection; label: string; icon: React.ReactNode }> = [
+    { id: 'agents', label: t('library.section.agents'), icon: <Bot size={15} strokeWidth={1.7} /> },
+    { id: 'instructions', label: t('library.section.instructions'), icon: <FileText size={15} strokeWidth={1.7} /> },
+    { id: 'mcp', label: t('library.section.mcp'), icon: <Server size={15} strokeWidth={1.7} /> },
+    { id: 'skills', label: t('library.section.skills'), icon: <Sparkles size={15} strokeWidth={1.7} /> },
+    { id: 'hooks', label: t('library.section.hooks'), icon: <Webhook size={15} strokeWidth={1.7} /> },
+    { id: 'subagents', label: t('library.section.subagents'), icon: <Bot size={15} strokeWidth={1.7} /> }
+  ]
+  return (
+    <>
+    <div className="flex-1 overflow-y-auto px-2 pt-2">
+      <button
+        onClick={onBackToApp}
+        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:text-fg rounded-lg transition-colors mb-2"
+      >
+        <ChevronLeft size={14} strokeWidth={2} />
+        {t('sidebar.backToApp')}
+      </button>
+      {items.map((item) => (
+        <SettingsMenuItem
+          key={item.id}
+          label={item.label}
+          icon={item.icon}
+          active={section === item.id}
+          onClick={() => onSelectSection(item.id)}
+        />
+      ))}
+    </div>
+    <div className="p-4 border-t border-border-subtle">
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:text-fg hover:bg-bg-subtle rounded-lg transition-colors"
+      >
+        <SettingsIcon size={16} strokeWidth={2} />
+        {t('sidebar.settings')}
+      </button>
+    </div>
+    </>
+  )
+}
+
 function ChatSidebar({
   tasks,
   selectedTaskId,
@@ -243,6 +320,7 @@ function ChatSidebar({
   onCreateTask,
   onDeleteTask,
   onOpenSettings,
+  onOpenLibrary,
   onRenameProject,
   onRenameTask,
   onOpenInFinder,
@@ -265,6 +343,7 @@ function ChatSidebar({
   onCreateTask: (repoRoot?: string) => void
   onDeleteTask: (taskId: string, workspaceKey: string) => void
   onOpenSettings: () => void
+  onOpenLibrary: () => void
   onRenameProject: (repoRoot: string, newName: string) => void
   onRenameTask: (taskId: string, newName: string) => void
   onOpenInFinder: (path: string) => void
@@ -710,7 +789,14 @@ function ChatSidebar({
         />
       )}
 
-      <div className="p-4 border-t border-border-subtle">
+      <div className="p-4 border-t border-border-subtle space-y-1">
+        <button
+          onClick={onOpenLibrary}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:text-fg hover:bg-bg-subtle rounded-lg transition-colors"
+        >
+          <Library size={16} strokeWidth={2} />
+          {t('sidebar.library')}
+        </button>
         <button
           onClick={onOpenSettings}
           className="w-full flex items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:text-fg hover:bg-bg-subtle rounded-lg transition-colors"

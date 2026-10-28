@@ -18,7 +18,14 @@ import type {
   TaskSettings,
   TaskEventEnvelope,
   TaskStats,
-  TestLauncherResult
+  TestLauncherResult,
+  ExtensionActionRequest,
+  ExtensionActionResult,
+  ExtensionLibraryDir,
+  ExtensionPage,
+  ExtensionQuery,
+  LibrarySnapshot,
+  ResolvedTarget
 } from '../shared/types'
 
 type Listener = (event: unknown, payload: TaskEventEnvelope) => void
@@ -120,6 +127,16 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:updateTaskLauncherModel', taskId, workspaceKey, actor, model) as Promise<TaskSettings>,
     checkAcpGlobalAdapters: (): Promise<GlobalAcpAdaptersStatus> =>
       ipc.invoke('buddy:checkAcpGlobalAdapters') as Promise<GlobalAcpAdaptersStatus>,
+    listExtensionTargets: (query?: ExtensionQuery): Promise<ResolvedTarget[]> =>
+      ipc.invoke('buddy:extensions:listTargets', query) as Promise<ResolvedTarget[]>,
+    discoverExtensions: (query: ExtensionQuery): Promise<ExtensionPage> =>
+      ipc.invoke('buddy:extensions:discover', query) as Promise<ExtensionPage>,
+    readExtensionLibrary: (): Promise<LibrarySnapshot> =>
+      ipc.invoke('buddy:extensions:readLibrary') as Promise<LibrarySnapshot>,
+    ensureExtensionLibraryDir: (): Promise<ExtensionLibraryDir> =>
+      ipc.invoke('buddy:extensions:ensureLibraryDir') as Promise<ExtensionLibraryDir>,
+    planExtensionAction: (action: ExtensionActionRequest | string): Promise<ExtensionActionResult> =>
+      ipc.invoke('buddy:extensions:planAction', action) as Promise<ExtensionActionResult>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {
       const listener: Listener = (_event, payload) => callback(payload)
       ipc.on('buddy:event', listener)

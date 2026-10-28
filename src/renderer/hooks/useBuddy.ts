@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { appendActorStreamLine, type ActorStreamLine } from '../lib/actor-stream'
-import type { GlobalSettings, GitCommitPushResult, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats, GlobalAcpAdaptersStatus } from '../../shared/types'
+import type { GlobalSettings, GitCommitPushResult, GitDiffStats, GitRemote, GitStatusResult, RoundEventSummary, TaskEventEnvelope, TaskStats, GlobalAcpAdaptersStatus, ExtensionPage, ExtensionQuery, LibrarySnapshot, ResolvedTarget } from '../../shared/types'
 import type { TestLauncherResult } from '../../shared/types'
 import type { GitPushAvailability, GitPushResult } from '../../shared/types'
 
@@ -356,6 +356,30 @@ export function useActorStream(taskId: string | null, runId: string | null) {
   }, [taskId, runId])
 
   return lines
+}
+
+export function useExtensionTargets(query: ExtensionQuery | null) {
+  return useQuery<ResolvedTarget[]>({
+    queryKey: ['extensions', 'targets', query],
+    queryFn: () => api.listExtensionTargets(query ?? {}),
+    enabled: query !== null
+  })
+}
+
+export function useExtensionPage(query: ExtensionQuery | null) {
+  return useQuery<ExtensionPage>({
+    queryKey: ['extensions', 'page', query],
+    queryFn: () => api.discoverExtensions(query!),
+    enabled: query !== null && (query.kind === 'skill' || query.kind === 'mcp')
+  })
+}
+
+export function useExtensionLibrary(enabled: boolean) {
+  return useQuery<LibrarySnapshot>({
+    queryKey: ['extensions', 'library'],
+    queryFn: () => api.readExtensionLibrary(),
+    enabled
+  })
 }
 
 export function useAcpGlobalAdapters() {

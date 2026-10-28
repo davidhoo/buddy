@@ -477,3 +477,31 @@ export interface GitPushResult {
   upstreamCreated: boolean
   pushError: string | null
 }
+
+export type {
+  ApplyRecord,
+  ConfigLocation,
+  DiscoveredInstance,
+  ExtensionActionName,
+  ExtensionActionRequest,
+  ExtensionActionResult,
+  ExtensionAdapter,
+  ExtensionKind,
+  ExtensionLibraryDir,
+  ExtensionPage,
+  ExtensionProtocol,
+  ExtensionQuery,
+  ExtensionScope,
+  LibraryData,
+  LibraryItem,
+  LibraryReadStatus,
+  LibrarySection,
+  LibrarySnapshot,
+  ResolvedTarget,
+  ScanProblem,
+  ScanStatus,
+  TargetBinding,
+  TargetResolution,
+  TargetScan
+} from './extensions'
+export { LIBRARY_SECTIONS } from './extensions'

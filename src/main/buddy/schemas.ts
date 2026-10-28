@@ -230,3 +230,9 @@ export function parseGlobalSettings(input: unknown) {
 export function parseEventLine(line: string) {
   return eventSchema.parse(JSON.parse(line))
 }
+
+/** Resource-library preferences; optional fields preserve version-1 libraries. */
+export const extensionLibraryPreferencesSchema = z.object({
+  skillDefaultMode: z.enum(['link', 'copy']).optional(),
+  skillAgentModes: z.record(z.string(), z.enum(['link', 'copy'])).optional()
+})
