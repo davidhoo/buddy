@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-10-28
+
+### Added
+- 侧栏新增「资源库」，统一管理 Agent 扩展：指令、MCP、技能、Hooks、子代理；支持从已安装 Agent 导入、本地目录或 Git 仓库安装，以及内置离线精选技能/MCP 模板
+- 技能可按 Agent 选择符号链接或受管理副本，支持默认方式持久化、副本编辑回收、更新检查与备份；MCP 提供 stdio 连接探测
+- 指令以标记块写入原生文件，子代理按内容哈希、Hooks 按精确条目写入；撤回只移除 Buddy 自己写入的内容
+
+### Changed
+- 官网与 README 更新 Actor 支持说明（含 Antigravity、DeepSeek Harness、WeCode 等），并补充跨轮后台服务与按任务选模型的介绍
+
+### Fixed
+- 修复 macOS 退出阶段进程组信号探测将 `EPERM` 误判为进程已消失的问题
+
+---
+
 ## [2.0.6] - 2026-10-22
 
 ### Added
@@ -687,6 +702,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 项目需求文档 (REQUIREMENTS.md)
 - 项目结构初始化
 
+[2.0.7]: https://github.com/davidhoo/buddy/releases/tag/v2.0.7
+[2.0.6]: https://github.com/davidhoo/buddy/releases/tag/v2.0.6
+[2.0.5]: https://github.com/davidhoo/buddy/releases/tag/v2.0.5
 [2.0.4]: https://github.com/davidhoo/buddy/releases/tag/v2.0.4
 [2.0.3]: https://github.com/davidhoo/buddy/releases/tag/v2.0.3
 [2.0.2]: https://github.com/davidhoo/buddy/releases/tag/v2.0.2
