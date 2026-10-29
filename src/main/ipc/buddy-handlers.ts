@@ -14,9 +14,17 @@ import type {
   TestLauncherResult,
   GlobalAcpAdaptersStatus
 } from '../../shared/types'
-import type { ExtensionQuery } from '../../shared/extensions'
 
 export interface BuddyHandlerService {
+  listCliModels?(id:string):Promise<AcpModelList>
+  listLocalAgents?(force?:boolean):Promise<import('../../shared/agents').LocalAgent[]>
+  configureAgent?(id:string,config:import('../../shared/agents').AgentConfiguration):Promise<void>
+  probeLocalAgent?(id:string):Promise<import('../../shared/agents').LocalAgent>
+  checkAgentUpdates?(force?:boolean):Promise<import('../../shared/agents').LocalAgent[]>
+  updateLocalAgents?(ids:string[]):Promise<import('../../shared/agents').AgentUpdateJob[]>
+  getAgentUpdateJobs?():Promise<import('../../shared/agents').AgentUpdateJob[]>
+  cancelAgentUpdates?():void
+
   checkHealth(): Promise<boolean>
   bootstrap(): Promise<unknown>
   getTasks(): Promise<unknown>
@@ -56,16 +64,18 @@ export interface BuddyHandlerService {
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
   updateTaskLauncherModel(taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings>
   checkAcpGlobalAdapters(): Promise<GlobalAcpAdaptersStatus> | GlobalAcpAdaptersStatus
-  listExtensionTargets(query?: ExtensionQuery): Promise<unknown>
-  discoverExtensions(query: ExtensionQuery): Promise<unknown>
-  readExtensionLibrary(): Promise<unknown>
-  ensureExtensionLibraryDir(): Promise<unknown>
-  planExtensionAction(action: unknown): unknown
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
 
 export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerService): void {
+  for (const method of ['listCliModels','listLocalAgents','configureAgent','probeLocalAgent','checkAgentUpdates','updateLocalAgents','getAgentUpdateJobs','cancelAgentUpdates'] as const) {
+    ipcMain.handle('buddy:'+method, (_event, ...args: unknown[]) => {
+      const fn = service[method] as ((...input: unknown[])=>unknown) | undefined
+      if(!fn) throw new Error('Agent service unavailable')
+      return fn.apply(service,args)
+    })
+  }
   ipcMain.handle('buddy:checkHealth', () => service.checkHealth())
   ipcMain.handle('buddy:bootstrap', () => service.bootstrap())
   ipcMain.handle('buddy:getTasks', () => service.getTasks())
@@ -178,20 +188,5 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   )
   ipcMain.handle('buddy:checkAcpGlobalAdapters', () =>
     service.checkAcpGlobalAdapters()
-  )
-  ipcMain.handle('buddy:extensions:listTargets', (_event, query?: ExtensionQuery) =>
-    service.listExtensionTargets(query)
-  )
-  ipcMain.handle('buddy:extensions:discover', (_event, query: ExtensionQuery) =>
-    service.discoverExtensions(query)
-  )
-  ipcMain.handle('buddy:extensions:readLibrary', () =>
-    service.readExtensionLibrary()
-  )
-  ipcMain.handle('buddy:extensions:ensureLibraryDir', () =>
-    service.ensureExtensionLibraryDir()
-  )
-  ipcMain.handle('buddy:extensions:planAction', (_event, action: string) =>
-    service.planExtensionAction(action)
   )
 }

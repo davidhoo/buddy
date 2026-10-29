@@ -1,3 +1,4 @@
+import { acquireAgentUse } from './agents/locks'
 import { access, appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
@@ -243,10 +244,12 @@ export class BuddyRunner {
   async startTask(taskId: string, input: StartTaskInput): Promise<{ run_id: string }> {
     const key = this.runControllerKey(input.workspace_key ?? '', taskId)
     if (this.cancelling.has(key)) throw new Error('Task cancellation is in progress')
+    const releaseAgentUse = await acquireAgentUse()
     const promise = this.startTaskInner(taskId, input)
     const pending = this.pendingTasks.get(key) ?? new Set<Promise<unknown>>()
     pending.add(promise); this.pendingTasks.set(key, pending)
     try { return await promise } finally {
+      releaseAgentUse()
       pending.delete(promise)
       if (!pending.size) this.pendingTasks.delete(key)
     }
@@ -287,7 +290,7 @@ export class BuddyRunner {
       ?? (detail.state.status === 'FAILED' ? (detail.state.latest_failure?.actor ?? detail.state.last_error?.actor) : undefined)
       ?? detail.state.next_actor
       ?? 'claude'
-    const status = ACTOR_STATUS[actor]
+    const status = ACTOR_STATUS[actor] ?? (detail.settings.launchers?.[actor] ? 'RUNNING_AGENT' : undefined)
     if (!status) throw new Error(`Unsupported actor: ${actor}`)
     if (!canStartFrom(detail.state.status)) {
       throw new Error(`Cannot start task from ${detail.state.status}`)
@@ -723,7 +726,7 @@ export class BuddyRunner {
 
     if (launcher.protocol === 'acp') {
       const cwd = await existingCwd(detail.state.repo_root)
-      const baseArgs = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const baseArgs = Array.isArray(launcher.args) ? launcher.args : defaultAcpArgs(launcher.command, actor)
       const resolved = resolveAcpBinary(launcher.command, baseArgs)
       const acpEnv = await prepareAcpEnvironment(actor, launcher.env, this.store.dataRoot)
       const transport = new AcpStdioTransport({
@@ -760,6 +763,8 @@ export class BuddyRunner {
     const command = buildLauncherCommand({
       actor,
       command: launcher.command,
+      args: (launcher as import('../../shared/types').Launcher).args,
+        model: (launcher as import('../../shared/types').Launcher).model,
       mode: 'start',
       promptFile,
       promptText: prompt,
@@ -1054,7 +1059,7 @@ export class BuddyRunner {
     const launcher = this.resolveEffectiveLauncher(actor, detail.settings.launchers, globalSettings.launchers)
     const cwd = await existingCwd(detail.state.repo_root)
     const existingSessionId = sessionIdForActor(actor, detail.state, detail.settings)
-    const args = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+    const args = Array.isArray(launcher.args) ? launcher.args : defaultAcpArgs(launcher.command, actor)
 
     const prompt = buildActorPrompt({
       actor,
@@ -1093,7 +1098,7 @@ export class BuddyRunner {
         this.store.dataRoot,
         existingSessionId || undefined
       )
-      const baseArgs = launcher.args && launcher.args.length > 0 ? launcher.args : defaultAcpArgs(launcher.command, actor)
+      const baseArgs = Array.isArray(launcher.args) ? launcher.args : defaultAcpArgs(launcher.command, actor)
       const resolved = resolveAcpBinary(launcher.command, baseArgs)
       transport = new AcpStdioTransport({
         command: resolved.command,
@@ -1146,7 +1151,7 @@ export class BuddyRunner {
       }
 
       if (launcher.model) {
-        await applyAcpSessionModel(client, sessionId, launcher.model, sessionResult).catch(() => {})
+        await applyAcpSessionModel(client, sessionId, launcher.model, sessionResult)
       }
 
       // 3. Prompt turn
@@ -1333,6 +1338,8 @@ export class BuddyRunner {
       const command = buildLauncherCommand({
         actor,
         command: launcher.command,
+      args: (launcher as import('../../shared/types').Launcher).args,
+        model: (launcher as import('../../shared/types').Launcher).model,
         mode: existingSessionId ? 'resume' : 'start',
         promptFile,
         promptText: prompt,
@@ -1958,7 +1965,6 @@ export class BuddyRunner {
       : actor === 'wecode_opencode' ? 'wecode_opencode_session_id'
       : null
 
-    if (!sessionKey) return
 
     // Try to generate a summary via LLM first; fall back to simple truncation
     const taskDirectory = this.store.taskDirectory(taskId, workspaceKey)
@@ -1988,7 +1994,7 @@ export class BuddyRunner {
       delete actorSessions[actor]
       return {
         ...state,
-        [sessionKey]: null,
+        ...(sessionKey ? {[sessionKey]:null} : {}),
         actor_sessions: actorSessions,
         context_sent: contextSent
       }
@@ -2066,6 +2072,8 @@ export class BuddyRunner {
     const summarizeCommand = buildLauncherCommand({
       actor,
       command: launcher.command,
+      args: (launcher as import('../../shared/types').Launcher).args,
+        model: (launcher as import('../../shared/types').Launcher).model,
       mode: 'start', // fresh session, no resume
       promptText: summarizePrompt,
       promptFile: summarizePromptFile,
@@ -2324,6 +2332,7 @@ export function needsHealthCheck(state: TaskState, settings: TaskSettings): bool
 
 function sessionIdForActor(actor: string, state: TaskState, settings?: Partial<TaskSettings>): string | undefined {
   if (state.actor_sessions?.[actor]) return state.actor_sessions[actor]
+  if (settings?.seed_actor_sessions?.[actor]) return settings.seed_actor_sessions[actor]
   if (actor === 'claude') return state.claude_session_id ?? stringSetting(settings, 'seed_claude_session_id')
   if (actor === 'codex') return state.codex_thread_id ?? stringSetting(settings, 'seed_codex_thread_id')
   if (actor === 'cursor') return state.cursor_session_id ?? stringSetting(settings, 'seed_cursor_session_id')
@@ -2342,21 +2351,7 @@ function stringSetting(settings: Partial<TaskSettings> | undefined, key: keyof T
   return typeof value === 'string' && value ? value : undefined
 }
 
-function normalizeActorRole(actor: string): TranscriptEntry['role'] {
-  if (
-    actor === 'claude' ||
-    actor === 'codex' ||
-    actor === 'cursor' ||
-    actor === 'agy' ||
-    actor === 'opencode' ||
-    actor === 'kimi' ||
-    actor === 'dsh' ||
-    actor === 'wecode_claude' ||
-    actor === 'wecode_codex' ||
-    actor === 'wecode_opencode'
-  ) return actor
-  return 'system'
-}
+function normalizeActorRole(actor: string): TranscriptEntry['role'] { return actor }
 
 export function lastValue(values: Array<string | undefined>): string | undefined {
   const filtered = values.filter(Boolean)

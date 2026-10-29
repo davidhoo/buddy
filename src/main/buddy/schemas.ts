@@ -30,6 +30,7 @@ export const serviceTaskManifestSchema = z.object({ task_id: z.string(), workspa
 const taskStatusSchema = z.enum([
   'QUEUED',
   'READY',
+  'RUNNING_AGENT',
   'RUNNING_CLAUDE',
   'RUNNING_CODEX',
   'RUNNING_CURSOR',
@@ -162,6 +163,7 @@ const optionalNonEmptyString = z
   .transform((v) => (v ? v : undefined))
 
 export const taskSettingsSchema = z.object({
+  seed_actor_sessions: z.record(z.string(),z.string()).optional(),
   protocol_version: z.string().default('1'),
   flow_policy: z.string().default('claude_then_codex'),
   role_mode: z.string().default('claude_implements'),
@@ -183,6 +185,7 @@ export const taskSettingsSchema = z.object({
 })
 
 export const globalSettingsSchema = z.object({
+  agent_management: z.record(z.string(), z.object({ contract: z.boolean().optional(), enabled: z.boolean().optional(), protocol: z.enum(['cli','acp']).optional(), cli: launcherSchema.optional(), acp: launcherSchema.optional() })).optional(),
   protocol_version: z.string().default('1'),
   countdown_seconds: z.number().default(30),
   max_rounds: z.number().default(9999),
@@ -231,8 +234,8 @@ export function parseEventLine(line: string) {
   return eventSchema.parse(JSON.parse(line))
 }
 
-/** Resource-library preferences; optional fields preserve version-1 libraries. */
-export const extensionLibraryPreferencesSchema = z.object({
-  skillDefaultMode: z.enum(['link', 'copy']).optional(),
-  skillAgentModes: z.record(z.string(), z.enum(['link', 'copy'])).optional()
+export const agentUpdateJobsSchema=z.array(z.object({id:z.string(),agentId:z.string(),status:z.enum(['queued','updating','verifying','success','failed','skipped','cancelled','interrupted']),before:z.string().optional(),after:z.string().optional(),error:z.string().optional()}))
+
+export const kimiProviderModelListSchema = z.object({
+  models: z.record(z.string(), z.object({ display_name: z.string().optional() }))
 })

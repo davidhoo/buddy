@@ -123,7 +123,7 @@ export function eventTypeLabel(type: string, lang: Language): string {
   return key ? translate(lang, key) : type
 }
 
-export type Actor = 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'dsh' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode'
+export type Actor = string
 
 export function taskActors(settings: TaskSettings | null | undefined): {
   impl: Actor

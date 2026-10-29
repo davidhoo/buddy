@@ -4,6 +4,9 @@ directories:
   output: release
 files:
   - out/**/*
+extraResources:
+  - from: src/renderer/assets/agent-icons/LICENSE.magpie
+    to: licenses/magpie-icons-LICENSE.txt
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns

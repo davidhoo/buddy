@@ -18,14 +18,7 @@ import type {
   TaskSettings,
   TaskEventEnvelope,
   TaskStats,
-  TestLauncherResult,
-  ExtensionActionRequest,
-  ExtensionActionResult,
-  ExtensionLibraryDir,
-  ExtensionPage,
-  ExtensionQuery,
-  LibrarySnapshot,
-  ResolvedTarget
+  TestLauncherResult
 } from '../shared/types'
 
 type Listener = (event: unknown, payload: TaskEventEnvelope) => void
@@ -38,6 +31,15 @@ interface IpcLike {
 
 export function createBuddyPreloadApi(ipc: IpcLike) {
   return {
+    listCliModels: (id:string) => ipc.invoke('buddy:listCliModels',id) as Promise<AcpModelList>,
+    listLocalAgents: (force=false) => ipc.invoke('buddy:listLocalAgents',force) as Promise<import('../shared/agents').LocalAgent[]>,
+    configureAgent: (id:string,config:import('../shared/agents').AgentConfiguration) => ipc.invoke('buddy:configureAgent',id,config) as Promise<void>,
+    probeLocalAgent: (id:string) => ipc.invoke('buddy:probeLocalAgent',id) as Promise<import('../shared/agents').LocalAgent>,
+    checkAgentUpdates: (force=false) => ipc.invoke('buddy:checkAgentUpdates',force) as Promise<import('../shared/agents').LocalAgent[]>,
+    updateLocalAgents: (ids:string[]) => ipc.invoke('buddy:updateLocalAgents',ids) as Promise<import('../shared/agents').AgentUpdateJob[]>,
+    getAgentUpdateJobs: () => ipc.invoke('buddy:getAgentUpdateJobs') as Promise<import('../shared/agents').AgentUpdateJob[]>,
+    cancelAgentUpdates: () => ipc.invoke('buddy:cancelAgentUpdates') as Promise<void>,
+
     checkHealth: (): Promise<boolean> =>
       ipc.invoke('buddy:checkHealth') as Promise<boolean>,
     bootstrap: (): Promise<BootstrapResponse> =>
@@ -127,16 +129,6 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:updateTaskLauncherModel', taskId, workspaceKey, actor, model) as Promise<TaskSettings>,
     checkAcpGlobalAdapters: (): Promise<GlobalAcpAdaptersStatus> =>
       ipc.invoke('buddy:checkAcpGlobalAdapters') as Promise<GlobalAcpAdaptersStatus>,
-    listExtensionTargets: (query?: ExtensionQuery): Promise<ResolvedTarget[]> =>
-      ipc.invoke('buddy:extensions:listTargets', query) as Promise<ResolvedTarget[]>,
-    discoverExtensions: (query: ExtensionQuery): Promise<ExtensionPage> =>
-      ipc.invoke('buddy:extensions:discover', query) as Promise<ExtensionPage>,
-    readExtensionLibrary: (): Promise<LibrarySnapshot> =>
-      ipc.invoke('buddy:extensions:readLibrary') as Promise<LibrarySnapshot>,
-    ensureExtensionLibraryDir: (): Promise<ExtensionLibraryDir> =>
-      ipc.invoke('buddy:extensions:ensureLibraryDir') as Promise<ExtensionLibraryDir>,
-    planExtensionAction: (action: ExtensionActionRequest | string): Promise<ExtensionActionResult> =>
-      ipc.invoke('buddy:extensions:planAction', action) as Promise<ExtensionActionResult>,
     onTaskEvent: (callback: (payload: TaskEventEnvelope) => void): (() => void) => {
       const listener: Listener = (_event, payload) => callback(payload)
       ipc.on('buddy:event', listener)

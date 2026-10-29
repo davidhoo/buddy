@@ -44,11 +44,6 @@ describe('registerBuddyHandlers', () => {
       updateTaskText: vi.fn(),
       updateTaskLauncherModel: vi.fn(),
       checkAcpGlobalAdapters: vi.fn(),
-      listExtensionTargets: vi.fn(),
-      discoverExtensions: vi.fn(),
-      readExtensionLibrary: vi.fn(),
-      ensureExtensionLibraryDir: vi.fn(),
-      planExtensionAction: vi.fn(),
       onTaskEvent: vi.fn()
     }
 
@@ -68,9 +63,6 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:listAcpModels', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:updateTaskLauncherModel', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:checkAcpGlobalAdapters', expect.any(Function))
-    expect(handle).toHaveBeenCalledWith('buddy:extensions:listTargets', expect.any(Function))
-    expect(handle).toHaveBeenCalledWith('buddy:extensions:discover', expect.any(Function))
-    expect(handle).toHaveBeenCalledWith('buddy:extensions:planAction', expect.any(Function))
     const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
     cancelHandler({}, 'task', 'workspace')
     expect(service.cancelTask).toHaveBeenCalledWith('task', 'workspace')
@@ -87,6 +79,6 @@ describe('registerBuddyHandlers', () => {
     updateModelHandler({}, 'task', 'workspace', 'claude', 'opus-4.6')
     expect(service.updateTaskLauncherModel).toHaveBeenCalledWith('task', 'workspace', 'claude', 'opus-4.6')
 
-    expect(handle).toHaveBeenCalledTimes(44)
+    expect(handle).toHaveBeenCalledTimes(47)
   })
 })

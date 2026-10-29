@@ -92,6 +92,7 @@ export function extractAcpSessionModels(session: unknown): ExtractedAcpModels {
     const choices = Array.isArray(option.options) ? option.options : []
     const models = uniqueModels(
       choices.flatMap((item) => {
+        if(item && typeof item==='object' && Array.isArray((item as Record<string,unknown>).options)) return ((item as Record<string,unknown>).options as unknown[]).flatMap(choice=>{const id=optionId(choice);return id?[{id,name:optionName(choice,id)}]:[]})
         const id = optionId(item)
         if (!id) return []
         return [{ id, name: optionName(item, id) }]
@@ -175,7 +176,7 @@ export async function probeAcpModels(options: ProbeAcpModelsOptions): Promise<Ac
   try {
     transport.start()
     client = new AcpClient(transport, { timeoutMs: options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS })
-    await client.initialize()
+    await client.initialize({clientCapabilities:{},capabilities:{}})
     const created = await client.newSession({ cwd }) as AcpNewSessionResult
     const extracted = extractAcpSessionModels(created)
     await client.close().catch(() => {})
