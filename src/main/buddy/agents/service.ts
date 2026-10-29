@@ -3,15 +3,16 @@ import { kimiAcpArgsFromHelp, nativeUpdateCommandFromHelp } from './capabilities
 import { agentLaunchChanged, applyAgentConfiguration } from '../../../shared/agents'
 import { defaultLauncherFor, globalLauncherTimeout } from '../../../shared/defaults'
 import { isNewerStableVersion as newer } from '../../../shared/agents'
-import { agentUpdateJobsSchema } from '../schemas'
-import { acquireAgentUpdate } from './locks'
+import { agentInventoryCacheSchema } from '../schemas'
+import { AgentUpdateQueue, runUpdateCommand } from './updates'
+import { atomicWriteJson } from '../store'
 import { execFile } from 'node:child_process'
-import { access, readFile, realpath, mkdir, writeFile, rename } from 'node:fs/promises'
+import { access, readFile, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname, basename } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
-import { AGENT_RECIPES, type LocalAgent, type AgentConfiguration, type AgentUpdateJob } from '../../../shared/agents'
+import { createHash } from 'node:crypto'
+import { AGENT_RECIPES, type LocalAgent, type AgentConfiguration, type AgentUpdateJob, type AgentInventorySnapshot } from '../../../shared/agents'
 import { splitCommand } from '../launchers'
 import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment } from '../acp'
 import { commandKindFor } from '../launchers'
@@ -40,30 +41,102 @@ export class AgentManagementService {
   private configurationRevision = 0
   private readonly configurationOverrides = new Map<string, { revision: number; config: AgentConfiguration }>()
   private scanPending?: Promise<LocalAgent[]>
-  private jobs: AgentUpdateJob[] = []
-  private updating = false
-  private cancelled = false
+  readonly updates: AgentUpdateQueue
+  private cacheLoaded?: Promise<void>
+  private cacheWrites: Promise<void> = Promise.resolve()
+  private inventoryRevision = 0
+  private refreshError?: string
+  private checking?: Promise<LocalAgent[]>
+  private inventoryListeners = new Set<(snapshot: AgentInventorySnapshot) => void>()
   private configQueue:Promise<unknown>=Promise.resolve()
-  constructor(private store: BuddyStore, private options:{recipes?:typeof AGENT_RECIPES;dirs?:string[];appRoots?:string[];run?:typeof runFile}={}) {}
-  private run(command:string,args:string[],timeout?:number,env?:Record<string,string>){return (this.options.run || runFile)(command,args,timeout,env)}
-  private async persistJobs(): Promise<void> {
-    const path=join(this.store.dataRoot,'global','agent-update-jobs.json')
-    await mkdir(dirname(path),{recursive:true}); await writeFile(path+'.tmp',JSON.stringify(this.jobs)); await rename(path+'.tmp',path)
+  constructor(private store: BuddyStore, private options:{recipes?:typeof AGENT_RECIPES;dirs?:string[];appRoots?:string[];run?:typeof runFile}={}) {
+    this.updates = new AgentUpdateQueue({
+      dataRoot: store.dataRoot,
+      targets: async () => (await this.getInventory()).agents,
+      prepare: async ids => { await this.refresh(new Set(ids)); return this.checkUpdates(false,new Set(ids)) },
+      execute: (agent, onProcess) => this.executeUpdate(agent, onProcess),
+      verify: async agent => {
+        const related = new Set(this.inventory.filter(a => a.path === agent.path).map(a => a.id))
+        related.add(agent.id)
+        await this.refresh(related)
+        for(const a of this.inventory)if(related.has(a.id)){a.checkedAt=undefined;a.updateError=undefined}
+        await this.persistInventory();this.publish()
+        return this.inventory.find(a => a.id === agent.id)
+      }
+    })
   }
+  private run(command:string,args:string[],timeout?:number,env?:Record<string,string>){return (this.options.run || runFile)(command,args,timeout,env)}
+  subscribe(listener: (snapshot: AgentInventorySnapshot) => void) { this.inventoryListeners.add(listener); return () => {this.inventoryListeners.delete(listener)} }
+  private snapshot(): AgentInventorySnapshot {
+    return {revision:this.inventoryRevision,agents:this.inventory,scannedAt:this.scannedAt?new Date(this.scannedAt).toISOString():undefined,refreshing:!!this.scanPending || !!this.checking,error:this.refreshError}
+  }
+  private publish() { this.inventoryRevision++; for(const listener of this.inventoryListeners)try{listener(this.snapshot())}catch{} }
+  private async configurationHash() {
+    const settings = await this.store.readGlobalSettings()
+    return createHash('sha256').update(JSON.stringify([settings.launchers,settings.agent_management])).digest('hex')
+  }
+  private loadCache() {
+    return this.cacheLoaded ??= (async () => {
+      try {
+        const cached = agentInventoryCacheSchema.parse(JSON.parse(await readFile(join(this.store.dataRoot,'global','agent-inventory-cache.json'),'utf8')))
+        const settings = await this.store.readGlobalSettings()
+        const matches = cached.configurationHash === await this.configurationHash()
+        this.inventory = await Promise.all(cached.agents.map(async metadata => {
+          const recipe = (this.options.recipes || AGENT_RECIPES).find(r=>r.id===metadata.id)
+          const config = settings.agent_management?.[metadata.id]
+          const selected = config?.protocol || settings.launchers?.[metadata.id]?.protocol || 'cli'
+          const saved = settings.launchers?.[metadata.id]
+          const fallback = {args:[] as string[],env:{},timeout_seconds:globalLauncherTimeout(settings)}
+          const automaticCli = metadata.path ? {...fallback,command:metadata.path,args:splitCommand(recipe?.command || '').slice(1),protocol:'cli' as const} : undefined
+          const adapter = recipe?.adapter ? await find(recipe.adapter,this.options.dirs) : undefined
+          const savedCli=config?.cli || (saved?.protocol!=='acp'?saved:undefined)
+          const cli=savedCli?{...savedCli,command:matches&&metadata.path?metadata.path:splitCommand(savedCli.command)[0],args:[...splitCommand(savedCli.command).slice(1),...(savedCli.args || [])],timeout_seconds:globalLauncherTimeout(settings)}:automaticCli
+          const automaticAcp = adapter ? {...fallback,command:adapter,protocol:'acp' as const} : metadata.nativeAcpArgs && metadata.path ? {...fallback,command:metadata.path,args:[...(metadata.id==='kimi'?cli?.args || []:[]),...metadata.nativeAcpArgs],env:metadata.id==='kimi'?cli?.env || {}:{},protocol:'acp' as const} : undefined
+          const acpCandidate = config?.acp || (saved?.protocol==='acp'?saved:automaticAcp)
+          const acp=acpCandidate?{...acpCandidate,args:acpCandidate.args?.length?acpCandidate.args:defaultAcpArgs(acpCandidate.command,metadata.id),timeout_seconds:globalLauncherTimeout(settings)}:undefined
+          const {nativeAcpArgs: _args, ...rest} = metadata
+          return {...rest,cli,acp,automaticCli,automaticAcp,enabled:config?.enabled!==false,selectedProtocol:selected,acpStatus:matches?rest.acpStatus:acp?'unverified' as const:'missing' as const}
+        }))
+        this.scannedAt = matches && cached.scannedAt ? Date.parse(cached.scannedAt) || 0 : 0
+      } catch { /* A missing, legacy or invalid cache triggers discovery at startup, never an empty overwrite. */ }
+    })()
+  }
+  async getInventory(): Promise<AgentInventorySnapshot> {await this.loadCache();return this.snapshot()}
+  async initialize() {
+    await this.loadCache()
+    await this.updates.getState()
+  }
+  hasDirtyTargets() {return !!this.inventory.length && !!this.dirtyAgents.size}
+  needsStartupRefresh() {return !this.scannedAt || Date.now()-this.scannedAt>10*60*1000}
   async list(force=false): Promise<LocalAgent[]> {
-    if (this.scanPending) {
-      await this.scanPending
-      return force || this.dirtyAgents.size ? this.list(force) : this.inventory
-    }
-    const targets = !force && this.inventory.length && this.dirtyAgents.size ? new Set(this.dirtyAgents) : undefined
-    if (!force && !targets && this.inventory.length && Date.now()-this.scannedAt<60000) return this.inventory
-    if (targets) for (const id of targets) this.dirtyAgents.delete(id)
+    await this.loadCache()
+    if(this.scanPending)await this.scanPending
+    if(force || !this.inventory.length || this.dirtyAgents.size) return this.refresh(force || !this.inventory.length ? undefined : new Set(this.dirtyAgents))
+    return this.inventory
+  }
+  async refresh(targets?: ReadonlySet<string>): Promise<LocalAgent[]> {
+    await this.loadCache()
+    if(this.scanPending)return this.scanPending
+    this.refreshError=undefined
+    if(targets)for(const id of targets)this.dirtyAgents.delete(id)
     else this.dirtyAgents.clear()
-    this.scanPending = this.scan(targets).catch(error => {
-      if (targets) for (const id of targets) this.dirtyAgents.add(id)
+    this.scanPending=this.scan(targets).catch(error=>{
+      this.refreshError=redactSensitiveText(String(error));if(targets)for(const id of targets)this.dirtyAgents.add(id)
       throw error
-    }).finally(() => { this.scanPending=undefined })
+    }).finally(()=>{this.scanPending=undefined;this.publish()})
+    this.publish()
     return this.scanPending
+  }
+  private async persistInventory() {
+    const configurationHash=this.dirtyAgents.size?'':await this.configurationHash()
+    const agents=this.inventory.map(({cli,acp,automaticCli,automaticAcp,...metadata})=>({
+      ...metadata,
+      nativeAcpArgs:automaticAcp?.command===metadata.path && automaticAcp.args?.every(arg=>['acp','--acp','--experimental-acp','opencode'].includes(arg)) ? automaticAcp.args : metadata.id==='kimi' && ['acp','--acp'].includes(automaticAcp?.args?.at(-1) || '') ? automaticAcp?.args?.slice(-1) : undefined
+    }))
+    const data={schemaVersion:2,scannedAt:this.scannedAt?new Date(this.scannedAt).toISOString():undefined,configurationHash,agents}
+    const pending=this.cacheWrites.catch(()=>{}).then(()=>atomicWriteJson(join(this.store.dataRoot,'global','agent-inventory-cache.json'),data))
+    this.cacheWrites=pending
+    await pending
   }
   private async scan(targets?: ReadonlySet<string>): Promise<LocalAgent[]> {
     const startingRevision = this.configurationRevision
@@ -154,17 +227,19 @@ export class AgentManagementService {
     }))
     for(let offset=0;offset<out.length;offset+=4) await Promise.all(out.slice(offset,offset+4).filter(a=>a.acp&&!/\bnpx\b/.test(a.acp.command)).map(a=>this.probeTarget(a).catch(error=>{a.acpStatus='failed';a.acpError=redactSensitiveText(String(error));return a})))
     if (!targets) this.scannedAt=Date.now()
+    const previousInventory = this.inventory
     const discovered = targets ? [...this.inventory.filter(a=>!targets.has(a.id)), ...out] : out
     // A background scan may have started before a configuration save finished.
     this.inventory = discovered.map(agent => {
       const override = this.configurationOverrides.get(agent.id)
       return override && override.revision > startingRevision ? applyAgentConfiguration(agent, override.config) : agent
     }).sort((a,b)=>a.name.localeCompare(b.name))
-    const path=join(this.store.dataRoot,'global','agent-inventory-cache.json')
-    await mkdir(dirname(path),{recursive:true})
-    const metadata=this.inventory.map(({cli,acp,automaticCli,automaticAcp,...metadata})=>metadata)
-    await writeFile(path+'.tmp',JSON.stringify({schemaVersion:1,scannedAt:new Date().toISOString(),agents:metadata}),{mode:0o600})
-    await rename(path+'.tmp',path)
+    // Preserve update-channel metadata when only runtime discovery changed.
+    for (const agent of this.inventory) {
+      const cached = previousInventory.find(a=>a.id===agent.id && a.installationId===agent.installationId && a.source===agent.source && a.package===agent.package && a.prefix===agent.prefix)
+      if(cached) {agent.latest=cached.latest;agent.checkedAt=cached.checkedAt;agent.updateError=cached.updateError}
+    }
+    await this.persistInventory()
     return this.inventory
   }
   configure(id:string,config:AgentConfiguration):Promise<void> {
@@ -189,7 +264,9 @@ export class AgentManagementService {
     await this.store.updateGlobalSettings({...settings,agent_management:{...settings.agent_management,[id]:next},launchers:{...settings.launchers,[id]:{...launcher,protocol,timeout_seconds:timeout}}})
     this.configurationOverrides.set(id, { revision: ++this.configurationRevision, config: next })
     if (!agent || agentLaunchChanged(agent, config)) this.dirtyAgents.add(id)
-    this.inventory = this.inventory.map(a => a.id === id ? applyAgentConfiguration(a, next) : a)
+    this.inventory = this.inventory.map(a => a.id === id ? {...applyAgentConfiguration(a, next),...(this.dirtyAgents.has(id)?{acpStatus:next.acp || a.acp?'unverified' as const:'missing' as const}:{})} : a)
+    this.publish()
+    if (this.inventory.length) await this.persistInventory()
   }
   async probe(id:string): Promise<LocalAgent> {
     const a=(await this.list()).find(a=>a.id===id); if(!a?.acp) throw new Error('ACP entry unavailable')
@@ -236,8 +313,15 @@ export class AgentManagementService {
     }
     return {models:[]}
   }
-  async checkUpdates(force=false): Promise<LocalAgent[]> {
-    const agents=await this.list()
+  async checkUpdates(force=false,targets?:ReadonlySet<string>): Promise<LocalAgent[]> {
+    if(this.checking)return this.checking
+    this.checking=this.checkUpdatesInner(force,targets).catch(error=>{this.refreshError=redactSensitiveText(String(error));throw error}).finally(()=>{this.checking=undefined;this.publish()})
+    this.publish()
+    return this.checking
+  }
+  private async checkUpdatesInner(force=false,targets?:ReadonlySet<string>): Promise<LocalAgent[]> {
+    await this.loadCache()
+    const agents=this.inventory.filter(a=>!targets || targets.has(a.id))
     for(let offset=0;offset<agents.length;offset+=4) await Promise.all(agents.slice(offset,offset+4).map(async a=>{
       if(!force && a.checkedAt && Date.now()-Date.parse(a.checkedAt)<6*3600000 && !a.updateError)return
       a.checkedAt=new Date().toISOString(); a.updateError=undefined;a.latest=undefined
@@ -256,49 +340,36 @@ export class AgentManagementService {
         else if (!a.nativeUpdate) a.updateError='Installation source does not expose a verified updater'
       } catch(e) {a.updateError=String(e)}
     }))
+    this.inventory=this.inventory.map(current=>{
+      const checked=agents.find(a=>a.id===current.id && a.installationId===current.installationId && a.source===current.source && a.package===current.package && a.prefix===current.prefix)
+      return checked?{...current,latest:checked.latest,checkedAt:checked.checkedAt,updateError:checked.updateError}:current
+    })
+    await this.persistInventory()
     return this.inventory
   }
   async getJobs():Promise<AgentUpdateJob[]> {
-    if(!this.jobs.length) try {this.jobs=agentUpdateJobsSchema.parse(JSON.parse(await readFile(join(this.store.dataRoot,'global','agent-update-jobs.json'),'utf8'))); for(const j of this.jobs) if(['queued','updating','verifying'].includes(j.status))j.status='interrupted'} catch { /* first run */ }
-    return this.jobs
+    const state=await this.updates.getState()
+    return (state.activeBatch || state.lastCompletedBatch)?.items.map(item=>({
+      ...item,status: item.status==='updated'||item.status==='up_to_date'?'success':item.status==='installing'?'updating':item.status==='preparing'?'queued':item.status
+    })) || []
   }
-  cancel():void { this.cancelled=true }
+  cancel() {return this.updates.cancel()}
   async update(ids:string[]):Promise<AgentUpdateJob[]> {
-    if(this.updating) throw new Error('An update queue is already running')
-    this.updating=true; this.cancelled=false
-    const agents=await this.list();const seen=new Set<string>()
-    this.jobs=ids.map(id=>({id:randomUUID(),agentId:id,status:'queued'}))
-    try {
-      for(const job of this.jobs) {
-        const a=agents.find(a=>a.id===job.agentId)
-        let release:(()=>void)|undefined
-        try {
-          if(this.cancelled) {job.status='cancelled';continue}
-          if(!a || (!a.nativeUpdate && (!a.manager || !a.package || !a.latest || !a.version || !newer(a.latest,a.version)))) {job.status='skipped';job.error=!a?.manager?'Verified updater unavailable':undefined;continue}
-          const key=a.nativeUpdate?JSON.stringify([await realpath(a.nativeUpdate.command),a.nativeUpdate.args]):a.source+':'+a.prefix+':'+a.package
-          if(seen.has(key)) {job.status='skipped';continue} seen.add(key)
-          release=acquireAgentUpdate()
-          if(!release) {job.status='skipped';job.error='Agent tasks are running';continue}
-          const tasks=await this.store.getTasks()
-          if(tasks.some(t=>t.active_run)) {job.status='skipped';job.error='Agent tasks are running';continue}
-          job.before=a.nativeUpdate?.version || a.version;job.status='updating';await this.persistJobs()
-          const args=a.nativeUpdate?.args || (a.source==='brew'?['upgrade',...(a.realPath.includes('/Caskroom/')?['--cask']:[]),a.package!]
-            :a.source==='self'?['update']
-            :a.source==='uv'?['tool','upgrade',a.package!]
-            :a.source==='pipx'?['upgrade',a.package!]
-            :a.source==='pnpm'?['add','-g',a.package+'@'+a.latest]
-            :a.source==='bun'?['add','-g',a.package+'@'+a.latest]
-            :['install','-g','--prefix',a.prefix!,a.package+'@'+a.latest])
-          await this.run(a.nativeUpdate?.command || a.manager!,args,600000,a.nativeUpdate?a.cli?.env:undefined)
-          job.status='verifying';await this.persistJobs()
-          const refreshed=(await this.list(true)).find(x=>x.id===a.id)
-          job.after=a.nativeUpdate?refreshed?.nativeUpdate?.version:refreshed?.version
-          if(!refreshed?.runnable || !job.after || (a.nativeUpdate ? !!job.before && newer(job.before,job.after) : refreshed.version!==a.latest)) throw new Error('Updated installation failed version/runtime verification')
-          job.status='success'
-        }catch(e){job.status='failed';job.error=redactSensitiveText(String(e))}
-        finally{release?.();await this.persistJobs()}
-      }
-    }finally{this.updating=false}
-    return this.jobs
+    await this.updates.start(ids,createHash('sha256').update(String(Date.now())+Math.random()).digest('hex'))
+    await this.updates.waitForIdle()
+    return this.getJobs()
+  }
+  private async executeUpdate(a:LocalAgent,onProcess: Parameters<typeof runUpdateCommand>[3]) {
+    if(!a.nativeUpdate && (!a.latest || !a.version || !newer(a.latest,a.version)))throw new Error('No newer stable version available')
+    const args=a.nativeUpdate?.args || (a.source==='brew'?['upgrade',...(a.realPath.includes('/Caskroom/')?['--cask']:[]),a.package!]
+      :a.source==='self'?['update']
+      :a.source==='uv'?['tool','upgrade',a.package!]
+      :a.source==='pipx'?['upgrade',a.package!]
+      :a.source==='pnpm'?['add','-g',a.package+'@'+a.latest]
+      :a.source==='bun'?['add','-g',a.package+'@'+a.latest]
+      :['install','-g','--prefix',a.prefix!,a.package+'@'+a.latest])
+    const command=a.nativeUpdate?.command || a.manager!
+    if(this.options.run) await this.run(command,args,600000,a.nativeUpdate?a.cli?.env:undefined)
+    else await runUpdateCommand(command,args,a.nativeUpdate?a.cli?.env:undefined,onProcess)
   }
 }

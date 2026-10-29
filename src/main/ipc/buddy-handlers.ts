@@ -16,6 +16,10 @@ import type {
 } from '../../shared/types'
 
 export interface BuddyHandlerService {
+  getAgentInventory?():Promise<import('../../shared/agents').AgentInventorySnapshot>
+  refreshLocalAgents?(mode?:'all'|'scan'|'updates'):Promise<import('../../shared/agents').AgentInventorySnapshot>
+  getAgentUpdateState?():Promise<import('../../shared/agents').AgentUpdateSnapshot>
+  startAgentUpdates?(ids:string[],requestId:string):Promise<import('../../shared/agents').AgentUpdateSnapshot>
   listCliModels?(id:string):Promise<AcpModelList>
   listLocalAgents?(force?:boolean):Promise<import('../../shared/agents').LocalAgent[]>
   configureAgent?(id:string,config:import('../../shared/agents').AgentConfiguration):Promise<void>
@@ -23,7 +27,7 @@ export interface BuddyHandlerService {
   checkAgentUpdates?(force?:boolean):Promise<import('../../shared/agents').LocalAgent[]>
   updateLocalAgents?(ids:string[]):Promise<import('../../shared/agents').AgentUpdateJob[]>
   getAgentUpdateJobs?():Promise<import('../../shared/agents').AgentUpdateJob[]>
-  cancelAgentUpdates?():void
+  cancelAgentUpdates?():Promise<void>
 
   checkHealth(): Promise<boolean>
   bootstrap(): Promise<unknown>
@@ -69,7 +73,7 @@ export interface BuddyHandlerService {
 type IpcHandle = Pick<IpcMain, 'handle'>
 
 export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerService): void {
-  for (const method of ['listCliModels','listLocalAgents','configureAgent','probeLocalAgent','checkAgentUpdates','updateLocalAgents','getAgentUpdateJobs','cancelAgentUpdates'] as const) {
+  for (const method of ['getAgentInventory','refreshLocalAgents','getAgentUpdateState','startAgentUpdates','listCliModels','listLocalAgents','configureAgent','probeLocalAgent','checkAgentUpdates','updateLocalAgents','getAgentUpdateJobs','cancelAgentUpdates'] as const) {
     ipcMain.handle('buddy:'+method, (_event, ...args: unknown[]) => {
       const fn = service[method] as ((...input: unknown[])=>unknown) | undefined
       if(!fn) throw new Error('Agent service unavailable')

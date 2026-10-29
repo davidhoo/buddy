@@ -13,7 +13,7 @@ interface TitleBarProps {
   isFullScreen: boolean
   showToggles?: boolean
   bare?: boolean
-  settingsPage?: string
+  agentStatus?: React.ReactNode
   onToggleSidebar: () => void
   onToggleStatusBar: () => void
   onRetry?: () => void
@@ -52,7 +52,7 @@ export function TitleBar({
   isFullScreen,
   showToggles = true,
   bare = false,
-  settingsPage,
+  agentStatus,
   onToggleSidebar,
   onToggleStatusBar,
   onRetry,
@@ -63,7 +63,7 @@ export function TitleBar({
   const t = useT()
   const compact = !isStatusBarOpen ? compactStatusInfo(taskStatus) : null
   return (
-    <div className={`h-[50px] flex items-center px-4 ${settingsPage ? 'bg-bg' : 'bg-bg-elevated'} drag-region ${bare ? '' : 'border-b border-border'}`}>
+    <div className={`h-[50px] flex items-center px-4 bg-bg-elevated drag-region ${bare ? '' : 'border-b border-border'}`}>
       {/* 红绿灯占位 + 展开按钮（仅在侧边栏关闭时显示，否则它们在侧边栏顶部） */}
       {!isSidebarOpen && (
         <>
@@ -82,9 +82,10 @@ export function TitleBar({
 
       {/* 任务名（左对齐） */}
       <div className="flex-1 text-sm font-medium truncate px-4">
-        {bare ? (settingsPage ? <h1 aria-label={settingsPage} className="flex items-center gap-2 text-sm"><span className="font-normal text-fg-muted">{t('sidebar.settings')}</span><span className="font-normal text-fg-muted">/</span><span>{settingsPage}</span></h1> : '') : (taskName || t('app.brand'))}
+        {bare ? '' : (taskName || t('app.brand'))}
       </div>
 
+      {agentStatus}
       {/* 紧凑状态指示（仅在右侧栏隐藏时显示） */}
       {showToggles && compact && (
         <CompactStatus

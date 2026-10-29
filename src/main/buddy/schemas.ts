@@ -239,3 +239,31 @@ export const agentUpdateJobsSchema=z.array(z.object({id:z.string(),agentId:z.str
 export const kimiProviderModelListSchema = z.object({
   models: z.record(z.string(), z.object({ display_name: z.string().optional() }))
 })
+
+export const agentUpdateItemSchema = z.object({
+  id: z.string(), agentId: z.string(), name: z.string(), installationId: z.string().optional(), targetKey: z.string().optional(),
+  target:z.enum(['agent','wecode']).optional(),source:z.enum(['npm','pnpm','bun','brew','uv','pipx','self','unknown']).optional(),
+  status: z.enum(['queued','preparing','installing','verifying','updated','up_to_date','failed','skipped','cancelled','interrupted']),
+  before: z.string().optional(), after: z.string().optional(), startedAt: z.string().optional(), finishedAt: z.string().optional(), error: z.string().optional(),
+  process: z.object({pid:z.number().int().positive(),started:z.string(),command:z.string()}).optional()
+})
+export const agentUpdateBatchSchema = z.object({
+  id:z.string(),requestId:z.string(),createdAt:z.string().optional(),finishedAt:z.string().optional(),
+  status:z.enum(['queued','preparing','waiting','running','cancelling','completed','interrupted']),cancelRequested:z.boolean(),
+  items:z.array(agentUpdateItemSchema),error:z.string().optional()
+})
+export const agentUpdateSnapshotSchema = z.object({schemaVersion:z.literal(2),revision:z.number(),activeBatch:agentUpdateBatchSchema.optional(),lastCompletedBatch:agentUpdateBatchSchema.optional()})
+export const agentInventoryCacheSchema = z.object({
+  schemaVersion:z.literal(2),scannedAt:z.string().optional(),configurationHash:z.string(),
+  agents:z.array(z.object({
+    id:z.string(),name:z.string(),installationId:z.string(),path:z.string(),realPath:z.string(),
+    version:z.string().optional(),appVersion:z.string().optional(),source:z.enum(['npm','pnpm','bun','brew','uv','pipx','self','unknown']),
+    prefix:z.string().optional(),manager:z.string().optional(),package:z.string().optional(),runnable:z.boolean(),enabled:z.boolean(),
+    selectedProtocol:z.enum(['cli','acp']).optional(),modelFlag:z.string().optional(),error:z.string().optional(),acpError:z.string().optional(),
+    acpStatus:z.enum(['verified','unverified','missing','incompatible','failed']).optional(),
+    installations:z.array(z.object({id:z.string(),path:z.string(),realPath:z.string(),version:z.string().optional()})).optional(),
+    latest:z.string().optional(),checkedAt:z.string().optional(),updateError:z.string().optional(),
+    nativeUpdate:z.object({command:z.string(),args:z.array(z.string()),versionArgs:z.array(z.string()),version:z.string(),target:z.enum(['agent','wecode'])}).optional(),
+    nativeAcpArgs:z.array(z.enum(['acp','--acp','--experimental-acp','opencode'])).optional()
+  }))
+})

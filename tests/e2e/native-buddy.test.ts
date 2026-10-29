@@ -294,7 +294,101 @@ test('native update capability has an action without claiming a known newer vers
   await page.getByRole('button', { name: '设置', exact: true }).click()
   await page.getByRole('button', { name: 'Agent', exact: true }).click()
   const row = page.locator('[data-agent-id="wecode_claude"]')
+  await page.getByRole('button', { name: '重新扫描', exact:true }).click()
   await expect(row.getByRole('button', { name: 'WeCode Claude 更新 WeCode', exact: true })).toBeVisible()
   await expect(row.getByRole('button', { name: 'WeCode Claude 高级', exact: true })).toBeVisible()
   await expect(page.getByRole('status').first()).toContainText('3 个 Agent 有新版本')
+})
+
+test('cached inventory and global updates survive navigation, reload, cancellation and retries', async ({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
+  await page.addInitScript(()=>{
+    const listeners=new Set<(s:unknown)=>void>(),inventoryListeners=new Set<(s:unknown)=>void>()
+    let revision=1,scans=0,checks=0,starts=0
+    let state=JSON.parse(sessionStorage.getItem('test.agent-updates') || '{"schemaVersion":2,"revision":1}')
+    if(!state.lastCompletedBatch)state.lastCompletedBatch={id:'previous',requestId:'previous',status:'completed',cancelRequested:false,finishedAt:'2026-10-28T10:00:00Z',items:[{id:'old-claude',agentId:'claude',name:'Claude Code',status:'updated',before:'2.1.150',after:'2.1.159'}]}
+    const inventory=async()=>({revision,agents:await window.buddy.listLocalAgents(),scannedAt:'2026-10-29T06:00:00Z',refreshing:false})
+    const publish=()=>{state.revision++;sessionStorage.setItem('test.agent-updates',JSON.stringify(state));for(const listener of listeners)listener(structuredClone(state))}
+    Object.assign(window.buddy,{
+      getAgentInventory:inventory,
+      onAgentInventory:(cb:(s:unknown)=>void)=>{inventoryListeners.add(cb);return()=>inventoryListeners.delete(cb)},
+      getAgentUpdateState:async()=>structuredClone(state),
+      onAgentUpdate:(cb:(s:unknown)=>void)=>{listeners.add(cb);return()=>listeners.delete(cb)},
+      onOpenAgentUpdates:()=>()=>{},
+      refreshLocalAgents:async(mode:string)=>{if(mode!=='updates')scans++;if(mode!=='scan')checks++;revision++;const s=await inventory();for(const cb of inventoryListeners)cb(s);return s},
+      startAgentUpdates:async(ids:string[],requestId:string)=>{
+        if(state.activeBatch)return structuredClone(state)
+        starts++;state.activeBatch={id:requestId,requestId,status:'running',cancelRequested:false,createdAt:new Date().toISOString(),items:ids.map((id,i)=>({id:'item-'+id,agentId:id,name:id==='claude'?'Claude Code':id==='codex'?'Codex':id,status:i===0?'installing':'queued',before:'1.0.0'}))}
+        publish();return structuredClone(state)
+      },
+      cancelAgentUpdates:async()=>{state.activeBatch.cancelRequested=true;state.activeBatch.status='cancelling';publish()}
+    })
+    Object.assign(window,{agentUpdateTest:{counts:()=>({scans,checks,starts}),finish:(failed=false)=>{
+      const batch=state.activeBatch
+      batch.items=batch.items.map((item:Record<string,unknown>,i:number)=>({...item,status:i===0?(failed?'failed':'updated'):batch.cancelRequested?'cancelled':'updated',after:i===0&&!failed?'2.0.0':undefined,error:i===0&&failed?'Fixture verification failed':undefined}))
+      batch.status='completed';batch.finishedAt=new Date().toISOString();state.lastCompletedBatch=batch;delete state.activeBatch;publish()
+    },staleInventory:async()=>{const s=await inventory();for(const cb of inventoryListeners)cb({...s,revision:0,agents:[]})}}})
+  })
+  await page.setViewportSize({width:1200,height:1000})
+  await page.goto('/')
+  await page.getByRole('button',{name:'设置',exact:true}).click()
+  await page.getByRole('button',{name:'Agent',exact:true}).click()
+  await expect(page.locator('[data-agent-id="claude"]')).toBeVisible()
+  await expect(page.getByRole('region',{name:'最后更新记录'})).toContainText('2026')
+  await page.clock.install()
+  await page.clock.fastForward(61000)
+  for(let i=0;i<10;i++) {
+    await page.getByRole('button',{name:'常规',exact:true}).click()
+    await page.getByRole('button',{name:'Agent',exact:true}).click()
+    await expect(page.locator('[data-agent-id="claude"]')).toBeVisible()
+  }
+  expect(await page.evaluate(()=> (window as any).agentUpdateTest.counts())).toEqual({scans:0,checks:0,starts:0})
+  await page.evaluate(()=> (window as any).agentUpdateTest.staleInventory())
+  await expect(page.locator('[data-agent-id="claude"]')).toBeVisible()
+  const advanced=page.locator('[data-agent-id="claude"]').getByRole('button',{name:'Claude Code 高级',exact:true})
+  await advanced.click()
+  const draft=page.getByRole('region',{name:'Claude Code 高级'}).getByLabel('参数（JSON 数组）',{exact:true})
+  await draft.fill('["draft-not-saved"]')
+  await page.getByRole('combobox',{name:'刷新选项'}).selectOption('updates')
+  await expect(draft).toHaveValue('["draft-not-saved"]')
+  await advanced.click()
+  await page.getByRole('button',{name:'全部更新',exact:true}).click()
+  await expect(page.getByRole('region',{name:'正在更新'})).toContainText('已处理 0/3')
+  await expect(page.getByRole('region',{name:'最后更新记录'})).toContainText('2026')
+  await expect(page.locator('.agent-toolbar-actions .agent-update-pill')).toBeDisabled()
+  await page.getByRole('button',{name:'常规',exact:true}).click()
+  await expect(page.locator('.agent-global-update')).toContainText('0/3')
+  await page.locator('.agent-global-update').click()
+  await expect(page.getByRole('region',{name:'正在更新'})).toBeVisible()
+  await page.reload()
+  await page.locator('.agent-global-update').click()
+  await expect(page.getByRole('region',{name:'正在更新'})).toContainText('已处理 0/3')
+  await page.getByRole('button',{name:'取消剩余',exact:true}).click()
+  await expect(page.getByRole('button',{name:'正在完成当前项…',exact:true})).toBeDisabled()
+  await page.evaluate(()=> (window as any).agentUpdateTest.finish(true))
+  await expect(page.getByRole('region',{name:'正在更新'})).toHaveCount(0)
+  const last=page.getByRole('region',{name:'最后更新记录'})
+  await expect(last).toContainText('1 项失败')
+  await expect(last).toContainText('2 项已取消')
+  await last.getByText('查看详情',{exact:true}).click()
+  await expect(last).toContainText('Fixture verification failed')
+  await page.screenshot({path:'/tmp/buddy-agent-updates-desktop.png'})
+  await expect(page.locator('.agent-update-notice')).toHaveCount(1)
+  await page.getByRole('button',{name:'关闭更新结果提示',exact:true}).click()
+  await page.getByRole('button',{name:'常规',exact:true}).click()
+  await page.getByRole('button',{name:'Agent',exact:true}).click()
+  await expect(page.locator('.agent-update-notice')).toHaveCount(0)
+  await page.getByRole('button',{name:'重试失败项',exact:true}).click()
+  await expect(page.getByRole('region',{name:'正在更新'})).toContainText('0/1')
+  await expect(last.getByRole('button',{name:'重试失败项',exact:true})).toBeDisabled()
+  await page.setViewportSize({width:640,height:1000})
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
+  await page.screenshot({path:'/tmp/buddy-agent-updates-narrow.png'})
+  await page.emulateMedia({colorScheme:'dark'})
+  await page.screenshot({path:'/tmp/buddy-agent-updates-dark.png'})
+  await page.evaluate(()=> (window as any).agentUpdateTest.finish())
+  await expect(page.getByRole('region',{name:'最后更新记录'})).toContainText('1 项已更新')
+  await page.getByRole('combobox',{name:'刷新选项'}).selectOption('updates')
+  expect(await page.evaluate(()=> (window as any).agentUpdateTest.counts())).toEqual({scans:0,checks:1,starts:1})
+  expect(errors).toEqual([])
 })

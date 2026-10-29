@@ -74,3 +74,18 @@ describe('createBuddyPreloadApi', () => {
     expect(result.pushStatus).toBe('pushed')
   })
 })
+
+it('keeps Agent snapshots and subscriptions separate from task events', async()=>{
+  const invoke=vi.fn().mockResolvedValue({schemaVersion:2,revision:1}),on=vi.fn(),removeListener=vi.fn()
+  const api=createBuddyPreloadApi({invoke,on,removeListener}),receive=vi.fn()
+  const unsubscribe=api.onAgentUpdate(receive)
+  const [channel,listener]=on.mock.calls[0]
+  expect(channel).toBe('buddy:agent-update')
+  listener({}, {schemaVersion:2,revision:4})
+  expect(receive).toHaveBeenCalledWith({schemaVersion:2,revision:4})
+  unsubscribe();expect(removeListener).toHaveBeenCalledWith(channel,listener)
+  await api.startAgentUpdates(['codex'],'request')
+  expect(invoke).toHaveBeenCalledWith('buddy:startAgentUpdates',['codex'],'request')
+  await api.getAgentInventory()
+  expect(invoke).toHaveBeenCalledWith('buddy:getAgentInventory')
+})

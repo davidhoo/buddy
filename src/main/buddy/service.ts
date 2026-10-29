@@ -87,13 +87,34 @@ export class BuddyCoreService {
   }
 
   listCliModels(id:string) { return this.withAgentUse(()=>this.agents.models(id)) }
-  listLocalAgents(force=false) { return this.withAgentUse(()=>this.agents.list(force)) }
-  configureAgent(id:string, config:import('../../shared/agents').AgentConfiguration) { return this.withAgentUse(()=>this.agents.configure(id,config)) }
+  async listLocalAgents(force=false) { return force ? this.refreshLocalAgents('scan').then(s=>s.agents) : (await this.agents.getInventory()).agents }
+  getAgentInventory() { return this.agents.getInventory() }
+  getAgentUpdateState() { return this.agents.updates.getState() }
+  startAgentUpdates(ids:string[],requestId:string) { return this.agents.updates.start(ids,requestId) }
+  async initializeAgents() {
+    try {await this.agents.initialize()} finally {
+      // An unreadable update history must not prevent inventory discovery.
+      void this.withAgentUse(async()=>{if(this.agents.needsStartupRefresh())await this.agents.refresh();await this.agents.checkUpdates(false)}).catch(()=>{})
+    }
+  }
+  refreshLocalAgents(mode:'all'|'scan'|'updates'='all') {
+    return this.withAgentUse(async()=>{
+      if(mode!=='updates')await this.agents.refresh()
+      if(mode!=='scan')await this.agents.checkUpdates(mode==='all' || mode==='updates')
+      return this.agents.getInventory()
+    })
+  }
+  async configureAgent(id:string, config:import('../../shared/agents').AgentConfiguration) {
+    if((await this.agents.updates.getState()).activeBatch)throw new Error('Agent updates are running')
+    await this.agents.configure(id,config)
+    // Transport edits refresh only dirty targets; model/default edits do no CLI work.
+    if(this.agents.hasDirtyTargets())void this.withAgentUse(()=>this.agents.list()).catch(()=>{})
+  }
   probeLocalAgent(id:string) { return this.withAgentUse(()=>this.agents.probe(id)) }
   checkAgentUpdates(force=false) { return this.withAgentUse(()=>this.agents.checkUpdates(force)) }
   updateLocalAgents(ids:string[]) { return this.agents.update(ids) }
   getAgentUpdateJobs() { return this.agents.getJobs() }
-  cancelAgentUpdates() { this.agents.cancel() }
+  cancelAgentUpdates() { return this.agents.cancel() }
 
   private async withAgentUse<T>(run:()=>Promise<T>):Promise<T> {
     const release=await acquireAgentUse()

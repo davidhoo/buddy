@@ -68,3 +68,50 @@ export function applyAgentConfiguration(agent: LocalAgent, config: AgentConfigur
     acp: config.acp ?? agent.acp
   }
 }
+
+export interface AgentInventorySnapshot {
+  revision: number
+  agents: LocalAgent[]
+  scannedAt?: string
+  refreshing: boolean
+  error?: string
+}
+export type AgentUpdateItemStatus = 'queued' | 'preparing' | 'installing' | 'verifying' | 'updated' | 'up_to_date' | 'failed' | 'skipped' | 'cancelled' | 'interrupted'
+export interface AgentUpdateItem {
+  id: string
+  agentId: string
+  name: string
+  installationId?: string
+  targetKey?: string
+  target?: 'agent' | 'wecode'
+  source?: LocalAgent['source']
+  status: AgentUpdateItemStatus
+  before?: string
+  after?: string
+  startedAt?: string
+  finishedAt?: string
+  error?: string
+  process?: { pid: number; started: string; command: string }
+}
+export interface AgentUpdateBatch {
+  id: string
+  requestId: string
+  createdAt?: string
+  finishedAt?: string
+  status: 'queued' | 'preparing' | 'waiting' | 'running' | 'cancelling' | 'completed' | 'interrupted'
+  cancelRequested: boolean
+  items: AgentUpdateItem[]
+  error?: string
+}
+export interface AgentUpdateSnapshot {
+  schemaVersion: 2
+  revision: number
+  activeBatch?: AgentUpdateBatch
+  lastCompletedBatch?: AgentUpdateBatch
+}
+export const isAgentUpdateTerminal = (status: AgentUpdateItemStatus) => !['queued', 'preparing', 'installing', 'verifying'].includes(status)
+export function agentUpdateCounts(batch: AgentUpdateBatch) {
+  const count = (status: AgentUpdateItemStatus) => batch.items.filter(item => item.status === status).length
+  return { total: batch.items.length, processed: batch.items.filter(item => isAgentUpdateTerminal(item.status)).length,
+    updated: count('updated'), upToDate: count('up_to_date'), failed: count('failed') + count('interrupted'), cancelled: count('cancelled'), skipped: count('skipped') }
+}

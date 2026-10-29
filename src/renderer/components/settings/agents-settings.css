@@ -77,3 +77,28 @@
 .json-token-string { color: var(--success-fg); }
 .json-token-number, .json-token-literal { color: var(--danger); }
 .json-token-punctuation { color: var(--fg-secondary); }
+
+.agent-cache-time { margin: -4px 0 12px; color: var(--fg-muted); font-size: 11px; }
+.agent-refresh-options { max-width: 150px; padding: 4px; background: transparent; border-radius: 6px; color: var(--fg-secondary); }
+.agent-update-card { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; color: var(--fg-secondary); background: var(--bg-elevated); }
+.agent-list-card + .agent-update-card { margin-top: 20px; }
+.agent-update-card-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
+.agent-update-card-title strong { color: var(--fg); font-size: 13px; }
+.agent-update-card-title > span { color: var(--fg-muted); font-size: 11px; }
+.agent-update-card-title button { margin-left: auto; }
+.agent-update-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--fg); }
+.agent-update-hint { margin: 7px 0 12px; color: var(--fg-muted); }
+.agent-update-items { display: grid; gap: 8px; margin-top: 12px; }
+.agent-update-items li { padding: 8px 0; border-top: 1px solid var(--border-subtle); }
+.agent-update-items li > div { display: flex; justify-content: space-between; gap: 12px; }
+.agent-update-items li > p { margin-top: 5px; overflow-wrap: anywhere; }
+.agent-update-items strong { font-weight: 500; }
+.agent-update-details summary { display: flex; align-items: center; gap: 5px; cursor: pointer; margin-top: 10px; width: fit-content; }
+.agent-update-details[open] summary svg { transform: rotate(180deg); }
+.agent-global-update { display: flex; align-items: center; gap: 6px; margin-left: 8px; padding: 5px 8px; border-radius: 6px; white-space: nowrap; font-size: 11px; color: var(--fg-secondary); }
+.agent-global-update:hover { background: var(--bg-muted); }
+.agent-update-notice { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--fg-secondary); background: var(--bg-muted); }
+.agent-update-notice > button:first-of-type { display: flex; flex: 1; flex-wrap: wrap; gap: 6px 12px; text-align: left; }
+@media (max-width: 680px) { .agent-list-toolbar { flex-wrap: wrap; } .agent-toolbar-actions { margin-left: auto; } .agent-update-card { padding: 12px; } }
+
+.agent-toolbar-actions { max-width: 100%; flex-wrap: wrap; justify-content: flex-end; }

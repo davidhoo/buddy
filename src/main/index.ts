@@ -1,7 +1,7 @@
 // Must be set before electron-updater is imported (via updater.ts)
 process.env.ELECTRON_UPDATER_ALLOW_HTTP = '1'
 
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Notification } from 'electron'
 import { openPathOrThrow } from './ipc/open-path'
 
 // Guard against EPIPE and other stream errors crashing the main process.
@@ -21,11 +21,13 @@ import { registerBuddyHandlers } from './ipc/buddy-handlers'
 import { BuddyCoreService } from './buddy/service'
 import { BuddyEventBus } from './buddy/events'
 import { fixShellPath } from './buddy/shell-path'
-import { setupMenu, updateMenuLanguage } from './menu'
+import { setupMenu, updateMenuLanguage, getMenuLanguage } from './menu'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, setUpdaterWindow } from './updater'
 import { mkdir, writeFile, stat, readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { AgentUpdateQuitGuard } from './buddy/agents/lifecycle'
+import { agentUpdateCounts } from '../shared/agents'
 
 fixShellPath()
 
@@ -33,6 +35,47 @@ const windowManager = new WindowManager()
 const buddyEvents = new BuddyEventBus()
 const buddyService = new BuddyCoreService({ events: buddyEvents })
 
+let allowAgentQuit = false
+const agentQuitGuard = new AgentUpdateQuitGuard(buddyService.agents.updates, async()=>{
+  const lang=getMenuLanguage()
+  const text=lang==='en'?['Agent update in progress','The current installation will finish and be verified before quitting. Remaining updates will be cancelled.','Keep updating in background','Finish current update and quit']:lang==='zh-TW'?['Agent 正在更新','退出前會完成目前安裝及驗證，並取消剩餘更新。','繼續背景更新','完成目前項目後退出']:['Agent 正在更新','退出前会完成当前安装及验证，并取消剩余更新。','继续后台更新','完成当前项后退出']
+  const result=await dialog.showMessageBox({type:'question',message:text[0],detail:text[1],buttons:text.slice(2),defaultId:0,cancelId:0})
+  return result.response===1?'finish':'background'
+})
+app.on('before-quit',event=>{
+  if(allowAgentQuit)return
+  event.preventDefault()
+  void agentQuitGuard.request(()=>{allowAgentQuit=true;app.quit()}).catch(error=>dialog.showErrorBox('Buddy',String(error)))
+})
+const sendAgentState=(channel:string,state:unknown)=>{
+  for(const window of BrowserWindow.getAllWindows()) {
+    try {if(!window.isDestroyed())window.webContents.send(channel,state)} catch { /* A closing window must not interrupt other subscribers. */ }
+  }
+}
+buddyService.agents.subscribe(state=>sendAgentState('buddy:agent-inventory',state))
+const observedBatches=new Set<string>()
+buddyService.agents.updates.subscribe(state=>{
+  sendAgentState('buddy:agent-update',state)
+  if(state.activeBatch)observedBatches.add(state.activeBatch.id)
+  const batch=state.lastCompletedBatch
+  if(!batch || !observedBatches.delete(batch.id))return
+  void (async()=>{
+    if(BrowserWindow.getAllWindows().some(window=>window.isFocused()))return
+    if(!(await buddyService.getStore().readGlobalSettings()).system_notifications_enabled || !Notification.isSupported())return
+    const counts=agentUpdateCounts(batch),lang=getMenuLanguage()
+    const title=lang==='en'?'Buddy · Agent updates finished':lang==='zh-TW'?'Buddy · Agent 更新已結束':'Buddy · Agent 更新已结束'
+    const body=lang==='en'?`${counts.updated} updated · ${counts.upToDate} up to date · ${counts.failed} failed`:lang==='zh-TW'?`${counts.updated} 項已更新 · ${counts.upToDate} 項已是最新 · ${counts.failed} 項失敗`:`${counts.updated} 项已更新 · ${counts.upToDate} 项已是最新 · ${counts.failed} 项失败`
+    const notification=new Notification({title,body})
+    notification.on('click',()=>{
+      const existing=windowManager.getMainWindow()
+      const window=existing && !existing.isDestroyed()?existing:windowManager.createWindow()
+      window.show();window.focus()
+      if(window.webContents.isLoading())window.webContents.once('did-finish-load',()=>window.webContents.send('buddy:open-agents'))
+      else window.webContents.send('buddy:open-agents')
+    })
+    notification.show()
+  })().catch(()=>{})
+})
 app.setName('Buddy')
 
 registerBuddyHandlers(ipcMain, buddyService)
@@ -43,7 +86,7 @@ buddyEvents.subscribe((event) => {
 app.whenReady().then(async () => {
   await buddyService.recoverInterruptedRuns()
   windowManager.createWindow()
-  void buddyService.listLocalAgents().catch(error => console.warn('Agent discovery failed', error instanceof Error ? error.message : 'unknown error'))
+  void buddyService.initializeAgents().catch(error => console.warn('Agent initialization failed', error instanceof Error ? error.message : 'unknown error'))
   const mainWindow = windowManager.getMainWindow()
   if (mainWindow) {
     setupMenu(mainWindow)
@@ -68,7 +111,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('updater:install', async () => {
     try {
-      await quitAndInstall()
+      await agentQuitGuard.request(()=>{allowAgentQuit=true;quitAndInstall()})
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }
     }

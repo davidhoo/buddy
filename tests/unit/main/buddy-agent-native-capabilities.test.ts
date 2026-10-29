@@ -64,6 +64,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
         if (args[0] === 'version') return 'wecode-cli version: ' + (updated ? '4.0.40' : '4.0.39')
         return args[0] === 'codex' ? '0.164.0' : args[0] === 'opencode' ? '1.19.4' : '2.1.159'
       } })
+      await service.refresh()
       const agents = await service.checkUpdates()
       expect(calls.filter(args => args.at(-1) === 'help')).toEqual(expect.arrayContaining([['help'], ['codex', 'help'], ['opencode', 'help']]))
       expect(calls.some(args => args.includes('--help') || args.includes('upgrade'))).toBe(false)

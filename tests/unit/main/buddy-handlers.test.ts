@@ -5,6 +5,10 @@ describe('registerBuddyHandlers', () => {
   it('registers native buddy channels', () => {
     const handle = vi.fn()
     const service = {
+      getAgentInventory:vi.fn(),
+      refreshLocalAgents:vi.fn(),
+      getAgentUpdateState:vi.fn(),
+      startAgentUpdates:vi.fn(),
       checkHealth: vi.fn(),
       bootstrap: vi.fn(),
       getTasks: vi.fn(),
@@ -79,6 +83,9 @@ describe('registerBuddyHandlers', () => {
     updateModelHandler({}, 'task', 'workspace', 'claude', 'opus-4.6')
     expect(service.updateTaskLauncherModel).toHaveBeenCalledWith('task', 'workspace', 'claude', 'opus-4.6')
 
-    expect(handle).toHaveBeenCalledTimes(47)
+    const startUpdates=handle.mock.calls.find(([channel])=>channel==='buddy:startAgentUpdates')![1]
+    startUpdates({},['codex'],'request-id')
+    expect(service.startAgentUpdates).toHaveBeenCalledWith(['codex'],'request-id')
+    expect(handle).toHaveBeenCalledTimes(51)
   })
 })

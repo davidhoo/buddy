@@ -61,6 +61,7 @@ it('discovers a real executable, updates through its original prefix and verifie
     expect(agents).toHaveLength(1)
     expect(agents[0].source).toBe('npm')
     agents[0].latest='2.0.0'
+    agents[0].checkedAt=new Date().toISOString()
     const jobs=await service.update(['codebuddy','codebuddy'])
     expect(jobs.map(j=>j.status)).toEqual(['success','skipped'])
     expect(calls.filter(c=>c[1]==='install')).toEqual([[join(await realpath(root),'bin/npm'),'install','-g','--prefix',await realpath(root),'test-agent@2.0.0']])

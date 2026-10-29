@@ -1,3 +1,5 @@
+import { useAgentInventory, useAgentUpdatesController } from './hooks/useAgentUpdates'
+import { AgentUpdateIndicator, AgentUpdateNotice } from './components/settings/AgentUpdateStatus'
 import { modelMemoryKey, readModelMemory } from './lib/agent-memory'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -57,6 +59,17 @@ export default function App() {
 
   useTheme()
   const updater = useUpdater()
+  const [agentUpdateScroll,setAgentUpdateScroll]=useState(0)
+  const openAgentUpdates=()=>{setView('settings');setSettingsTab('agents');setAgentUpdateScroll(n=>n+1)}
+  const agentUpdates=useAgentUpdatesController(openAgentUpdates)
+  const indicatedAgentBatch=agentUpdates.data?.activeBatch || (agentUpdates.data?.lastCompletedBatch?.items.some(item=>['failed','interrupted'].includes(item.status))?agentUpdates.data.lastCompletedBatch:undefined)
+
+  useEffect(()=>{
+    if(agentUpdateScroll && view==='settings' && settingsTab==='agents') {
+      const frame=requestAnimationFrame(()=>document.querySelector('#agent-active-updates, #agent-last-update')?.scrollIntoView({block:'nearest'}))
+      return ()=>cancelAnimationFrame(frame)
+    }
+  },[agentUpdateScroll,view,settingsTab])
 
   useEffect(() => {
     window.api.isFullScreen().then(setIsFullScreen).catch(() => {})
@@ -672,6 +685,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 border-l border-border rounded-tl-xl rounded-bl-xl bg-bg-elevated overflow-hidden">
         {/* 标题栏 */}
         <TitleBar
+          agentStatus={indicatedAgentBatch ? <AgentUpdateIndicator batch={indicatedAgentBatch} onOpen={openAgentUpdates}/> : undefined}
           taskName={taskDetail?.task_id ?? ''}
           taskStatus={taskDetail?.state?.status ?? null}
           isSidebarOpen={isSidebarOpen}
@@ -679,7 +693,6 @@ export default function App() {
           isFullScreen={isFullScreen}
           showToggles={view !== 'settings'}
           bare={view === 'settings'}
-          settingsPage={view === 'settings' && settingsTab === 'agents' ? t('settings.tab.agents') : undefined}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           onToggleStatusBar={() => setIsStatusBarOpen(!isStatusBarOpen)}
           onCancelTask={handleCancelTask}
@@ -687,6 +700,9 @@ export default function App() {
           onRetry={() => handleStartTask()}
           onResume={() => handleStartTask()}
         />
+
+        {view==='chat'&&startTask.isPending&&agentUpdates.data?.activeBatch&&!taskStatus?.startsWith('RUNNING')&&taskStatus!=='PINGING'&&<div role="status" className="agent-update-notice">{t('agents.waitingForUpdates')}</div>}
+        {agentUpdates.notice&&<AgentUpdateNotice batch={agentUpdates.notice} onOpen={()=>{openAgentUpdates();agentUpdates.dismiss()}} onDismiss={agentUpdates.dismiss}/>}
 
         {/* 主内容区 */}
         <div className="flex-1 flex overflow-hidden">
@@ -913,7 +929,8 @@ export function CreateTaskModal({
   })
   const fileAttachments = attachments.filter(a => !imageAttachments.includes(a))
 
-  const {data:localAgents} = useQuery({queryKey:['localAgents'],queryFn:()=>window.buddy.listLocalAgents(),enabled:!!window.buddy?.listLocalAgents,staleTime:30000})
+  const {data:agentInventory} = useAgentInventory()
+  const localAgents=agentInventory?.agents
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
   const availableActors = localAgents ? localAgents.filter(a=>a.enabled && (a.runnable || a.acpStatus==='verified')).map(a=>a.id) : typeof window.buddy?.listLocalAgents === 'function' ? [] : [...DEFAULT_LAUNCHER_ORDER]
   const actorName = (id:string) => ACTOR_LABEL_KEY[id] ? t(ACTOR_LABEL_KEY[id]) : localAgents?.find(a=>a.id===id)?.name || id

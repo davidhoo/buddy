@@ -135,9 +135,9 @@ export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
         ? t('settings.tab.keyboard')
         : t('settings.tab.prompts')
   return (
-    <div className={`flex-1 overflow-y-auto ${tab === 'agents' ? 'bg-bg' : 'bg-bg-elevated'}`}>
-      <div className={tab === 'agents' ? 'max-w-[1100px] mx-auto px-4 py-6' : 'max-w-4xl mx-auto px-10 py-10'}>
-        {tab !== 'agents' && <h1 className="text-2xl font-semibold mb-8">{pageTitle}</h1>}
+    <div className="flex-1 overflow-y-auto bg-bg-elevated">
+      <div className="max-w-4xl mx-auto px-10 py-10">
+        <h1 className="text-2xl font-semibold mb-8">{pageTitle}</h1>
         {tab === 'agents' ? <AgentsSettings /> : tab === 'general' ? (
           <GeneralSettings globalSettings={globalSettings} />
         ) : tab === 'appearance' ? (

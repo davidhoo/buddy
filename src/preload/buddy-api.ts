@@ -30,7 +30,19 @@ interface IpcLike {
 }
 
 export function createBuddyPreloadApi(ipc: IpcLike) {
+  const subscribe = <T>(channel:string,callback:(payload:T)=>void) => {
+    const listener:Listener=(_event,payload)=>callback(payload as unknown as T)
+    ipc.on(channel,listener)
+    return ()=>ipc.removeListener(channel,listener)
+  }
   return {
+    getAgentInventory: () => ipc.invoke('buddy:getAgentInventory') as Promise<import('../shared/agents').AgentInventorySnapshot>,
+    refreshLocalAgents: (mode:'all'|'scan'|'updates'='all') => ipc.invoke('buddy:refreshLocalAgents',mode) as Promise<import('../shared/agents').AgentInventorySnapshot>,
+    getAgentUpdateState: () => ipc.invoke('buddy:getAgentUpdateState') as Promise<import('../shared/agents').AgentUpdateSnapshot>,
+    startAgentUpdates: (ids:string[],requestId:string) => ipc.invoke('buddy:startAgentUpdates',ids,requestId) as Promise<import('../shared/agents').AgentUpdateSnapshot>,
+    onAgentInventory: (callback:(state:import('../shared/agents').AgentInventorySnapshot)=>void) => subscribe('buddy:agent-inventory',callback),
+    onAgentUpdate: (callback:(state:import('../shared/agents').AgentUpdateSnapshot)=>void) => subscribe('buddy:agent-update',callback),
+    onOpenAgentUpdates: (callback:()=>void) => subscribe('buddy:open-agents',callback),
     listCliModels: (id:string) => ipc.invoke('buddy:listCliModels',id) as Promise<AcpModelList>,
     listLocalAgents: (force=false) => ipc.invoke('buddy:listLocalAgents',force) as Promise<import('../shared/agents').LocalAgent[]>,
     configureAgent: (id:string,config:import('../shared/agents').AgentConfiguration) => ipc.invoke('buddy:configureAgent',id,config) as Promise<void>,

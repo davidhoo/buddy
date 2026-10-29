@@ -284,3 +284,5 @@ export function updateMenuLanguage(lang: string): void {
   const menu = buildMenu()
   Menu.setApplicationMenu(menu)
 }
+
+export function getMenuLanguage() { return currentLang }

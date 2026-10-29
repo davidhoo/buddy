@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Download, ChevronDown, SlidersHorizontal, Check, Loader2 } from 'lucide-react'
-import { isNewerStableVersion, agentLaunchChanged, applyAgentConfiguration } from '../../../shared/agents'
-import type { AgentConfiguration, LocalAgent } from '../../../shared/agents'
+import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts } from '../../../shared/agents'
+import type { AgentConfiguration, LocalAgent, AgentInventorySnapshot, AgentUpdateItemStatus } from '../../../shared/agents'
 import type { Launcher } from '../../../shared/types'
 import { useT } from '../../hooks/useI18n'
 import { Switch } from '../Switch'
 import { AgentIcon } from './AgentIcon'
 import { JsonEditor } from './JsonEditor'
+import { useAgentInventory, useAgentUpdateState, startAgentUpdates, acceptAgentSnapshot, agentInventoryKey } from '../../hooks/useAgentUpdates'
+import { AgentUpdateStatus, updateStatusKey } from './AgentUpdateStatus'
 import './agents-settings.css'
 
 const canRun = (a: LocalAgent) => a.runnable || a.acpStatus === 'verified'
@@ -21,40 +23,43 @@ const modelCatalogKey = (a: LocalAgent, protocol: 'cli' | 'acp') => [
 
 export function AgentsSettings() {
   const t = useT(), cache = useQueryClient()
-  const { data: inventory = [], isFetching, error } = useQuery({ queryKey: ['localAgents'], queryFn: () => window.buddy.listLocalAgents(), staleTime: 30000 })
-  const { data: jobs = [] } = useQuery({ queryKey: ['agentUpdateJobs'], queryFn: () => window.buddy.getAgentUpdateJobs(), refetchInterval: 1500 })
+  const { data: snapshot, isFetching, error } = useAgentInventory()
+  const { data: updateState, error: updateError } = useAgentUpdateState()
+  const inventory=snapshot?.agents || []
   const agents = inventory.filter(hasExecutionEntry)
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set())
-  const [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    window.buddy.checkAgentUpdates?.().then(result => { if (!cancelled) cache.setQueryData(['localAgents'], result) }).catch(() => {})
-    return () => { cancelled = true }
-  }, [cache])
+  const [message, setMessage] = useState(''), [pending, setBusy] = useState(false)
+  const busy=pending || !!updateState?.activeBatch
+  const refreshing=!!snapshot?.refreshing
+  const progress=updateState?.activeBatch?agentUpdateCounts(updateState.activeBatch):undefined
+  const patch=(id:string,change:(agent:LocalAgent)=>LocalAgent)=>cache.setQueryData<AgentInventorySnapshot>(agentInventoryKey,current=>current?{...current,agents:current.agents.map(a=>a.id===id?change(a):a)}:current)
+  const refresh=async(mode:'all'|'scan'|'updates')=>{
+    if(window.buddy.refreshLocalAgents)acceptAgentSnapshot(cache,agentInventoryKey,await window.buddy.refreshLocalAgents(mode))
+    else {
+      const agents=mode==='updates'?await window.buddy.checkAgentUpdates(true):await window.buddy.listLocalAgents(true)
+      cache.setQueryData(agentInventoryKey,{revision:0,agents,refreshing:false})
+    }
+  }
   const updates = agents.filter(hasUpdate)
   const updateTargets = agents.filter(a => hasUpdate(a) || a.nativeUpdate)
   const action = async (fn: () => Promise<unknown>) => {
     setBusy(true); setMessage('')
     try {
       await fn()
-      await Promise.all([cache.invalidateQueries({ queryKey: ['localAgents'] }), cache.invalidateQueries({ queryKey: ['bootstrap'] })])
+      await Promise.all([cache.invalidateQueries({ queryKey: agentInventoryKey }), cache.invalidateQueries({ queryKey: ['bootstrap'] })])
     } catch (e) { setMessage(String(e)) } finally { setBusy(false) }
   }
   const save = async (a: LocalAgent, config: AgentConfiguration) => {
     setSaving(previous => new Set(previous).add(a.id))
     setMessage('')
-    await cache.cancelQueries({ queryKey: ['localAgents'] })
-    cache.setQueryData<LocalAgent[]>(['localAgents'], rows => rows?.map(row => row.id === a.id ? applyAgentConfiguration(row, config) : row))
+    await cache.cancelQueries({ queryKey: agentInventoryKey })
+    patch(a.id,row=>applyAgentConfiguration(row,config))
     try {
       await window.buddy.configureAgent(a.id, config)
-      cache.setQueryData<LocalAgent[]>(['localAgents'], rows => rows?.map(row => row.id === a.id ? applyAgentConfiguration(row, config) : row))
+      patch(a.id,row=>applyAgentConfiguration(row,config))
       void cache.invalidateQueries({ queryKey: ['bootstrap'] })
-      // Only launch edits need discovery. Protocol/model/enable saves are local.
-      if (agentLaunchChanged(a, config)) {
-        void window.buddy.listLocalAgents().then(rows => cache.setQueryData(['localAgents'], rows)).catch(error => setMessage(String(error)))
-      }
     } catch (error) {
-      cache.setQueryData<LocalAgent[]>(['localAgents'], rows => rows?.map(row => row.id === a.id ? a : row))
+      patch(a.id,()=>a)
       setMessage(String(error))
     } finally {
       setSaving(previous => { const next = new Set(previous); next.delete(a.id); return next })
@@ -64,19 +69,23 @@ export function AgentsSettings() {
     <div className="agent-list-toolbar">
       <span role="status">{updates.length ? t('agents.updatesAvailable', { n: updates.length, names: updates.map(a => a.name).join(', ') }) : t('agents.discovered', { n: agents.length })}</span>
       <div className="agent-toolbar-actions">
-        <button className="agent-icon-button" disabled={busy || isFetching} title={`${t('agents.rescan')} / ${t('agents.check')}`} aria-label={t('agents.rescan')} onClick={() => action(async () => { await window.buddy.listLocalAgents(true); cache.setQueryData(['localAgents'], await window.buddy.checkAgentUpdates(true)) })}><RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /></button>
-        <button className="agent-update-pill" disabled={busy || !updateTargets.length} onClick={() => action(() => window.buddy.updateLocalAgents(updateTargets.map(a => a.id)))}><Download size={12} />{t('agents.updateAll')}</button>
-        {busy && <button className="agent-text-button" onClick={() => window.buddy.cancelAgentUpdates()}>{t('common.cancel')}</button>}
+        <button className="agent-icon-button" disabled={busy || refreshing} title={t('agents.refreshAll')} aria-label={t('agents.rescan')} onClick={()=>action(()=>refresh('all'))}><RefreshCw size={14} className={refreshing?'animate-spin':''}/></button>
+        <select className="agent-refresh-options" aria-label={t('agents.refreshOptions')} value="" disabled={busy||refreshing} onChange={event=>action(()=>refresh(event.target.value as 'all'|'scan'|'updates'))}>
+          <option value="" disabled>{t('agents.refreshOptions')}</option><option value="scan">{t('agents.scanOnly')}</option><option value="updates">{t('agents.checkOnly')}</option>
+        </select>
+        <button className="agent-update-pill" disabled={busy || refreshing || !updateTargets.length} onClick={() => action(() => startAgentUpdates(cache,updateTargets.map(a => a.id)))}><Download size={12} />{progress?t('agents.globalProgress',{n:progress.processed,total:progress.total}):t('agents.updateAll')}</button>
       </div>
     </div>
-    {(message || error) && <p role="alert" className="text-danger text-sm mb-3">{message || String(error)}</p>}
+    {snapshot?.scannedAt&&<p className="agent-cache-time">{t(refreshing?'agents.refreshingCache':'agents.lastScan',{time:new Date(snapshot.scannedAt).toLocaleString()})}</p>}
+    {(message || error || updateError || snapshot?.error) && <p role="alert" className="text-danger text-sm mb-3">{message || snapshot?.error || String(error || updateError)}</p>}
+    {updateState?.activeBatch&&<AgentUpdateStatus batch={updateState.activeBatch} active/>}
     <div className="agent-list-card">
       <div role="list" aria-label={t('settings.tab.agents')}>
-        {agents.map(a => <CompactAgentRow key={a.id} agent={a} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => window.buddy.updateLocalAgents([a.id]))} />)}
-        {!agents.length && <div className="agent-list-empty">{isFetching ? t('common.loading') : t('agents.empty')}</div>}
+        {agents.map(a => <CompactAgentRow key={a.id} agent={a} updateStatus={updateState?.activeBatch?.items.find(item=>item.agentId===a.id)?.status} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => startAgentUpdates(cache,[a.id]))} />)}
+        {!agents.length && <div className="agent-list-empty">{isFetching || refreshing ? t('common.loading') : t('agents.empty')}</div>}
       </div>
     </div>
-    {jobs.map(j => <p className="agent-job-status" key={j.id} role="status">{j.agentId}: {j.status} {j.before} {j.after && '→ ' + j.after} {j.error}</p>)}
+    {updateState?.lastCompletedBatch&&<AgentUpdateStatus key={updateState.lastCompletedBatch.id} batch={updateState.lastCompletedBatch} active={false} disabled={!!updateState.activeBatch}/>}
   </div>
 }
 
@@ -138,7 +147,7 @@ function AgentAdvancedSettings({ agent: a, protocol, launcher, disabled, onSave 
   </form>
 }
 
-function CompactAgentRow({ agent: a, busy, onSave, onUpdate }: { agent: LocalAgent; busy: boolean; onSave: (config: AgentConfiguration) => Promise<void>; onUpdate: () => void }) {
+function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate }: { agent: LocalAgent; updateStatus?:AgentUpdateItemStatus; busy: boolean; onSave: (config: AgentConfiguration) => Promise<void>; onUpdate: () => void }) {
   const t = useT()
   const [advanced, setAdvanced] = useState(false)
   const protocol = a.selectedProtocol || (a.cli ? 'cli' : 'acp')
@@ -153,8 +162,9 @@ function CompactAgentRow({ agent: a, busy, onSave, onUpdate }: { agent: LocalAge
         {a.version && <span className="agent-row-version">{a.appVersion ? 'CLI ' : ''}{a.version}</span>}
         <span className="agent-row-actions">
         <button className="agent-update-pill" disabled={!launcher} aria-label={`${a.name} ${t('agents.advanced')}`} aria-expanded={advanced} aria-controls={advancedId} onClick={() => setAdvanced(value => !value)}><SlidersHorizontal size={11} />{t('agents.advanced')}</button>
-        {hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${t('agents.update')} ${a.latest}`}><Download size={11} /><span>{t('agents.update')} {a.latest}</span></button>}
-        {!hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}`}><Download size={11} /><span>{t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}</span></button>}
+        {updateStatus&&<span className="agent-update-pill" role="status">{t(updateStatusKey(updateStatus))}</span>}
+        {!updateStatus && hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${t('agents.update')} ${a.latest}`}><Download size={11} /><span>{t('agents.update')} {a.latest}</span></button>}
+        {!updateStatus && !hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}`}><Download size={11} /><span>{t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}</span></button>}
         </span>
         {a.appVersion && <span className="agent-row-version agent-app-version">App {a.appVersion}</span>}
       </div>
