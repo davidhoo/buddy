@@ -23,6 +23,9 @@ importers:
       react-colorful:
         specifier: ^5.7.0
         version: 5.7.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2356,6 +2359,10 @@ packages:
   smart-buffer@4.2.0:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
     engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
+
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -5007,6 +5014,8 @@ snapshots:
 
   smart-buffer@4.2.0:
     optional: true
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.1: {}
 

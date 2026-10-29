@@ -179,6 +179,7 @@ export interface LibrarySnapshot extends LibraryData {
 }
 
 export interface ExtensionPage {
+  sharedSkills?: Array<{ libraryItemId: string; actor: string; path: string }>
   copyDifferences?: Array<{ libraryItemId: string; actor: string }>
   kind: 'skill' | 'mcp'
   cwd: string

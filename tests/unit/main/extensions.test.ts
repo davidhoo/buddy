@@ -1401,3 +1401,48 @@ describe('library upstream updates', () => {
     expect(await findBackupFile(join(dataRoot, 'extensions/backups'), 'helper.txt')).toBe('local helper edit')
   })
 })
+
+describe('Magpie parity: native MCP formats and shared skills', () => {
+  it.each([
+    ['codex', 'claude'], ['claude', 'codex'], ['claude', 'opencode'],
+    ['opencode', 'claude'], ['opencode', 'codex'], ['codex', 'opencode']
+  ])('assigns %s MCP to %s and safely revokes it', async (from, to) => {
+    const home = await tempDir(), dataRoot = await tempDir()
+    const paths = { claude: join(home, '.claude.json'), codex: join(home, '.codex/config.toml'), opencode: join(home, '.config/opencode/opencode.json') }
+    await mkdir(join(home, '.claude'), { recursive: true })
+    await mkdir(join(home, '.codex'), { recursive: true })
+    await mkdir(join(home, '.config/opencode'), { recursive: true })
+    await writeFile(paths.claude, JSON.stringify({ theme: 'keep', mcpServers: from === 'claude' ? { demo: { command: 'node', args: ['demo'], env: { FIXTURE: 'keep' } } } : {} }))
+    await writeFile(paths.opencode, JSON.stringify({ theme: 'keep', mcp: from === 'opencode' ? { demo: { type: 'local', command: ['node', 'demo'], environment: { FIXTURE: 'keep' } } } : {} }))
+    await writeFile(paths.codex, from === 'codex' ? 'model = "keep"\n[mcp_servers.demo]\ncommand = "node"\nargs = ["demo"]\n[mcp_servers.demo.env]\nFIXTURE = "keep"\n' : 'model = "keep"\n')
+    const service = serviceWith({ claude: launcher('claude', { HOME: home }), codex: launcher('codex', { HOME: home }), opencode: launcher('opencode', { HOME: home }) }, dataRoot)
+    const instance = (await service.discover({ kind: 'mcp' })).found.find(i => i.actor === from && i.name === 'demo')!
+    const imported = await service.apply({ action: 'import', kind: 'mcp', instanceId: instance.id })
+    const id = imported.results[0].libraryItemId!
+    const assigned = await service.apply({ action: 'assign', kind: 'mcp', libraryItemId: id, actor: to, desired: 'on' })
+    expect(assigned.results[0].code).toBe('assigned')
+    const text = await readFile(paths[to as keyof typeof paths], 'utf8')
+    if (to === 'codex') {
+      const { parse } = await import('smol-toml')
+      expect(parse(text)).toMatchObject({ model: 'keep', mcp_servers: { demo: { command: 'node', args: ['demo'], env: { FIXTURE: 'keep' } } } })
+    } else if (to === 'opencode') expect(JSON.parse(text)).toMatchObject({ theme: 'keep', mcp: { demo: { type: 'local', command: ['node', 'demo'], environment: { FIXTURE: 'keep' } } } })
+    else expect(JSON.parse(text)).toMatchObject({ theme: 'keep', mcpServers: { demo: { command: 'node', args: ['demo'], env: { FIXTURE: 'keep' } } } })
+    expect((await service.apply({ action: 'assign', kind: 'mcp', libraryItemId: id, actor: to, desired: 'off' })).results[0].code).toBe('revoked')
+    const back = await readFile(paths[to as keyof typeof paths], 'utf8')
+    expect(back).not.toContain('demo')
+    expect(back).toContain('keep')
+  })
+
+  it('reports native shared visibility and refuses to pretend it is revoked', async () => {
+    const home = await tempDir(), dataRoot = await tempDir()
+    const shared = join(home, '.agents/skills/shared-demo')
+    await writeSkill(shared, 'shared-demo', 'shared')
+    await mkdir(join(home, '.codex'), { recursive: true })
+    const service = serviceWith({ codex: launcher('codex', { HOME: home }) }, dataRoot)
+    const instance = (await service.discover({ kind: 'skill' })).found.find(i => i.actor === 'codex' && i.name === 'shared-demo')!
+    const id = (await service.apply({ action: 'import', kind: 'skill', instanceId: instance.id })).results[0].libraryItemId!
+    expect((await service.discover({ kind: 'skill' })).sharedSkills).toContainEqual({ libraryItemId: id, actor: 'codex', path: shared })
+    expect((await service.apply({ action: 'assign', kind: 'skill', libraryItemId: id, actor: 'codex', desired: 'off' })).results[0].code).toBe('shared_visible')
+    expect(await readFile(join(shared, 'SKILL.md'), 'utf8')).toContain('shared-demo')
+  })
+})

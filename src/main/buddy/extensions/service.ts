@@ -15,6 +15,7 @@ import type {
   ResolvedTarget
 } from '../../../shared/extensions'
 import { sameTree } from './skill-copy'
+import { sharedSkillPath } from './shared-skill'
 import { describeLocalSkill, scanTarget } from './discover'
 import { applyLibraryAction } from './library-apply'
 import { probeSavedMcp } from './mcp-probe'
@@ -101,6 +102,10 @@ export class ExtensionService {
       instance.sharedWith = (shared.get(instance.shareKey) ?? []).filter((actor) => actor !== instance.actor)
     }
     const library = await readLibrary(this.source.dataRoot)
+    const sharedSkills = (await Promise.all(library.items.filter(i => i.kind === 'skill').flatMap(item => targets.map(async target => {
+      const path = await sharedSkillPath(item, target)
+      return path ? { libraryItemId: item.id, actor: target.actor, path } : null
+    })))).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     const keys = managedKeys(library)
     const differences = await Promise.all(library.bindings.filter(b => b.management === 'copy' && b.desired === 'on' && b.nativePath).map(async b => {
       const item = library.items.find(i => i.id === b.libraryItemId)
@@ -109,6 +114,7 @@ export class ExtensionService {
     }))
     return {
       kind: parsed.kind,
+      sharedSkills,
       copyDifferences: differences.filter((d): d is NonNullable<typeof d> => d !== null),
       cwd,
       cwdRejected,

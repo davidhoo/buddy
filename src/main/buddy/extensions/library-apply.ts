@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 import { chmod, copyFile, cp, lstat, mkdir, readFile, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
@@ -25,6 +26,7 @@ import {
 } from './hook-format'
 import { isInstructionId, withInstructionBlock } from './instruction-blocks'
 import { extensionPaths, writeLibrary } from './library-store'
+import { sharedSkillPath } from './shared-skill'
 import {
   contentHash,
   parseSubagentLibrary,
@@ -375,6 +377,7 @@ async function assignSkill(
   skillMode: 'link' | 'copy',
   targets: ResolvedTarget[]
 ): Promise<ActionResult> {
+  if (await sharedSkillPath(item, target)) return result(target.actor, 'skipped', 'shared_visible', item.id)
   const scope = data.bindings.find((binding) => binding.libraryItemId === item.id && binding.actor === target.actor)?.scope ?? 'user'
   const root = await skillRoot(target, scope)
   if (!root) return result(target.actor, 'failed', 'uninitialized', item.id)
@@ -915,15 +918,16 @@ async function assignMcp(
   target: ResolvedTarget,
   desired: 'on' | 'off'
 ): Promise<ActionResult> {
-  const saved = await readSavedMcp(item.libraryPath)
+  const original = await readSavedMcp(item.libraryPath)
+  const saved = original && mcpForTarget(original, target.adapter)
   if (!saved) return result(target.actor, 'failed', 'unsupported', item.id)
   const location = target.locations.find((entry) => entry.kind === 'mcp' && entry.scope === 'user' && !entry.isDirectory)
-  if (!location || location.missingMeans === 'uninitialized' || !location.exists || location.error) {
+  if (!location || location.missingMeans === 'uninitialized' || location.error) {
     return result(target.actor, 'failed', location?.missingMeans === 'uninitialized' ? 'uninitialized' : 'config_missing', item.id)
   }
   let text = ''
   try {
-    text = await readFile(location.path, 'utf8')
+    text = location.exists ? await readFile(location.path, 'utf8') : location.path.endsWith('.toml') ? '' : '{}'
   } catch {
     return result(target.actor, 'failed', 'config_missing', item.id)
   }
@@ -932,7 +936,7 @@ async function assignMcp(
     : upsertMcp(text, location.path, saved)
   if (!edited.ok) return result(target.actor, edited.code === 'already' ? 'skipped' : 'failed', edited.code, item.id)
   if (edited.text !== text) {
-    await backupFile(dataRoot, location.path, item.id)
+    if (location.exists) await backupFile(dataRoot, location.path, item.id)
     await atomicReplace(location.path, edited.text)
   }
   ensureBinding(data, item, bindingSource(item, target.actor, 'user'), 'reference', location.path, desired)
@@ -1091,6 +1095,42 @@ interface SavedMcp {
   section?: string
 }
 
+/** Render saved configurations in the receiving agent's native dialect. */
+function mcpForTarget(saved: SavedMcp, adapter: ResolvedTarget['adapter']): SavedMcp | null {
+  try {
+    const raw = saved.format === 'toml'
+      ? (parseToml(saved.section ?? '').mcp_servers as Record<string, Record<string, unknown>>)?.[saved.serverName]
+      : saved.server
+    if (!raw || (adapter === 'codex' && raw.type === 'sse')) return null
+    const openCode = Array.isArray(raw.command) || raw.type === 'remote' || raw.type === 'local'
+    const command = Array.isArray(raw.command) ? raw.command[0] : raw.command
+    const args = Array.isArray(raw.command) ? raw.command.slice(1) : raw.args
+    const env = raw.environment ?? raw.env
+    let server: Record<string, unknown>
+    if (adapter === 'opencode') {
+      if (openCode) server = { ...raw }
+      else if (typeof raw.url === 'string') server = { type: 'remote', url: raw.url, ...((raw.headers ?? raw.http_headers) ? { headers: raw.headers ?? raw.http_headers } : {}) }
+      else if (typeof command === 'string') server = { type: 'local', command: [command, ...(Array.isArray(args) ? args : [])], ...(env ? { environment: env } : {}) }
+      else return null
+    } else if (adapter === 'claude' || adapter === 'codex') {
+      if (!openCode) server = { ...raw }
+      else if (typeof raw.url === 'string') server = { url: raw.url, ...(raw.headers ? { headers: raw.headers } : {}) }
+      else if (typeof command === 'string') server = { command, args: Array.isArray(args) ? args : [], ...(env ? { env } : {}) }
+      else return null
+      // Transport and startup options use different keys in Codex.
+      if (adapter === 'codex') delete server.type
+      else if (openCode) server.type = raw.url ? 'http' : 'stdio'
+      if (adapter === 'claude' && server.http_headers) { server.headers = server.http_headers; delete server.http_headers }
+      if (adapter === 'codex' && server.headers) { server.http_headers = server.headers; delete server.headers }
+    } else return null
+    if (adapter === 'codex') {
+      if (saved.format === 'toml') return saved
+      return { kind: 'mcp', format: 'toml', serverName: saved.serverName, section: stringifyToml({ mcp_servers: { [saved.serverName]: server } }) }
+    }
+    return { kind: 'mcp', format: 'json', serverName: saved.serverName, server }
+  } catch { return null }
+}
+
 function captureMcp(text: string, path: string, name: string): { ok: true; saved: SavedMcp } | { ok: false; code: string } {
   if (path.endsWith('.toml')) {
     const section = tomlServerSection(text, name)
@@ -1112,6 +1152,7 @@ function captureMcp(text: string, path: string, name: string): { ok: true; saved
 function upsertMcp(text: string, path: string, saved: SavedMcp): { ok: true; text: string } | { ok: false; code: string } {
   if (saved.format === 'toml') {
     if (!saved.section) return { ok: false, code: 'unsupported' }
+    try { parseToml(text) } catch { return { ok: false, code: 'unsupported' } }
     const current = tomlServerSection(text, saved.serverName)
     if (current === saved.section.trim()) return { ok: true, text }
     if (current) return { ok: false, code: 'conflict' }
@@ -1140,6 +1181,7 @@ function upsertMcp(text: string, path: string, saved: SavedMcp): { ok: true; tex
 function removeMcp(text: string, path: string, saved: SavedMcp): { ok: true; text: string } | { ok: false; code: string } {
   if (saved.format === 'toml') {
     if (!saved.section) return { ok: false, code: 'unsupported' }
+    try { parseToml(text) } catch { return { ok: false, code: 'unsupported' } }
     const current = tomlServerSection(text, saved.serverName)
     if (!current) return { ok: true, text }
     if (current !== saved.section.trim()) return { ok: false, code: 'changed_externally' }
@@ -1168,12 +1210,13 @@ function removeMcp(text: string, path: string, saved: SavedMcp): { ok: true; tex
 export function tomlServerSection(text: string, name: string): string | null {
   if (!MCP_NAME.test(name)) return null
   const lines = text.split(/\r?\n/)
-  const start = lines.findIndex((line) => line.trim() === `[mcp_servers.${name}]`)
+  const prefixes = [`mcp_servers.${name}`, `mcp_servers.${JSON.stringify(name)}`, `mcp_servers.'${name}'`]
+  const start = lines.findIndex((line) => prefixes.some(prefix => line.trim() === `[${prefix}]`))
   if (start < 0) return null
   let end = lines.length
   for (let index = start + 1; index < lines.length; index += 1) {
     const trimmed = lines[index].trim()
-    if (trimmed.startsWith('[') && !trimmed.startsWith('[[')) {
+    if (trimmed.startsWith('[') && !prefixes.some(prefix => trimmed.startsWith(`[${prefix}.`) || trimmed.startsWith(`[[${prefix}.`))) {
       end = index
       break
     }
@@ -1193,7 +1236,7 @@ function readJsonServer(parsed: unknown, path: string, name: string): Record<str
 }
 
 function jsonMcpKey(record: Record<string, unknown>, path: string): string {
-  if (path.endsWith('opencode.json')) return 'mcp' in record ? 'mcp' : 'mcpServers'
+  if (path.endsWith('opencode.json') || path.endsWith('opencode.jsonc')) return 'mcp'
   return 'mcpServers'
 }
 

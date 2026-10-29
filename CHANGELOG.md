@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- 资源库标题栏新增「按 Agent」分配面板，显示资源数量并支持单 Agent 全部启用/停用；原链接/副本选项改名为「按 Agent 设置分发方式」
+
+### Changed
+- 移除技能/MCP 页的 Agent 扫描筛选横栏，扫描状态与读取问题统一放在 Agent 页的「发现诊断」
+- MCP 登录由各 Agent 原生管理；资源库说明分配状态与登录/运行时可用状态的区别
+
+### Fixed
+- MCP 分发按 Claude、Codex、OpenCode 原生格式转换，修复 TOML 片段追加进 JSON、OpenCode 命令数组/环境变量格式不匹配及 Codex 嵌套 env 丢失
+- 原生共享技能显示固定可用状态与共享路径，禁止假撤回；单 Agent 批量关闭保留共享可见资源
+
 ## [2.0.7] - 2026-10-28
 
 ### Added

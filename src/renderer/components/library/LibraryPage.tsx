@@ -55,7 +55,6 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
   const t = useT()
   const queryClient = useQueryClient()
   const [notice, setNotice] = useState<string | null>(null)
-  const [filter, setFilter] = useState<string>('all')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [source, setSource] = useState('')
@@ -66,6 +65,8 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
     workspaceKey: workspaceKey || undefined
   }
   const targets = useExtensionTargets(section === 'agents' ? base : null)
+  const skillDiagnostics = useExtensionPage(section === 'agents' ? { ...base, kind: 'skill' } : null)
+  const mcpDiagnostics = useExtensionPage(section === 'agents' ? { ...base, kind: 'mcp' } : null)
   const page = useExtensionPage(section === 'skills' || section === 'mcp'
     ? { ...base, kind: section === 'mcp' ? 'mcp' as const : 'skill' as const }
     : null)
@@ -122,6 +123,17 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
         {notice && <Notice text={notice} />}
         {targets.isLoading && <p className="text-sm text-fg-secondary">{t('library.loading')}</p>}
         {targets.error && <p className="text-sm text-danger">{errorText(targets.error, t)}</p>}
+        <details className="mb-4 text-xs text-fg-secondary">
+          <summary className="cursor-pointer">{t('library.diagnostics')}</summary>
+          <p className="py-2">{t('library.completeness.filesystem_partial')}</p>
+          {[skillDiagnostics, mcpDiagnostics].map((query, index) => <div key={index}>
+            <h2>{t(index === 0 ? 'library.section.skills' : 'library.section.mcp')}</h2>
+            {query.isLoading && <p>{t('library.loading')}</p>}
+            {query.error && <p className="text-danger">{errorText(query.error, t)}</p>}
+            {query.data?.targets.map(target => <p key={target.actor}>{actorName(target.actor, t)} · {t(STATUS_KEY[target.status])}</p>)}
+            <ProblemList targets={query.data?.targets ?? []} t={t} />
+          </div>)}
+        </details>
         <div className="space-y-3">
           {(targets.data ?? []).map((target) => (
             <AgentCard key={target.actor} target={target} t={t} onOpenLauncherSettings={onOpenLauncherSettings} />
@@ -132,13 +144,8 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
   }
 
   const data = page.data
-  const found = (data?.found ?? []).filter((item) => filter === 'all' || item.actor === filter)
-  const managed = (data?.library.items ?? []).filter((item) => {
-    if (item.kind !== kind) return false
-    if (filter === 'all') return true
-    if (item.originActor === filter) return true
-    return data?.library.bindings.some((binding) => binding.libraryItemId === item.id && binding.actor === filter) ?? false
-  })
+  const found = data?.found ?? []
+  const managed = (data?.library.items ?? []).filter((item) => item.kind === kind)
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -158,7 +165,6 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
       </div>
 
       {notice && <Notice text={notice} />}
-      <p className="text-xs text-fg-secondary mb-3">{t('library.writesDisabled')} {t('library.completeness.filesystem_partial')}</p>
       {located.length > 0 && (
         <div className="space-y-2 mb-4">
           {located.map((item) => (
@@ -202,20 +208,6 @@ export function LibraryPage({ section, cwd, taskId, workspaceKey, onOpenLauncher
 
       {data && (
         <>
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
-            <FilterButton active={filter === 'all'} label={t('library.agent.all')} onClick={() => setFilter('all')} />
-            {data.targets.map((target) => (
-              <FilterButton
-                key={target.actor}
-                active={filter === target.actor}
-                label={`${actorName(target.actor, t)} · ${t(STATUS_KEY[target.status])}`}
-                danger={target.status === 'read_failed' || target.status === 'partial'}
-                onClick={() => setFilter(target.actor)}
-              />
-            ))}
-          </div>
-          <ProblemList targets={data.targets} t={t} />
-
           <LibraryResourceList key={kind} kind={kind} items={managed} page={data} busy={plan.isPending}
             onAction={(action) => plan.mutateAsync(action)} t={t} />
 
