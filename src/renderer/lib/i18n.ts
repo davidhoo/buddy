@@ -39,6 +39,51 @@ export function resolveLanguage(pref: LanguagePref): Language {
 }
 
 const en = {
+  'agents.advanced': 'Advanced',
+  'agents.nativeUpdate': 'Check and update',
+  'agents.updateWecode': 'Update WeCode',
+  'agents.formatJson': 'Format JSON',
+  'agents.invalidJson': 'Invalid JSON syntax',
+  'agents.default': 'Default',
+  'agents.ready': 'Available in Buddy',
+  'agents.disabled': 'Not selected in Buddy',
+  'agents.appOnly': 'App detected · native settings',
+  'agents.discovered': '{n} local agents discovered',
+  'agents.updatesAvailable': '{n} agents have updates: {names}',
+  'agents.customModel': 'Enter model ID',
+
+  'agents.status.verified': 'ACP verified',
+  'agents.status.unverified': 'ACP not verified',
+  'agents.status.missing': 'ACP unavailable',
+  'agents.status.incompatible': 'ACP incompatible',
+  'agents.status.failed': 'ACP check failed',
+
+  'agents.add': 'Add custom local agent',
+  'agents.id': 'Agent ID',
+  'agents.contract': 'This CLI implements the Buddy contract',
+
+  'agents.installation': 'Installation',
+  'agents.reset': 'Restore detected configuration',
+
+  'agents.loadModels': 'Load available models (save protocol first)',
+  'agents.timeout': 'Timeout (seconds)',
+  'agents.env': 'Environment (JSON object)',
+
+  'settings.tab.agents': 'Agent',
+  'agents.rescan': 'Rescan',
+  'agents.check': 'Check updates',
+  'agents.updateAll': 'Update all',
+  'agents.update': 'Update to',
+  'agents.empty': 'No local agents found',
+  'agents.enabled': 'Available for new tasks',
+  'agents.probe': 'Verify ACP',
+  'agents.command': 'Command',
+  'agents.args': 'Arguments (JSON array)',
+  'agents.invalidArgs': 'Enter a JSON array of strings',
+  'agents.invalidEnv': 'Enter a JSON object with string values',
+  'agents.model': 'Default model ID',
+  'agents.native': 'Use agent default',
+
   // Common
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
@@ -264,7 +309,6 @@ const en = {
   'settings.launcher.copyInstallCmd': 'Copy Install Command',
   'settings.launcher.switchToDirect': 'Apply Direct Launch ({bin})',
   'settings.launcher.agyAcpWarning': 'Antigravity CLI (agy) does not support ACP mode natively. Please use CLI mode.',
-  'settings.launcher.kimiAcpWarning': 'Kimi Code CLI (v0.6.0+) does not support ACP mode. Please use CLI mode.',
   'settings.launcher.dshAcpWarning': 'DeepSeek Harness (dsh) is integrated through its headless CLI. Please use CLI mode.',
 
   // Settings — Appearance
@@ -487,7 +531,10 @@ const en = {
   'modal.create.implementer': 'Implementer',
   'modal.create.reviewer': 'Reviewer',
   'modal.create.model': 'Model',
+  'modal.create.agent': 'Agent',
   'modal.create.modelUnavailable': 'No models available',
+  'modal.create.modelLoadFailed': 'Could not load models',
+  'modal.create.advancedOptions': 'Advanced options',
   'modal.create.standardAgents': 'Coding Agents',
   'modal.create.internalAgents': 'Internal Tooling (WeCode)',
   'modal.create.implementerSession': 'Implementer session ID',
@@ -553,6 +600,52 @@ const en = {
 
 // Simplified Chinese — preserves the original wording in the codebase.
 const zhCN: typeof en = {
+  'agents.advanced': '高级',
+  'agents.nativeUpdate': '检查并更新',
+  'agents.updateWecode': '更新 WeCode',
+  'agents.formatJson': '格式化 JSON',
+  'agents.invalidJson': 'JSON 语法有误',
+  'agents.default': '默认',
+  'agents.ready': '可用于任务',
+  'agents.disabled': '未在 Buddy 中启用',
+  'agents.appOnly': '已发现应用 · 使用自身设置',
+  'agents.discovered': '已发现 {n} 个本机 Agent',
+  'agents.updatesAvailable': '{n} 个 Agent 有新版本：{names}',
+  'agents.customModel': '输入模型 ID',
+
+  'agents.status.verified': 'ACP 已验证',
+  'agents.status.unverified': 'ACP 待验证',
+  'agents.status.missing': 'ACP 不可用',
+  'agents.status.incompatible': 'ACP 版本不兼容',
+  'agents.status.failed': 'ACP 检测失败',
+
+  'agents.add': '添加自定义本机 Agent',
+  'agents.id': 'Agent 标识',
+  'agents.contract': '此 CLI 实现 Buddy contract 协议',
+
+  'agents.installation': '安装位置',
+  'agents.reset': '恢复自动配置',
+
+  'agents.loadModels': '读取可用模型（请先保存协议）',
+  'agents.timeout': '超时（秒）',
+  'agents.env': '环境变量（JSON 对象）',
+
+  'settings.tab.agents': 'Agent',
+  'agents.rescan': '重新扫描',
+  'agents.check': '检查更新',
+  'agents.updateAll': '全部更新',
+  'agents.update': '更新到',
+  'agents.empty': '未发现本机 Agent',
+  'agents.enabled': '用于新建任务',
+  'agents.probe': '验证 ACP',
+  'agents.command': '启动命令',
+  'agents.args': '参数（JSON 数组）',
+  'agents.invalidArgs': '请输入 JSON 字符串数组',
+  'agents.invalidEnv': '请输入值均为字符串的 JSON 对象',
+  'agents.model': '默认模型 ID',
+  'agents.native': '使用 Agent 自身默认',
+
+
   'common.cancel': '取消',
   'common.confirm': '确定',
   'common.save': '保存',
@@ -768,7 +861,6 @@ const zhCN: typeof en = {
   'settings.launcher.copyInstallCmd': '复制安装命令',
   'settings.launcher.switchToDirect': '应用全局直连（{bin}）',
   'settings.launcher.agyAcpWarning': 'Antigravity CLI (agy) 原生不支持 ACP 模式，建议切换为 CLI 模式。',
-  'settings.launcher.kimiAcpWarning': 'Kimi Code CLI (v0.6.0+) 不支持 ACP 模式，建议切换为 CLI 模式。',
   'settings.launcher.dshAcpWarning': 'DeepSeek Harness（dsh）通过 headless CLI 接入，建议切换为 CLI 模式。',
 
   'settings.appearance.theme.title': '主题',
@@ -980,7 +1072,10 @@ const zhCN: typeof en = {
   'modal.create.implementer': '执行者',
   'modal.create.reviewer': '审查者',
   'modal.create.model': '模型',
+  'modal.create.agent': 'Agent',
   'modal.create.modelUnavailable': '暂无可用模型',
+  'modal.create.modelLoadFailed': '模型加载失败',
+  'modal.create.advancedOptions': '高级选项',
   'modal.create.standardAgents': 'Coding Agent',
   'modal.create.internalAgents': '内部工具支持（WeCode）',
   'modal.create.implementerSession': '执行者会话 ID',
@@ -1045,6 +1140,52 @@ const zhCN: typeof en = {
 
 // Traditional Chinese
 const zhTW: typeof en = {
+  'agents.advanced': '進階',
+  'agents.nativeUpdate': '檢查並更新',
+  'agents.updateWecode': '更新 WeCode',
+  'agents.formatJson': '格式化 JSON',
+  'agents.invalidJson': 'JSON 語法有誤',
+  'agents.default': '預設',
+  'agents.ready': '可用於任務',
+  'agents.disabled': '未在 Buddy 中啟用',
+  'agents.appOnly': '已發現應用程式 · 使用自身設定',
+  'agents.discovered': '已發現 {n} 個本機 Agent',
+  'agents.updatesAvailable': '{n} 個 Agent 有新版本：{names}',
+  'agents.customModel': '輸入模型 ID',
+
+  'agents.status.verified': 'ACP 已驗證',
+  'agents.status.unverified': 'ACP 待驗證',
+  'agents.status.missing': 'ACP 不可用',
+  'agents.status.incompatible': 'ACP 版本不相容',
+  'agents.status.failed': 'ACP 檢測失敗',
+
+  'agents.add': '新增自訂本機 Agent',
+  'agents.id': 'Agent 識別碼',
+  'agents.contract': '此 CLI 實作 Buddy contract 協議',
+
+  'agents.installation': '安裝位置',
+  'agents.reset': '恢復自動設定',
+
+  'agents.loadModels': '讀取可用模型（請先儲存協議）',
+  'agents.timeout': '逾時（秒）',
+  'agents.env': '環境變數（JSON 物件）',
+
+  'settings.tab.agents': 'Agent',
+  'agents.rescan': '重新掃描',
+  'agents.check': '檢查更新',
+  'agents.updateAll': '全部更新',
+  'agents.update': '更新到',
+  'agents.empty': '未發現本機 Agent',
+  'agents.enabled': '用於新建任務',
+  'agents.probe': '驗證 ACP',
+  'agents.command': '啟動命令',
+  'agents.args': '參數（JSON 陣列）',
+  'agents.invalidArgs': '請輸入 JSON 字串陣列',
+  'agents.invalidEnv': '請輸入值皆為字串的 JSON 物件',
+  'agents.model': '預設模型 ID',
+  'agents.native': '使用 Agent 自身預設',
+
+
   'common.cancel': '取消',
   'common.confirm': '確定',
   'common.save': '儲存',
@@ -1258,7 +1399,6 @@ const zhTW: typeof en = {
   'settings.launcher.copyInstallCmd': '複製安裝命令',
   'settings.launcher.switchToDirect': '套用全域直連（{bin}）',
   'settings.launcher.agyAcpWarning': 'Antigravity CLI (agy) 原生不支援 ACP 模式，建議切換為 CLI 模式。',
-  'settings.launcher.kimiAcpWarning': 'Kimi Code CLI (v0.6.0+) 不支援 ACP 模式，建議切換為 CLI 模式。',
   'settings.launcher.dshAcpWarning': 'DeepSeek Harness（dsh）透過 headless CLI 接入，建議切換為 CLI 模式。',
 
   'settings.appearance.theme.title': '主題',
@@ -1471,7 +1611,10 @@ const zhTW: typeof en = {
   'modal.create.implementer': '執行者',
   'modal.create.reviewer': '審查者',
   'modal.create.model': '模型',
+  'modal.create.agent': 'Agent',
   'modal.create.modelUnavailable': '暫無可用模型',
+  'modal.create.modelLoadFailed': '模型載入失敗',
+  'modal.create.advancedOptions': '進階選項',
   'modal.create.standardAgents': 'Coding Agent',
   'modal.create.internalAgents': '內部工具支援（WeCode）',
   'modal.create.implementerSession': '執行者工作階段 ID',

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { CreateTaskModal } from '../../../src/renderer/App'
 import type { TFunction } from '../../../src/renderer/hooks/useI18n'
+import { modelMemoryKey } from '../../../src/renderer/lib/agent-memory'
+import type { AcpModelList, GlobalSettings } from '../../../src/shared/types'
 
 // A `t` that returns the translation key verbatim. Tests assert on these keys
 // so they stay coupled to the i18n contract, not to any locale's wording.
@@ -24,6 +27,8 @@ type CreateTaskModalProps = Parameters<typeof CreateTaskModal>[0]
 type BuddyMocks = {
   detectActorModels?: ReturnType<typeof vi.fn>
   listAcpModels?: ReturnType<typeof vi.fn>
+  listCliModels?: ReturnType<typeof vi.fn>
+  listLocalAgents?: ReturnType<typeof vi.fn>
 }
 
 function mockWindowApi(buddyOverrides: BuddyMocks = {}) {
@@ -56,8 +61,12 @@ function renderModal(
     t,
     ...overrides
   }
-  render(<CreateTaskModal {...props} />)
-  return { onCreate, ...props }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = render(<QueryClientProvider client={client}><CreateTaskModal {...props} /></QueryClientProvider>)
+  const rerender = (next: Partial<CreateTaskModalProps>) => view.rerender(
+    <QueryClientProvider client={client}><CreateTaskModal {...props} {...next} /></QueryClientProvider>
+  )
+  return { ...props, rerender }
 }
 
 afterEach(() => {
@@ -253,19 +262,34 @@ describe('CreateTaskModal actor models', () => {
     })
   })
 
-  it('annotates CLI agents with the configured model and hides the ACP model picker', async () => {
-    renderModal({}, {
-      detectActorModels: vi.fn().mockResolvedValue({
-        claude: 'sonnet-4.5',
-        codex: 'gpt-5.6'
-      })
-    })
+  it('uses separate agent and model dropdowns for CLI and snapshots both selected models', async () => {
+    const detectActorModels = vi.fn()
+    const listCliModels = vi.fn(async (actor: string) => ({
+      models: actor === 'claude'
+        ? [{ id: 'sonnet-4.5', name: 'Sonnet 4.5' }]
+        : [{ id: 'gpt-5.6', name: 'GPT 5.6' }]
+    }))
+    const { onCreate } = renderModal({}, { detectActorModels, listCliModels })
 
-    await waitFor(() => {
-      expect(screen.getAllByRole('option', { name: 'actor.claude (sonnet-4.5)' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('combobox')).toHaveLength(4)
+    const agentSelect = screen.getByRole('combobox', { name: 'modal.create.implementer modal.create.agent' })
+    expect(within(agentSelect).getByRole('option', { name: 'actor.claude' })).toBeInTheDocument()
+    expect(within(agentSelect).queryByRole('option', { name: /sonnet/ })).not.toBeInTheDocument()
+    expect(detectActorModels).not.toHaveBeenCalled()
+
+    const implementerModel = screen.getByRole('combobox', { name: 'modal.create.implementer modal.create.model' })
+    const reviewerModel = screen.getByRole('combobox', { name: 'modal.create.reviewer modal.create.model' })
+    await within(implementerModel).findByRole('option', { name: 'Sonnet 4.5' })
+    await within(reviewerModel).findByRole('option', { name: 'GPT 5.6' })
+    fireEvent.change(implementerModel, { target: { value: 'sonnet-4.5' } })
+    fireEvent.change(reviewerModel, { target: { value: 'gpt-5.6' } })
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), {
+      target: { value: 'cli-models' }
     })
-    expect(screen.getAllByRole('option', { name: 'actor.codex (gpt-5.6)' }).length).toBeGreaterThan(0)
-    expect(screen.queryByLabelText('modal.create.implementer modal.create.model')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /modal.create.submit/ }))
+    expect(onCreate.mock.calls[0][3].launchers).toMatchObject({
+      claude: { model: 'sonnet-4.5' }, codex: { model: 'gpt-5.6' }
+    })
   })
 
   it('shows an ACP model picker and snapshots the selected model onto the launcher', async () => {
@@ -303,9 +327,8 @@ describe('CreateTaskModal actor models', () => {
     )
 
     const modelSelect = await screen.findByLabelText('modal.create.implementer modal.create.model')
-    await waitFor(() => {
-      expect(modelSelect).toHaveValue('sonnet-4.5')
-    })
+    await within(modelSelect).findByRole('option', { name: 'Opus 4.6' })
+    expect(modelSelect).toHaveValue('__native__')
     expect(screen.getAllByRole('option', { name: 'actor.claude' }).length).toBeGreaterThan(0)
     expect(screen.queryAllByRole('option', { name: /actor.claude \(/ })).toHaveLength(0)
 
@@ -322,6 +345,116 @@ describe('CreateTaskModal actor models', () => {
     expect(settings.launchers.claude.model).toBe('opus-4.6')
     expect(settings.launchers.claude.protocol).toBe('acp')
     expect(settings.launchers.codex.model).toBeUndefined()
+  })
+
+  it('keeps role-specific model history when both roles temporarily select the same agent', async () => {
+    const settings = {}
+    localStorage.setItem(modelMemoryKey('implementer', 'codex', settings), 'implementer-codex')
+    localStorage.setItem(modelMemoryKey('reviewer', 'opencode', settings), 'reviewer-opencode')
+    renderModal()
+    fireEvent.change(screen.getByRole('combobox', { name: 'modal.create.implementer modal.create.agent' }), { target: { value: 'codex' } })
+    expect(screen.getByText('modal.create.sameActorError')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'modal.create.reviewer modal.create.agent' }), { target: { value: 'opencode' } })
+    expect(screen.queryByText('modal.create.sameActorError')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('modal.create.implementer modal.create.model')).toHaveValue('implementer-codex')
+    expect(screen.getByLabelText('modal.create.reviewer modal.create.model')).toHaveValue('reviewer-opencode')
+  })
+
+  it('keeps the native default selectable when model discovery fails or returns no models', async () => {
+    const globalSettings = { launchers: { claude: { command: 'claude', env: {}, timeout_seconds: 7200, model: 'saved-custom-model' } } }
+    const { onCreate } = renderModal({ globalSettings }, {
+      listCliModels: vi.fn(async (actor: string) => {
+        if (actor === 'claude') throw new Error('discovery failed')
+        return { models: [] }
+      })
+    })
+    const model = screen.getByLabelText('modal.create.implementer modal.create.model')
+    await within(model).findByRole('option', { name: 'modal.create.modelLoadFailed' })
+    expect(model).toHaveValue('saved-custom-model')
+    expect(model).not.toBeDisabled()
+    const reviewerModel = screen.getByLabelText('modal.create.reviewer modal.create.model')
+    await within(reviewerModel).findByRole('option', { name: 'modal.create.modelUnavailable' })
+    expect(reviewerModel).toHaveValue('__native__')
+    expect(reviewerModel).not.toBeDisabled()
+    fireEvent.change(model, { target: { value: '__native__' } })
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), { target: { value: 'native-default' } })
+    fireEvent.click(screen.getByRole('button', { name: /modal.create.submit/ }))
+    expect(onCreate.mock.calls[0][3].launchers.claude.model).toBeUndefined()
+  })
+
+  it('ignores a late model response after switching agents and uses the new agent protocol', async () => {
+    let resolveOld!: (value: AcpModelList) => void
+    const listCliModels = vi.fn((actor: string) => actor === 'claude'
+      ? new Promise<AcpModelList>(resolve => { resolveOld = resolve })
+      : Promise.resolve({ models: [] }))
+    const listAcpModels = vi.fn().mockResolvedValue({ models: [{ id: 'new-model', name: 'New model' }] })
+    renderModal({ globalSettings: { launchers: { opencode: { protocol: 'acp', command: 'opencode', args: ['acp'], env: {}, timeout_seconds: 7200 } } } }, { listCliModels, listAcpModels })
+    fireEvent.change(screen.getByRole('combobox', { name: 'modal.create.implementer modal.create.agent' }), { target: { value: 'opencode' } })
+    const model = screen.getByLabelText('modal.create.implementer modal.create.model')
+    await within(model).findByRole('option', { name: 'New model' })
+    fireEvent.change(model, { target: { value: 'new-model' } })
+    await act(async () => { resolveOld({ models: [{ id: 'old-model', name: 'Old model' }] }) })
+    expect(model).toHaveValue('new-model')
+    expect(within(model).queryByRole('option', { name: 'Old model' })).not.toBeInTheDocument()
+    expect(listAcpModels).toHaveBeenCalledWith('opencode')
+    expect(listCliModels).not.toHaveBeenCalledWith('opencode')
+  })
+
+  it('reloads models when the same agent switches between CLI and ACP', async () => {
+    const listCliModels = vi.fn().mockResolvedValue({ models: [{ id: 'cli-model', name: 'CLI model' }] })
+    const listAcpModels = vi.fn().mockResolvedValue({ models: [{ id: 'acp-model', name: 'ACP model' }] })
+    const globalSettings: GlobalSettings = { launchers: { claude: { command: 'claude', env: {}, timeout_seconds: 7200 } } }
+    const { rerender } = renderModal({ globalSettings }, { listCliModels, listAcpModels })
+    const model = screen.getByLabelText('modal.create.implementer modal.create.model')
+    await within(model).findByRole('option', { name: 'CLI model' })
+    rerender({ globalSettings: { launchers: { claude: { ...globalSettings.launchers!.claude, protocol: 'acp', command: 'claude-agent-acp' } } } })
+    await within(model).findByRole('option', { name: 'ACP model' })
+    expect(within(model).queryByRole('option', { name: 'CLI model' })).not.toBeInTheDocument()
+    expect(listAcpModels).toHaveBeenCalledWith('claude')
+  })
+
+  it('requires replacing an unavailable remembered ACP model and allows the native default', async () => {
+    const globalSettings: GlobalSettings = { launchers: { claude: { command: 'claude-agent-acp', protocol: 'acp', env: {}, timeout_seconds: 7200, model: 'removed-model' } } }
+    renderModal({ globalSettings }, { listAcpModels: vi.fn().mockResolvedValue({ models: [{ id: 'available-model', name: 'Available model' }] }) })
+    const model = screen.getByLabelText('modal.create.implementer modal.create.model')
+    await within(model).findByRole('option', { name: 'Available model' })
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), { target: { value: 'valid-model' } })
+    expect(model).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: /modal.create.submit/ })).toBeDisabled()
+    fireEvent.change(model, { target: { value: '__native__' } })
+    expect(screen.getByRole('button', { name: /modal.create.submit/ })).not.toBeDisabled()
+  })
+})
+
+describe('CreateTaskModal advanced options', () => {
+  it('hides session IDs by default and preserves entered IDs through collapse and submit', () => {
+    const { onCreate } = renderModal()
+    const toggle = screen.getByRole('button', { name: 'modal.create.advancedOptions' })
+    const implementerSession = screen.getByLabelText('modal.create.implementerSession')
+    const reviewerSession = screen.getByLabelText('modal.create.reviewerSession')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(implementerSession).not.toBeVisible()
+    expect(reviewerSession).not.toBeVisible()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(implementerSession).toBeVisible()
+    expect(reviewerSession).toBeVisible()
+    fireEvent.change(implementerSession, { target: { value: ' implementer-session ' } })
+    fireEvent.change(reviewerSession, { target: { value: ' reviewer-thread ' } })
+    fireEvent.click(toggle)
+    expect(implementerSession).not.toBeVisible()
+    fireEvent.click(toggle)
+    expect(implementerSession).toHaveValue(' implementer-session ')
+    expect(reviewerSession).toHaveValue(' reviewer-thread ')
+    fireEvent.click(toggle)
+    fireEvent.change(screen.getByPlaceholderText('modal.create.taskNamePlaceholder'), { target: { value: 'resume-sessions' } })
+    fireEvent.click(screen.getByRole('button', { name: /modal.create.submit/ }))
+    expect(onCreate.mock.calls[0][3]).toMatchObject({
+      seed_actor_sessions: { claude: 'implementer-session', codex: 'reviewer-thread' },
+      seed_claude_session_id: 'implementer-session',
+      seed_codex_thread_id: 'reviewer-thread'
+    })
   })
 })
 

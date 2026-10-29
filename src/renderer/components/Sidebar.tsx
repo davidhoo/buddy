@@ -14,6 +14,7 @@ import {
   SquarePen,
   SquarePlus,
   Sun,
+  Terminal,
   Trash2,
   Upload,
   RotateCw
@@ -182,6 +183,8 @@ function SettingsSidebar({
           active={settingsTab === 'general'}
           onClick={() => onSelectSettingsTab('general')}
         />
+
+        <SettingsMenuItem label={t('settings.tab.agents')} icon={<Terminal size={15} strokeWidth={1.6} />} active={settingsTab === 'agents'} onClick={() => onSelectSettingsTab('agents')} />
 
         <SettingsMenuItem
           label={t('settings.tab.appearance')}

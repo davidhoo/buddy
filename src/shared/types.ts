@@ -15,6 +15,7 @@ export interface Task {
 export type TaskStatus =
   | 'QUEUED'
   | 'READY'
+  | 'RUNNING_AGENT'
   | 'RUNNING_CLAUDE'
   | 'RUNNING_CODEX'
   | 'RUNNING_CURSOR'
@@ -126,6 +127,7 @@ export interface ActiveRun {
 }
 
 export interface TaskSettings {
+  seed_actor_sessions?: Record<string,string>
   protocol_version: string
   flow_policy: string
   role_mode: string
@@ -161,6 +163,7 @@ export interface AcpModelInfo {
 }
 
 export interface AcpModelList {
+  error?: string
   models: AcpModelInfo[]
   currentModelId?: string
 }
@@ -175,7 +178,7 @@ export interface AcpPreset {
 }
 
 export interface TranscriptEntry {
-  role: 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'dsh' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode' | 'system'
+  role: (string & {}) | 'human' | 'claude' | 'codex' | 'cursor' | 'agy' | 'opencode' | 'kimi' | 'dsh' | 'wecode_claude' | 'wecode_codex' | 'wecode_opencode' | 'system'
   content: string
   ts: string
   round?: number
@@ -221,6 +224,7 @@ export interface BootstrapResponse {
 }
 
 export interface GlobalSettings {
+  agent_management?: Record<string, import('./agents').AgentConfiguration>
   protocol_version?: string
   countdown_seconds?: number
   max_rounds?: number

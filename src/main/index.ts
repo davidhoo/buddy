@@ -43,6 +43,7 @@ buddyEvents.subscribe((event) => {
 app.whenReady().then(async () => {
   await buddyService.recoverInterruptedRuns()
   windowManager.createWindow()
+  void buddyService.listLocalAgents().catch(error => console.warn('Agent discovery failed', error instanceof Error ? error.message : 'unknown error'))
   const mainWindow = windowManager.getMainWindow()
   if (mainWindow) {
     setupMenu(mainWindow)

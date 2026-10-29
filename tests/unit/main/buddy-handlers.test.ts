@@ -79,6 +79,6 @@ describe('registerBuddyHandlers', () => {
     updateModelHandler({}, 'task', 'workspace', 'claude', 'opus-4.6')
     expect(service.updateTaskLauncherModel).toHaveBeenCalledWith('task', 'workspace', 'claude', 'opus-4.6')
 
-    expect(handle).toHaveBeenCalledTimes(39)
+    expect(handle).toHaveBeenCalledTimes(47)
   })
 })

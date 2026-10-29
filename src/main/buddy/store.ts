@@ -1082,7 +1082,7 @@ function coerceLauncherOverrides(
       obj.protocol = 'acp'
     }
 
-    if (candidate.args && candidate.args.length > 0) {
+    if (Array.isArray(candidate.args)) {
       obj.args = candidate.args
     } else if (obj.protocol === 'acp' && globalLauncher?.args && globalLauncher.args.length > 0) {
       obj.args = [...globalLauncher.args]

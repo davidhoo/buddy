@@ -87,6 +87,9 @@ test('auto-skips a running countdown once when its deadline elapses', async ({ p
         selectDirectory: async () => null,
         openInFinder: async () => undefined,
         onFullScreenChange: () => () => undefined,
+        onMenuAction: () => () => undefined,
+        onUpdaterEvent: () => () => undefined,
+        updateMenuLanguage: async () => undefined,
         isFullScreen: async () => false
       }
     })

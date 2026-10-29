@@ -1,3 +1,4 @@
+import { AGENT_RECIPES } from '../../shared/agents'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -41,10 +42,10 @@ const SUPPORTED_ACTORS = [
   'wecode_codex',
   'wecode_opencode'
 ] as const
-export type CommitMessageActor = typeof SUPPORTED_ACTORS[number]
+export type CommitMessageActor = string
 
 export function isSupportedActor(actor: string): actor is CommitMessageActor {
-  return (SUPPORTED_ACTORS as readonly string[]).includes(actor)
+  return (SUPPORTED_ACTORS as readonly string[]).includes(actor) || AGENT_RECIPES.some(a=>a.id===actor && !!a.command)
 }
 
 // ─── Diff collection ──────────────────────────────────────────────
@@ -554,6 +555,8 @@ async function generateViaCli(input: {
   const launcherCommand = buildLauncherCommand({
     actor,
     command: launcher.command,
+      args: (launcher as import('../../shared/types').Launcher).args,
+        model: (launcher as import('../../shared/types').Launcher).model,
     mode: 'start',
     promptFile,
     promptText,
@@ -654,7 +657,7 @@ async function generateViaAcp(input: {
     return { outputText: '', exitCode: null, timedOut: false, cancelled: true }
   }
 
-  const baseArgs = launcher.args && launcher.args.length > 0
+  const baseArgs = Array.isArray(launcher.args)
     ? launcher.args
     : defaultAcpArgs(launcher.command, actor)
   const resolved = resolveAcpBinary(launcher.command, baseArgs)
@@ -692,7 +695,7 @@ async function generateViaAcp(input: {
     const extracted = extractAcpSessionModels(created)
     const modelId = (launcher.model?.trim() || extracted.currentModelId || '').trim()
     if (modelId) {
-      await applyAcpSessionModel(client, sessionId, modelId, created).catch(() => {})
+      await applyAcpSessionModel(client, sessionId, modelId, created)
     }
 
     await client.prompt(
@@ -822,6 +825,7 @@ export function resolveLauncher(
   if (protocol !== 'acp') {
     return normalizeLauncher(actor, {
       command: base.command,
+      args: base.args,
       env: base.env,
       timeout_seconds: base.timeout_seconds,
       ...(base.model ? { model: base.model } : {})

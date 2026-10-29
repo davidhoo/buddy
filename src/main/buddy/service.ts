@@ -1,3 +1,5 @@
+import { acquireAgentUse } from './agents/locks'
+import { AgentManagementService } from './agents/service'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -63,6 +65,7 @@ export interface BuddyCoreServiceOptions {
 }
 
 export class BuddyCoreService {
+  readonly agents: AgentManagementService
   private readonly store: BuddyStore
   private readonly runner: BuddyRunner
   private readonly events?: BuddyEventBus
@@ -74,12 +77,27 @@ export class BuddyCoreService {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
+    this.agents = new AgentManagementService(this.store)
     const notifier = createTaskNotifier(this.store)
     this.runner = new BuddyRunner(this.store, { events: normalized.events, notifier })
     this.coordinator = new QueueCoordinator({ store: this.store, runner: this.runner, events: normalized.events })
     this.runner.onTaskTerminal = (workspaceKey) => {
       void this.coordinator?.onTaskTerminal(workspaceKey)
     }
+  }
+
+  listCliModels(id:string) { return this.withAgentUse(()=>this.agents.models(id)) }
+  listLocalAgents(force=false) { return this.withAgentUse(()=>this.agents.list(force)) }
+  configureAgent(id:string, config:import('../../shared/agents').AgentConfiguration) { return this.withAgentUse(()=>this.agents.configure(id,config)) }
+  probeLocalAgent(id:string) { return this.withAgentUse(()=>this.agents.probe(id)) }
+  checkAgentUpdates(force=false) { return this.withAgentUse(()=>this.agents.checkUpdates(force)) }
+  updateLocalAgents(ids:string[]) { return this.agents.update(ids) }
+  getAgentUpdateJobs() { return this.agents.getJobs() }
+  cancelAgentUpdates() { this.agents.cancel() }
+
+  private async withAgentUse<T>(run:()=>Promise<T>):Promise<T> {
+    const release=await acquireAgentUse()
+    try{return await run()}finally{release()}
   }
 
   getCoordinator(): QueueCoordinator | undefined {
@@ -220,8 +238,25 @@ export class BuddyCoreService {
     return this.store.getTaskStats(taskId, workspaceKey)
   }
 
-  updateGlobalSettings(settings: GlobalSettings): Promise<GlobalSettings> {
-    return this.store.updateGlobalSettings(settings)
+  async updateGlobalSettings(settings: GlobalSettings): Promise<GlobalSettings> {
+    const current = await this.store.readGlobalSettings()
+    const launchers = { ...settings.launchers }
+    // Managed launchers are edited through the serialized per-Agent API.
+    // A stale general-settings window must not replace their commands/models.
+    for (const id of Object.keys(current.agent_management ?? {})) {
+      const existing = current.launchers?.[id]
+      if (existing) launchers[id] = { ...existing, timeout_seconds: settings.launchers?.[id]?.timeout_seconds ?? existing.timeout_seconds }
+    }
+    const agentManagement = { ...current.agent_management }
+    for (const [id, config] of Object.entries(agentManagement)) {
+      const timeout = launchers[id]?.timeout_seconds
+      if (timeout === undefined) continue
+      agentManagement[id] = { ...config,
+        ...(config.cli ? { cli: { ...config.cli, timeout_seconds: timeout } } : {}),
+        ...(config.acp ? { acp: { ...config.acp, timeout_seconds: timeout } } : {})
+      }
+    }
+    return this.store.updateGlobalSettings({ ...settings, launchers, agent_management: agentManagement })
   }
 
   gitStatus(repoRoot: string): Promise<GitStatusResult> {
@@ -275,8 +310,9 @@ export class BuddyCoreService {
     paths: string[]
     taskSettings?: TaskSettings | null
   }): Promise<{ message: string }> {
-    const actor = isSupportedActor(input.actor) ? input.actor : 'claude'
     const globalSettings = await this.store.readGlobalSettings()
+    if(!isSupportedActor(input.actor) && !input.taskSettings?.launchers?.[input.actor] && !globalSettings.launchers?.[input.actor]) throw new Error('Agent unavailable')
+    const actor = input.actor
     const launcher = resolveLauncher(actor, input.taskSettings, globalSettings)
     const result = await generateCommitMessageWithActor({
       repoRoot: input.repoRoot,
@@ -355,14 +391,17 @@ export class BuddyCoreService {
    * resolve to an empty list. Results are cached briefly so the create-task
    * modal can reopen without spawning the agent again.
    */
-  async listAcpModels(actor: string, cwd?: string): Promise<AcpModelList> {
+  listAcpModels(actor:string,cwd?:string):Promise<AcpModelList> {
+    return this.withAgentUse(()=>this.listAcpModelsInner(actor,cwd))
+  }
+  private async listAcpModelsInner(actor: string, cwd?: string): Promise<AcpModelList> {
     const empty: AcpModelList = { models: [] }
     const settings = await this.store.readGlobalSettings()
     const launchers = normalizeGlobalSettings(settings).launchers ?? {}
     const launcher = launchers[actor]
     if (launcher?.protocol !== 'acp') return empty
 
-    const cacheKey = `${actor}|${launcher.command}|${(launcher.args ?? []).join(' ')}`
+    const cacheKey = JSON.stringify([actor,launcher.command,launcher.args,launcher.env,cwd])
     const cached = this.acpModelCache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) {
       return cached.list
@@ -372,7 +411,7 @@ export class BuddyCoreService {
 
     const pending = (async (): Promise<AcpModelList> => {
       try {
-        const baseArgs = launcher.args && launcher.args.length > 0
+        const baseArgs = Array.isArray(launcher.args)
           ? launcher.args
           : defaultAcpArgs(launcher.command, actor)
         const resolved = resolveAcpBinary(launcher.command, baseArgs)
@@ -388,8 +427,8 @@ export class BuddyCoreService {
           expiresAt: Date.now() + 5 * 60 * 1000
         })
         return list
-      } catch {
-        return empty
+      } catch (error) {
+        return {models:[],error:redactSensitiveText(String(error))}
       } finally {
         this.acpModelInflight.delete(cacheKey)
       }
@@ -399,7 +438,10 @@ export class BuddyCoreService {
     return pending
   }
 
-  async testLauncher(
+  testLauncher(actor:string,command:string,env?:Record<string,string>,protocol?:'cli'|'acp',args?:string[]):Promise<TestLauncherResult> {
+    return this.withAgentUse(()=>this.testLauncherInner(actor,command,env,protocol,args))
+  }
+  private async testLauncherInner(
     actor: string,
     command: string,
     env?: Record<string, string>,

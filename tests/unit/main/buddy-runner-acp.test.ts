@@ -271,6 +271,95 @@ describe('BuddyRunner with ACP protocol', () => {
     expect(detailAfterRounds.events.some((e) => e.type === 'task.done')).toBe(true)
   })
 
+  it('executes two unregistered ACP actors through dual-break and persisted state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-runner-acp-dual-break-'))
+    const fakeAcpServer = join(root, 'dual-break-agent.js')
+
+    const serverScript = `
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin });
+
+      let promptId = null;
+      rl.on('line', (line) => {
+        const msg = JSON.parse(line);
+        if (msg.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { protocolVersion: '1.0', agentInfo: { name: 'dual-agent' }, capabilities: {} }
+          }) + '\\n');
+        } else if (msg.method === 'session/new' || msg.method === 'session/load') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { sessionId: 'sess_dual' }
+          }) + '\\n');
+        } else if (msg.method === 'session/prompt') {
+          promptId = msg.id;
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'call_break',
+            method: 'tools/call',
+            params: {
+              name: 'buddy_propose_break',
+              input: { reason: 'Done' }
+            }
+          }) + '\\n');
+        } else if (msg.id === 'call_break') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: promptId,
+            result: { status: 'completed' }
+          }) + '\\n');
+        }
+      });
+    `
+    await writeFile(fakeAcpServer, serverScript)
+
+    const store = new BuddyStore(root)
+    await store.updateGlobalSettings({ max_rounds: 10 })
+
+    const created = await store.createTask({
+      task_id: 'dual-break-demo',
+      repo_root: '/tmp/repo',
+      settings: {
+        flow_policy: 'claude_then_codex',
+        implementer_actor: 'novel_impl',
+        reviewer_actor: 'novel_review',
+        launchers: {
+          novel_impl: {
+            protocol: 'acp',
+            command: process.execPath,
+            args: [fakeAcpServer],
+            env: {},
+            timeout_seconds: 10
+          },
+          novel_review: {
+            protocol: 'acp',
+            command: process.execPath,
+            args: [fakeAcpServer],
+            env: {},
+            timeout_seconds: 10
+          }
+        }
+      }
+    })
+
+    const runner = new BuddyRunner(store)
+
+    // Round 1: novel_impl runs, proposes break
+    await runner.startTask('dual-break-demo', {
+      workspace_key: created.workspace_key,
+      actor: 'novel_impl'
+    })
+
+    // After round 1, round 2 (novel_review) auto-advances or can be run.
+    // If auto-advance happened, state is already DONE or we check current state:
+    const detailAfterRounds = await store.getTaskDetail('dual-break-demo', created.workspace_key)
+    expect(detailAfterRounds.state.status).toBe('DONE')
+    expect(detailAfterRounds.events.some((e) => e.type === 'task.done')).toBe(true)
+  })
+
   it('persists ACP artifacts and extracts round events (thinking and tool calls)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-runner-acp-artifacts-'))
     const fakeAcpServer = join(root, 'fake-acp-artifacts-agent.js')

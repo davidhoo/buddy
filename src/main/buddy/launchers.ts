@@ -1,3 +1,4 @@
+import { AGENT_RECIPES } from '../../shared/agents'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { basename, dirname, resolve } from 'node:path'
@@ -5,6 +6,7 @@ import { existsSync, statSync, chmodSync } from 'node:fs'
 import { installHintFor, mergeChildEnv } from './shell-path'
 
 export type LauncherCommandKind =
+  | 'native_codebuddy'
   | 'native_claude'
   | 'native_codex'
   | 'native_cursor'
@@ -17,6 +19,8 @@ export type LauncherCommandKind =
 export interface LauncherCommandInput {
   actor: string
   command: string
+  args?: string[]
+  model?: string
   mode?: string
   promptFile: string
   promptText?: string
@@ -52,7 +56,7 @@ export function parserActorForKind(actor: string, kind: LauncherCommandKind): st
   if (kind === 'native_opencode') return 'opencode'
   if (kind === 'native_kimi') return 'kimi'
   if (kind === 'native_dsh') return 'dsh'
-  if (kind === 'native_claude') return 'claude'
+  if (kind === 'native_claude' || kind === 'native_codebuddy') return 'claude'
   if (kind === 'native_codex') return 'codex'
   if (kind === 'native_cursor') return 'cursor'
   if (kind === 'native_agy') return 'agy'
@@ -215,7 +219,13 @@ export async function runLauncherWithPty(input: {
 }
 
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
-  let baseCmd = splitCommand(input.command)
+  let baseCmd = [...splitCommand(input.command), ...(input.args ?? [])]
+  if(input.model) {
+    const flag=AGENT_RECIPES.find(a=>a.id===input.actor)?.modelFlag
+    if(!flag) throw new Error('This CLI does not support model selection')
+    baseCmd=baseCmd.filter((arg,i,all)=>arg!=='--model' && arg!=='-m' && !arg.startsWith('--model=') && (i===0 || !['--model','-m'].includes(all[i-1])))
+    baseCmd.push(flag,input.model)
+  }
   const kind = commandKindFor(input.actor, baseCmd)
   if (!baseCmd[0] && kind !== 'contract') {
     if (input.actor === 'wecode_claude') baseCmd = ['wecode']
@@ -227,8 +237,8 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     ? cleanCodexBaseCommand(baseCmd)
     : baseCmd
 
-  if (kind === 'native_claude') {
-    const skipPermissions = prefixArgs.includes('--dangerously-skip-permissions')
+  if (kind === 'native_claude' || kind === 'native_codebuddy') {
+    const skipPermissions = kind === 'native_codebuddy' || prefixArgs.includes('--dangerously-skip-permissions')
       ? []
       : ['--dangerously-skip-permissions']
     return {
@@ -448,6 +458,7 @@ export function commandKindFor(actor: string, command: string | string[]): Launc
   // WeCode wraps claude, codex, and opencode:
   // `wecode codex ...` runs codex; `wecode opencode ...` runs opencode;
   // otherwise `wecode` (or `wecode ...`) runs claude.
+  if (executable === 'codebuddy' || executable === 'cbc') return 'native_codebuddy'
   if (executable === 'claude' || isWecodeClaudeCommand(baseCmd)) return 'native_claude'
   if (executable === 'codex' || isWecodeCodexCommand(baseCmd)) return 'native_codex'
   if (executable === 'cursor-agent' || executable === 'agent') return 'native_cursor'

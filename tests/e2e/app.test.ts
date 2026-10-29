@@ -29,7 +29,10 @@ test.beforeEach(async ({ page }) => {
       selectDirectory: async () => null,
       openInFinder: async () => undefined,
       onFullScreenChange: () => () => undefined,
-      isFullScreen: async () => false
+      onMenuAction: () => () => undefined,
+        onUpdaterEvent: () => () => undefined,
+        updateMenuLanguage: async () => undefined,
+        isFullScreen: async () => false
     }
     Object.defineProperty(window, 'buddy', { value: buddy })
     Object.defineProperty(window, 'api', { value: api })
@@ -43,7 +46,7 @@ test('app should launch and show title bar', async ({ page }) => {
 
 test('should show sidebar by default', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('text=新建任务')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建任务', exact: true }).first()).toBeVisible()
 })
 
 test('should toggle sidebar', async ({ page }) => {
@@ -53,13 +56,13 @@ test('should toggle sidebar', async ({ page }) => {
   await page.locator('button[title="收起侧边栏"]').click()
 
   // 验证侧边栏隐藏
-  await expect(page.locator('text=新建任务')).not.toBeVisible()
+  await expect(page.getByRole('button', { name: '新建任务', exact: true }).first()).not.toBeVisible()
 
   // 再次点击展开
   await page.locator('button[title="展开侧边栏"]').click()
 
   // 验证侧边栏显示
-  await expect(page.locator('text=新建任务')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建任务', exact: true }).first()).toBeVisible()
 })
 
 test('keyboard shortcuts page opens from shortcut and supports search', async ({ page }) => {
@@ -86,10 +89,10 @@ test('sidebar toggle shortcut works', async ({ page }) => {
   await page.click('body')
   await page.waitForTimeout(300)
   await page.keyboard.press('Meta+B')
-  await expect(page.locator('text=新建任务')).not.toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('button', { name: '新建任务', exact: true }).first()).not.toBeVisible({ timeout: 10000 })
 
   await page.keyboard.press('Meta+B')
-  await expect(page.locator('text=新建任务')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建任务', exact: true }).first()).toBeVisible()
 })
 
 test('custom shortcut binding is saved and used', async ({ page }) => {
