@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-10-29
+
+### Fixed
+- 恢复 v2.0.7 的任务服务进程组信号探测：`probe` / `deliver` 正确处理 macOS 对退出中进程组返回的 `EPERM`，避免 `stop-owned` 误报 `worker: kill EPERM` 并中断清理
+
+---
+
 ## [2.0.8] - 2026-10-29
 
 ### Added
