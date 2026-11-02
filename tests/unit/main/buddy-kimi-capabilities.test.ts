@@ -49,6 +49,7 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.sl
 require('node:readline').createInterface({input:process.stdin}).on('line', line => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') console.log(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{protocolVersion:1,agentCapabilities:{}}}))
+  if (message.method === 'session/new') console.log(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{sessionId:'probe'}}))
 })
 `, { mode: 0o755 })
       const store = new BuddyStore(join(root, 'data'))

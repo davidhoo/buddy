@@ -340,6 +340,43 @@ rl.on('line', (line) => {
     }
   })
 
+  it('feeds ACP model-list auth failures back into agent inventory status', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-acp-model-feedback-'))
+    const fakeAcp = join(root, 'fake-acp-auth-fail.js')
+    await writeFile(fakeAcp, `#!/usr/bin/env node
+const readline = require('node:readline')
+readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+  const req = JSON.parse(line)
+  if (req.method === 'initialize') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: 1 } }) + '\\n')
+  } else if (req.method === 'session/new') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: -32603, message: 'Internal error', data: { details: 'Authentication token has expired. Please run wecode login' } } }) + '\\n')
+  }
+})
+`, { mode: 0o755 })
+    try {
+      const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
+      await service.updateGlobalSettings({
+        launchers: {
+          wecode_claude: { protocol: 'acp', command: process.execPath, args: [fakeAcp], env: {}, timeout_seconds: 10 }
+        }
+      })
+      ;(service.agents as { inventory: Array<Record<string, unknown>> }).inventory = [{
+        id: 'wecode_claude', installationId: 'x', name: 'WeCode Claude', path: '', realPath: '', source: 'unknown',
+        runnable: false, enabled: true, selectedProtocol: 'acp', acpStatus: 'verified',
+        acp: { command: process.execPath, args: [fakeAcp], env: {}, timeout_seconds: 10, protocol: 'acp' }
+      }]
+      const list = await service.listAcpModels('wecode_claude')
+      expect(list.models).toEqual([])
+      expect(list.error).toMatch(/Authentication token|wecode login/i)
+      const snapshot = await service.getAgentInventory()
+      expect(snapshot.agents.find(a => a.id === 'wecode_claude')?.acpStatus).toBe('failed')
+      expect(snapshot.agents.find(a => a.id === 'wecode_claude')?.acpError).toMatch(/wecode login/i)
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
   it('lists models advertised by an ACP session/new result', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-acp-list-models-'))
     const fakeAcp = join(root, 'fake-acp-models.js')

@@ -9,8 +9,10 @@ describe('parseAcpAuthFailure', () => {
   it('extracts wecode login from expired-token probe errors', () => {
     const codex = 'Error: ACP Error 1001: Codex process has exited with code 1:\n⚠️  Authentication token has expired or is invalid.\n🔐 Please run the following command to login:\n\n  wecode login'
     const opencode = 'Error: Process exited with code 1: ⚠️  Authentication token has expired or is invalid.\n🔐 Please run the following command to login:\n\n  wecode login'
+    const claudeModels = 'Error: ACP Error -32603: Internal error {"details":"Claude Code process exited with code 1. stderr: ⚠️ Authentication token has expired or is invalid.\\n🔐 Please run the following command to login:\\n\\n wecode login"}'
     expect(parseAcpAuthFailure(codex)).toEqual({ command: 'wecode login' })
     expect(parseAcpAuthFailure(opencode)).toEqual({ command: 'wecode login' })
+    expect(parseAcpAuthFailure(claudeModels)).toEqual({ command: 'wecode login' })
   })
   it('ignores non-auth probe failures', () => {
     expect(parseAcpAuthFailure('spawn ENOENT')).toBeUndefined()
@@ -143,6 +145,39 @@ it('does not discover desktop-only apps and only rescans an edited launch target
     expect(refreshed).toHaveLength(2)
     expect(run.mock.calls.every(call => call[0].endsWith('/codebuddy'))).toBe(true)
     expect(refreshed.find(a => a.id === row.id)?.cli?.args).toEqual(['--profile', 'edited'])
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('marks ACP failed when initialize succeeds but session/new surfaces expired auth', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buddy-acp-session-probe-'))
+  try {
+    const command = join(root, 'claude-agent-acp')
+    await writeFile(command, `#!${process.execPath}
+require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    console.log(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{protocolVersion:1}}))
+    return
+  }
+  if (message.method === 'session/new') {
+    console.log(JSON.stringify({jsonrpc:'2.0',id:message.id,error:{code:-32603,message:'Internal error',data:{details:'Claude Code process exited with code 1. stderr: Authentication token has expired or is invalid. Please run the following command to login:\\n\\n  wecode login'}}}))
+  }
+})
+`, { mode: 0o755 })
+    const store = new BuddyStore(join(root, 'data'))
+    await store.updateGlobalSettings({
+      agent_management: { wecode_claude: { protocol: 'acp', acp: { command, args: [], env: {}, timeout_seconds: 20, protocol: 'acp' } } },
+      launchers: { wecode_claude: { command, args: [], env: {}, timeout_seconds: 20, protocol: 'acp' } }
+    })
+    const service = new AgentManagementService(store, {
+      dirs: [root],
+      appRoots: [],
+      recipes: [{ id: 'wecode_claude', name: 'WeCode Claude', command: 'wecode', adapter: 'claude-agent-acp' }],
+      run: async () => '1.0.0'
+    })
+    const [agent] = await service.list()
+    expect(agent.acpStatus).toBe('failed')
+    expect(parseAcpAuthFailure(agent.acpError)).toEqual({ command: 'wecode login' })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 

@@ -272,14 +272,42 @@ export class AgentManagementService {
     const a=(await this.list()).find(a=>a.id===id); if(!a?.acp) throw new Error('ACP entry unavailable')
     return this.probeTarget(a)
   }
+  /** Model-list / runtime failures can outrank a stale scan verdict. */
+  recordAcpProbe(id:string, result:{ok:true}|{ok:false;error:string}):void {
+    const agent=this.inventory.find(a=>a.id===id)
+    if(!agent?.acp) return
+    if(result.ok) {
+      if(agent.acpStatus==='verified' && !agent.acpError) return
+      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'verified' as const,acpError:undefined}:a)
+    } else {
+      const acpError=redactSensitiveText(result.error)
+      if(agent.acpStatus==='failed' && agent.acpError===acpError) return
+      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'failed' as const,acpError}:a)
+    }
+    this.publish()
+    void this.persistInventory()
+  }
   private async probeTarget(a:LocalAgent):Promise<LocalAgent> {
     if(!a.acp) return a
     const id=a.id
     if(/\bnpx\b/.test(a.acp.command)) throw new Error('Install a local ACP adapter before scanning')
     const tokens=splitCommand(a.acp.command)
-    const transport=new AcpStdioTransport({command:tokens[0],args:[...tokens.slice(1),...(a.acp.args || [])],cwd:homedir(),env:await prepareAcpEnvironment(id,a.acp.env,this.store.dataRoot)})
+    const cwd=homedir()
+    const transport=new AcpStdioTransport({command:tokens[0],args:[...tokens.slice(1),...(a.acp.args || [])],cwd,env:await prepareAcpEnvironment(id,a.acp.env,this.store.dataRoot)})
     const client=new AcpClient(transport,{timeoutMs:10000})
-    try { transport.start(); const result=await client.initialize({clientCapabilities:{},capabilities:{}}); a.acpStatus=Number(result.protocolVersion)===1?'verified':'incompatible' }
+    try {
+      transport.start()
+      const result=await client.initialize({clientCapabilities:{},capabilities:{}})
+      if(Number(result.protocolVersion)!==1) {
+        a.acpStatus='incompatible'
+        a.acpError=undefined
+      } else {
+        // initialize alone is a shallow handshake; claude-agent-acp only fails auth on session/new.
+        await client.newSession({cwd,mcpServers:[]})
+        a.acpStatus='verified'
+        a.acpError=undefined
+      }
+    }
     catch(e) { a.acpStatus='failed';a.acpError=redactSensitiveText(String(e)) }
     finally {await client.close().catch(()=>{});await transport.close().catch(()=>{})}
     return a

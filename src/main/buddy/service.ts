@@ -443,13 +443,16 @@ export class BuddyCoreService {
           cwd,
           env: acpEnv
         })
+        this.agents.recordAcpProbe(actor, { ok: true })
         this.acpModelCache.set(cacheKey, {
           list,
           expiresAt: Date.now() + 5 * 60 * 1000
         })
         return list
       } catch (error) {
-        return {models:[],error:redactSensitiveText(String(error))}
+        const message = redactSensitiveText(String(error))
+        this.agents.recordAcpProbe(actor, { ok: false, error: message })
+        return {models:[],error:message}
       } finally {
         this.acpModelInflight.delete(cacheKey)
       }

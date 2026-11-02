@@ -30,7 +30,9 @@ describe('native capabilities', () => {
       await writeFile(command, `#!${process.execPath}
 if (!process.argv.includes('acp')) process.exit(3)
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
- const m=JSON.parse(line); if(m.method==='initialize')console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:1}}))
+ const m=JSON.parse(line)
+ if(m.method==='initialize')console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:1}}))
+ if(m.method==='session/new')console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{sessionId:'probe'}}))
 })\n`, { mode: 0o755 })
       const store = new BuddyStore(join(root, 'data'))
       await store.updateGlobalSettings({ agent_management: { cursor: { acp: { command, env: {}, timeout_seconds: 20, protocol: 'acp' } } }, launchers: { cursor: { command, args: ['--workspace', 'team'], env: { CURSOR_TEST: 'fixture' }, timeout_seconds: 20 } } })
