@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest'
-import { decodeUnicodeEscapes, decodeErrorText, eventPayloadSummary, formatDuration } from '../../src/renderer/lib/format'
+import { decodeUnicodeEscapes, decodeErrorText, eventPayloadSummary, formatDuration, modelOptionLabel } from '../../src/renderer/lib/format'
+
+describe('modelOptionLabel', () => {
+  it('prefers the catalog display name over the wire id', () => {
+    expect(modelOptionLabel('default[]', [{ id: 'default[]', name: 'Auto' }], { nativeLabel: '使用 Agent 自身默认' })).toBe('Auto')
+  })
+
+  it('keeps empty (native) distinct from Cursor Auto when the catalog is cold', () => {
+    expect(modelOptionLabel('', undefined, { nativeLabel: '使用 Agent 自身默认' })).toBe('使用 Agent 自身默认')
+    expect(modelOptionLabel('default[]', undefined, { nativeLabel: '使用 Agent 自身默认' })).toBe('Auto')
+    expect(modelOptionLabel('auto[fast=true]')).toBe('Auto')
+    expect(modelOptionLabel('grok-4.7[context=256k,reasoning_effort=high,fast=true]')).toBe('grok-4.7')
+  })
+
+  it('keeps ordinary model ids unchanged', () => {
+    expect(modelOptionLabel('claude-opus-4')).toBe('claude-opus-4')
+  })
+})
 
 describe('formatDuration', () => {
   it('formats sub-second durations as ms', () => {

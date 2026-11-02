@@ -57,6 +57,19 @@ describe('WeCode ACP integration', () => {
     expect(defaultAcpArgs('cursor-agent', 'cursor')).toEqual(['acp'])
     // When command already has 'acp'
     expect(defaultAcpArgs('cursor-agent acp', 'cursor')).toEqual([])
+    // Dashed ACP flags must also be treated as already present
+    expect(defaultAcpArgs('qwen --acp', 'qwen')).toEqual([])
+    expect(defaultAcpArgs('gemini --experimental-acp', 'gemini')).toEqual([])
+    expect(defaultAcpArgs('copilot --acp --stdio', 'copilot')).toEqual([])
+    expect(defaultAcpArgs('qwen', 'qwen')).toEqual(['--acp'])
+    expect(defaultAcpArgs('gemini', 'gemini')).toEqual(['--experimental-acp'])
+    expect(defaultAcpArgs('droid', 'droid')).toEqual(['exec', '--output-format', 'acp'])
+    expect(defaultAcpArgs('omp', 'omp')).toEqual(['acp'])
+    expect(defaultAcpArgs('cline', 'cline')).toEqual(['--acp'])
+    expect(defaultAcpArgs('qoder', 'qoder')).toEqual(['--acp'])
+    expect(defaultAcpArgs('mcode', 'mcode')).toEqual(['acp'])
+    expect(defaultAcpArgs('pi-acp', 'pi')).toEqual([])
+    expect(defaultAcpArgs('crush-acp', 'crush')).toEqual([])
   })
 
   it('finds or falls back to a valid wecode path', () => {

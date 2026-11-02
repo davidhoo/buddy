@@ -392,3 +392,79 @@ test('cached inventory and global updates survive navigation, reload, cancellati
   expect(await page.evaluate(()=> (window as any).agentUpdateTest.counts())).toEqual({scans:0,checks:1,starts:1})
   expect(errors).toEqual([])
 })
+
+test('create task keeps ACP protocol for newly discovered ACP-first agent without settings save', async ({ page }) => {
+  await page.addInitScript(() => {
+    const qwen = {
+      id: 'qwen', installationId: 'qwen-acp', name: 'Qwen Code', path: '/tmp/qwen', realPath: '/tmp/qwen',
+      source: 'npm', runnable: false, enabled: true, selectedProtocol: 'acp' as const,
+      acpStatus: 'verified' as const,
+      acp: { command: '/tmp/qwen', args: ['--acp'], env: {}, timeout_seconds: 7200, protocol: 'acp' as const }
+    }
+    const created: unknown[] = []
+    const previousList = window.buddy.listLocalAgents.bind(window.buddy)
+    window.buddy.listLocalAgents = async (...args: unknown[]) => {
+      const agents = await previousList(...args as [])
+      return agents.some((a: { id: string }) => a.id === 'qwen') ? agents : [...agents, qwen]
+    }
+    window.buddy.createTask = async (input: { task_id: string; settings?: unknown }) => {
+      created.push(input.settings)
+      return { task: input.task_id, path: '/tmp/' + input.task_id, workspace_key: 'qwenacp' }
+    }
+    ;(window as unknown as { __buddyCreated: unknown[] }).__buddyCreated = created
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: '新建任务', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
+  await page.getByPlaceholder('输入任务名称').fill('qwen-acp-e2e')
+  await page.getByLabel('执行者 Agent', { exact: true }).selectOption('qwen')
+  await page.getByLabel('审查者 Agent', { exact: true }).selectOption('codex')
+  await page.getByRole('button', { name: /创建任务/ }).click()
+  const settings = await page.evaluate(() => (window as unknown as { __buddyCreated: Array<{ launchers?: Record<string, { protocol?: string; command?: string; args?: string[] }> }> }).__buddyCreated[0])
+  expect(settings?.launchers?.qwen).toMatchObject({ protocol: 'acp', command: '/tmp/qwen', args: ['--acp'] })
+  // CLI launchers omit protocol in normalizeLauncher (only ACP is explicit).
+  expect(settings?.launchers?.codex?.protocol).toBeUndefined()
+  expect(settings?.launchers?.codex?.command).toBeTruthy()
+})
+
+test('failed ACP agent row exposes re-verify without locking the page', async ({ page }) => {
+  await page.addInitScript(() => {
+    let agents = (undefined as unknown as Array<Record<string, unknown>>)
+    const previousList = window.buddy.listLocalAgents.bind(window.buddy)
+    window.buddy.listLocalAgents = async (...args: unknown[]) => {
+      if (!agents) {
+        const base = await previousList(...args as [])
+        agents = base.map((a: Record<string, unknown>) => a.id === 'kimi' ? {
+          ...a,
+          acpStatus: 'failed',
+          acpFailureStage: 'handshake',
+          acpError: 'temporary handshake timeout',
+          selectedProtocol: 'acp',
+          enabled: true,
+          runnable: true,
+          acp: a.acp || { command: '/usr/local/bin/kimi', args: ['acp'], env: {}, timeout_seconds: 7200 }
+        } : a)
+      }
+      return agents
+    }
+    window.buddy.probeLocalAgent = async (id: string) => {
+      agents = agents.map(a => a.id === id ? {
+        ...a,
+        acpStatus: 'verified',
+        acpFailureStage: undefined,
+        acpError: undefined
+      } : a)
+      return agents.find(a => a.id === id)
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent', exact: true }).click()
+  const row = page.locator('[data-agent-id="kimi"]')
+  const reverify = row.getByRole('button', { name: 'Kimi Code 重新验证', exact: true })
+  await expect(reverify).toBeVisible()
+  await expect(page.locator('[data-agent-id="codex"]').getByRole('combobox')).toBeEnabled()
+  await reverify.click()
+  await expect(reverify).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'Kimi Code 默认模型 ID', exact: true })).toBeEnabled()
+})

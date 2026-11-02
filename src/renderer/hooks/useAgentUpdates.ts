@@ -45,9 +45,27 @@ export function useAgentUpdatesController(open:()=>void) {
     const inventory=window.buddy?.onAgentInventory?.(state=>acceptAgentSnapshot(cache,agentInventoryKey,state))
     const update=window.buddy?.onAgentUpdate?.(state=>receiveRef.current(state))
     const navigate=window.buddy?.onOpenAgentUpdates?.(()=>openRef.current())
+    // Background model-catalog refresh: push into open settings / create-task queries.
+    const models=window.buddy?.onModelCatalog?.(payload=>{
+      cache.setQueriesData(
+        { predicate: query => {
+          const key = query.queryKey
+          return Array.isArray(key) && (
+            (key[0] === 'agentModels' && key[1] === payload.actor) ||
+            (key[0] === 'taskActorModels' && key[1] === payload.actor)
+          )
+        } },
+        (previous: unknown) => {
+          if (previous && typeof previous === 'object' && 'models' in (previous as object)) {
+            return payload.list
+          }
+          return previous ?? payload.list
+        }
+      )
+    })
     void window.buddy?.getAgentInventory?.().then(state=>acceptAgentSnapshot(cache,agentInventoryKey,state)).catch(()=>{})
     void window.buddy?.getAgentUpdateState?.().then(state=>receiveRef.current(state)).catch(()=>{})
-    return ()=>{inventory?.();update?.();navigate?.()}
+    return ()=>{inventory?.();update?.();navigate?.();models?.()}
   },[cache])
   useEffect(()=>{
     if(!updates.data?.activeBatch)return

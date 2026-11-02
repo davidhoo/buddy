@@ -168,7 +168,7 @@ describe('Composer model picker', () => {
       expect(within(modelSelect).getByRole('option', { name: 'agents.native' })).toBeInTheDocument()
       expect(within(modelSelect).getByRole('option', { name: 'Sonnet' })).toBeInTheDocument()
     })
-    expect(buddy.listCliModels).toHaveBeenCalledWith('claude')
+    expect(buddy.listCliModels).toHaveBeenCalledWith('claude', expect.objectContaining({}))
     expect(buddy.listAcpModels).not.toHaveBeenCalled()
   })
 
@@ -203,7 +203,7 @@ describe('Composer model picker', () => {
     await waitFor(() => {
       expect(modelSelect).toHaveValue('sonnet-4.5')
     })
-    expect(buddy.listAcpModels).toHaveBeenCalledWith('claude', '/tmp/repo')
+    expect(buddy.listAcpModels).toHaveBeenCalledWith('claude', '/tmp/repo', expect.objectContaining({}))
 
     fireEvent.change(modelSelect, { target: { value: 'opus-4.6' } })
     await waitFor(() => {
@@ -277,7 +277,7 @@ describe('Composer model picker', () => {
       target: { value: 'codex' }
     })
     await waitFor(() => {
-      expect(buddy.listCliModels).toHaveBeenCalledWith('codex')
+      expect(buddy.listCliModels).toHaveBeenCalledWith('codex', expect.objectContaining({}))
       expect(screen.getByLabelText('modal.create.model')).toHaveValue('')
       expect(within(screen.getByLabelText('modal.create.model')).getByRole('option', { name: 'GPT-5' })).toBeInTheDocument()
     })
@@ -324,7 +324,7 @@ describe('Composer model picker', () => {
       target: { value: 'agy' }
     })
     await waitFor(() => {
-      expect(listCliModels).toHaveBeenCalledWith('agy')
+      expect(listCliModels).toHaveBeenCalledWith('agy', expect.objectContaining({}))
       expect(within(modelSelect).getByRole('option', { name: 'Claude Sonnet' })).toBeInTheDocument()
     })
 

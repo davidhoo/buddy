@@ -75,6 +75,12 @@ describe('durable global Agent update queue',()=>{
     await q.start(['a'],'broken');await q.waitForIdle()
     expect((await q.getState()).lastCompletedBatch?.items[0].status).toBe('failed')
   })
+  it('accepts ACP-only runtime verification after an update',async()=>{
+    const deps=dependencies()
+    deps.verify.mockImplementation(async a=>({...a,runnable:false,acpStatus:'verified' as const,version:'2.0.0',nativeUpdate:{...a.nativeUpdate!,version:'2.0.0'}}))
+    const q=new AgentUpdateQueue(deps);await q.start(['a'],'acp-only');await q.waitForIdle()
+    expect((await q.getState()).lastCompletedBatch?.items[0].status).toBe('updated')
+  })
   it('rejects configuration changes and downgrades before reporting success',async()=>{
     const deps=dependencies();deps.prepare.mockResolvedValueOnce([{...agent('a'),cli:{...agent('a').cli!,env:{HOME:'/different'}}}])
     const q=new AgentUpdateQueue(deps);await q.start(['a'],'changed');await q.waitForIdle()

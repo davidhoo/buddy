@@ -646,6 +646,50 @@ describe('launcher command builder', () => {
     expect(commandKindFor('dsh', '')).toBe('native_dsh')
   })
 
+  it('refuses unadapted product CLIs instead of falling through to contract', () => {
+    expect(commandKindFor('gemini', 'gemini')).toBe('contract')
+    expect(() => buildLauncherCommand({
+      actor: 'gemini',
+      command: 'gemini',
+      promptFile: '/tmp/prompt.md',
+      repoRoot: '/tmp/repo'
+    })).toThrow(/no native CLI adapter/)
+    expect(() => buildLauncherCommand({
+      actor: 'qwen',
+      command: 'qwen',
+      promptFile: '/tmp/prompt.md',
+      repoRoot: '/tmp/repo'
+    })).toThrow(/no native CLI adapter/)
+    expect(() => buildLauncherCommand({
+      actor: 'omp',
+      command: 'omp',
+      promptFile: '/tmp/prompt.md',
+      repoRoot: '/tmp/repo'
+    })).toThrow(/no native CLI adapter/)
+    expect(() => buildLauncherCommand({
+      actor: 'cline',
+      command: 'cline',
+      promptFile: '/tmp/prompt.md',
+      repoRoot: '/tmp/repo'
+    })).toThrow(/no native CLI adapter/)
+  })
+
+  it('still builds Buddy contract flags for an explicit wrapper under a gemini actor', () => {
+    const built = buildLauncherCommand({
+      actor: 'gemini',
+      command: '/usr/local/bin/my-gemini-contract.sh',
+      promptFile: '/tmp/prompt.md',
+      repoRoot: '/tmp/repo',
+      taskDir: '/tmp/task',
+      runId: 'run-1',
+      outputFile: '/tmp/out.md',
+      eventFile: '/tmp/events.jsonl'
+    })
+    expect(built.kind).toBe('contract')
+    expect(built.args).toContain('--actor')
+    expect(built.args).toContain('gemini')
+  })
+
   it('builds custom launcher contract flags and environment', () => {
     expect(buildLauncherCommand({
       actor: 'claude',

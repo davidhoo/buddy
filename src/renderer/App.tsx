@@ -23,13 +23,14 @@ import { SettingsContent, SettingsTab } from './components/SettingsContent'
 import { Switch } from './components/Switch'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useUpdater } from './hooks/useUpdater'
-import { ACTOR_LABEL_KEY, Actor } from './lib/format'
+import { ACTOR_LABEL_KEY, Actor, modelOptionLabel } from './lib/format'
 import { isTaskReadyToStart, isTaskQueued, queuedPosition } from './lib/taskState'
 import type { Task } from '../shared/types'
 import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readLastSelectedTask, saveLastSelectedTask, clearLastSelectedTask, readTaskNames, writeTaskNames } from './lib/taskList'
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta, Launcher } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
-import { DEFAULT_LAUNCHER_ORDER, defaultLauncherFor, normalizeGlobalSettings, normalizeLauncher } from '../shared/defaults'
+import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, normalizeLauncher } from '../shared/defaults'
+import { agentTaskSelectable, resolveEffectiveAgentLaunch } from '../shared/agents'
 import { TASK_ID_MAX_CODE_POINTS, validateTaskId } from '../shared/task-id'
 
 export default function App() {
@@ -932,11 +933,17 @@ export function CreateTaskModal({
   const {data:agentInventory} = useAgentInventory()
   const localAgents=agentInventory?.agents
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
-  const availableActors = localAgents ? localAgents.filter(a=>a.enabled && (a.runnable || a.acpStatus==='verified')).map(a=>a.id) : typeof window.buddy?.listLocalAgents === 'function' ? [] : [...DEFAULT_LAUNCHER_ORDER]
+  const availableActors = localAgents ? localAgents.filter(agentTaskSelectable).map(a=>a.id) : typeof window.buddy?.listLocalAgents === 'function' ? [] : [...DEFAULT_LAUNCHER_ORDER]
   const actorName = (id:string) => ACTOR_LABEL_KEY[id] ? t(ACTOR_LABEL_KEY[id]) : localAgents?.find(a=>a.id===id)?.name || id
 
-  const isAcpActor = (a: Actor): boolean =>
-    normalizeLauncher(a, normalizedGlobalSettings.launchers?.[a]).protocol === 'acp'
+  const effectiveLaunchFor = (a: Actor) => resolveEffectiveAgentLaunch(
+    localAgents?.find(agent => agent.id === a),
+    {
+      agentConfig: globalSettings?.agent_management?.[a],
+      savedLauncher: globalSettings?.launchers?.[a]
+    }
+  )
+  const isAcpActor = (a: Actor): boolean => effectiveLaunchFor(a).protocol === 'acp'
 
   // Both protocols use the same picker. Key requests by launcher context so
   // switching agents or protocols cannot display another launcher's models.
@@ -944,9 +951,10 @@ export function CreateTaskModal({
   const actorModelLists = useQueries({
     queries: selectedActors.map(actor => {
       const agent = localAgents?.find(a => a.id === actor)
-      const listModels = isAcpActor(actor) ? window.buddy?.listAcpModels : window.buddy?.listCliModels
+      const { protocol, launcher } = effectiveLaunchFor(actor)
+      const listModels = protocol === 'acp' ? window.buddy?.listAcpModels : window.buddy?.listCliModels
       return {
-        queryKey: ['taskActorModels', actor, modelMemoryKey('catalog', actor, normalizedGlobalSettings), agent?.installationId, agent?.version],
+        queryKey: ['taskActorModels', actor, protocol, launcher?.command, launcher?.args, launcher?.env, agent?.installationId, agent?.version],
         queryFn: () => listModels!(actor),
         enabled: !!listModels && availableActors.includes(actor),
         retry: false,
@@ -1011,11 +1019,9 @@ export function CreateTaskModal({
       localStorage.setItem('buddy.lastImplementerModel', implementerModel)
       localStorage.setItem('buddy.lastReviewerModel', reviewerModel)
     } catch {}
-    const launchers = normalizedGlobalSettings.launchers ?? {}
     const launcherFor = (actor: Actor): Launcher => {
-      const detected=localAgents?.find(a=>a.id===actor)
-      const protocol=launchers[actor]?.protocol || 'cli'
-      const launcher = normalizeLauncher(actor, detected?.[protocol] || launchers[actor])
+      const { protocol, launcher: resolved } = effectiveLaunchFor(actor)
+      const launcher = normalizeLauncher(actor, resolved ? { ...resolved, protocol } : { protocol })
       const selected = actor === implementer ? implementerModel : actor === reviewer ? reviewerModel : ''
       if (selected && selected !== '__native__') {
         return { ...launcher, model: selected }
@@ -1103,7 +1109,9 @@ export function CreateTaskModal({
           <option value="__native__">{t('agents.native')}</option>
           {value && value !== '__native__' && !models.some(m => m.id === value) && (
             <option value={value} disabled={unavailable}>
-              {unavailable ? `${value} (${t('modal.create.modelUnavailable')})` : value}
+              {unavailable
+                ? `${modelOptionLabel(value, models, { nativeLabel: t('agents.native') })} (${t('modal.create.modelUnavailable')})`
+                : modelOptionLabel(value, models, { nativeLabel: t('agents.native') })}
             </option>
           )}
           {models.map(model => (

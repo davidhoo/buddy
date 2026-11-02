@@ -443,6 +443,69 @@ rl.on('line', (line) => {
     }
   })
 
+  it('lists ACP models even when the selected protocol is still CLI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-acp-list-while-cli-'))
+    const fakeAcp = join(root, 'fake-acp-models.js')
+    await writeFile(fakeAcp, `#!/usr/bin/env node
+const readline = require('node:readline')
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+rl.on('line', (line) => {
+  try {
+    const req = JSON.parse(line)
+    if (req.method === 'initialize') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0', id: req.id,
+        result: { protocolVersion: 1, agentInfo: { name: 'ModelAgent', version: '1.0.0' } }
+      }) + '\\n')
+    } else if (req.method === 'session/new') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0', id: req.id,
+        result: {
+          sessionId: 'sess_models',
+          models: {
+            currentModelId: 'default[]',
+            availableModels: [{ modelId: 'default[]', name: 'Auto' }]
+          }
+        }
+      }) + '\\n')
+    }
+  } catch {}
+})
+`, { mode: 0o755 })
+    try {
+      const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
+      await service.updateGlobalSettings({
+        launchers: {
+          cursor: {
+            protocol: 'cli',
+            command: 'cursor-agent',
+            args: [],
+            env: {},
+            timeout_seconds: 10
+          }
+        },
+        agent_management: {
+          cursor: {
+            protocol: 'cli',
+            cli: { command: 'cursor-agent', args: [], env: {}, timeout_seconds: 10, protocol: 'cli' },
+            acp: { command: process.execPath, args: [fakeAcp], env: {}, timeout_seconds: 10, protocol: 'acp' }
+          }
+        }
+      })
+      ;(service.agents as { inventory: Array<Record<string, unknown>> }).inventory = [{
+        id: 'cursor', installationId: 'x', name: 'Cursor', path: 'cursor-agent', realPath: 'cursor-agent',
+        source: 'unknown', runnable: true, enabled: true, selectedProtocol: 'cli', acpStatus: 'verified',
+        cli: { command: 'cursor-agent', args: [], env: {}, timeout_seconds: 10, protocol: 'cli' },
+        acp: { command: process.execPath, args: [fakeAcp], env: {}, timeout_seconds: 10, protocol: 'acp' }
+      }]
+      const list = await service.listAcpModels('cursor')
+      expect(list.models).toEqual([{ id: 'default[]', name: 'Auto' }])
+      expect(list.currentModelId).toBe('default[]')
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
   it('keeps the last ACP model catalog when a refresh fails after expiry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-acp-stale-models-'))
     const fakeAcp = join(root, 'fake-acp-models.js')
@@ -498,17 +561,21 @@ process.exit(2)
 
       const cache = (service as unknown as {
         acpModelCache: Map<string, { list: typeof first; expiresAt: number }>
-      }).acpModelCache
-      for (const [key, entry] of cache) {
-        cache.set(key, { ...entry, expiresAt: Date.now() - 1 })
+        acpModelInflight: Map<string, Promise<typeof first>>
+      })
+      for (const [key, entry] of cache.acpModelCache) {
+        cache.acpModelCache.set(key, { ...entry, expiresAt: Date.now() - 1 })
       }
 
       await writeFile(fakeAcp, failScript)
       await chmod(fakeAcp, 0o755)
 
+      // Expired catalog is served immediately; refresh failure must not wipe it.
       const second = await service.listAcpModels('claude')
       expect(second.models).toEqual([{ id: 'sonnet-4.5', name: 'Sonnet 4.5' }])
-      expect(second.error).toMatch(/boom/i)
+      await vi.waitFor(() => expect(cache.acpModelInflight.size).toBe(0))
+      const third = await service.listAcpModels('claude')
+      expect(third.models).toEqual([{ id: 'sonnet-4.5', name: 'Sonnet 4.5' }])
     } finally {
       await rm(root, { recursive: true, force: true }).catch(() => {})
     }

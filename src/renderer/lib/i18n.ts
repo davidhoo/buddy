@@ -47,6 +47,7 @@ const en = {
   'agents.default': 'Default',
   'agents.ready': 'Available in Buddy',
   'agents.disabled': 'Not selected in Buddy',
+  'agents.protocolUnavailable': 'Selected protocol unavailable',
   'agents.appOnly': 'App detected · native settings',
   'agents.discovered': '{n} local agents discovered',
   'agents.updatesAvailable': '{n} agents have updates: {names}',
@@ -58,6 +59,7 @@ const en = {
   'agents.status.incompatible': 'ACP incompatible',
   'agents.status.failed': 'ACP check failed',
   'agents.status.loginRequired': 'Sign in again',
+  'agents.reverify': 'Re-verify',
 
   'agents.add': 'Add custom local agent',
   'agents.id': 'Agent ID',
@@ -642,6 +644,7 @@ const zhCN: typeof en = {
   'agents.default': '默认',
   'agents.ready': '可用于任务',
   'agents.disabled': '未在 Buddy 中启用',
+  'agents.protocolUnavailable': '当前协议不可用',
   'agents.appOnly': '已发现应用 · 使用自身设置',
   'agents.discovered': '已发现 {n} 个本机 Agent',
   'agents.updatesAvailable': '{n} 个 Agent 有新版本：{names}',
@@ -653,6 +656,7 @@ const zhCN: typeof en = {
   'agents.status.incompatible': 'ACP 版本不兼容',
   'agents.status.failed': 'ACP 检测失败',
   'agents.status.loginRequired': '需要重新登录',
+  'agents.reverify': '重新验证',
 
   'agents.add': '添加自定义本机 Agent',
   'agents.id': 'Agent 标识',
@@ -1216,6 +1220,7 @@ const zhTW: typeof en = {
   'agents.default': '預設',
   'agents.ready': '可用於任務',
   'agents.disabled': '未在 Buddy 中啟用',
+  'agents.protocolUnavailable': '目前協定不可用',
   'agents.appOnly': '已發現應用程式 · 使用自身設定',
   'agents.discovered': '已發現 {n} 個本機 Agent',
   'agents.updatesAvailable': '{n} 個 Agent 有新版本：{names}',
@@ -1227,6 +1232,7 @@ const zhTW: typeof en = {
   'agents.status.incompatible': 'ACP 版本不相容',
   'agents.status.failed': 'ACP 檢測失敗',
   'agents.status.loginRequired': '需要重新登入',
+  'agents.reverify': '重新驗證',
 
   'agents.add': '新增自訂本機 Agent',
   'agents.id': 'Agent 識別碼',

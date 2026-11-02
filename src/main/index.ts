@@ -53,6 +53,7 @@ const sendAgentState=(channel:string,state:unknown)=>{
   }
 }
 buddyService.agents.subscribe(state=>sendAgentState('buddy:agent-inventory',state))
+buddyService.subscribeModelCatalog(update=>sendAgentState('buddy:model-catalog',update))
 const observedBatches=new Set<string>()
 buddyService.agents.updates.subscribe(state=>{
   sendAgentState('buddy:agent-update',state)

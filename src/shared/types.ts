@@ -168,6 +168,21 @@ export interface AcpModelList {
   currentModelId?: string
 }
 
+/** Optional task/launcher context so model queries do not guess from global settings. */
+export interface ModelListContext {
+  /** Explicit launcher (e.g. from task settings). Wins over global/inventory. */
+  launcher?: Partial<Launcher> | null
+  taskId?: string
+  workspaceKey?: string
+}
+
+/** Pushed when a background model-catalog refresh replaces a stale list. */
+export interface ModelCatalogUpdate {
+  actor: string
+  protocol: 'cli' | 'acp'
+  list: AcpModelList
+}
+
 export interface AcpPreset {
   id: string
   name: string

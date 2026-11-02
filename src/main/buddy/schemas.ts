@@ -261,9 +261,32 @@ export const agentInventoryCacheSchema = z.object({
     prefix:z.string().optional(),manager:z.string().optional(),package:z.string().optional(),runnable:z.boolean(),enabled:z.boolean(),
     selectedProtocol:z.enum(['cli','acp']).optional(),modelFlag:z.string().optional(),error:z.string().optional(),acpError:z.string().optional(),
     acpStatus:z.enum(['verified','unverified','missing','incompatible','failed']).optional(),
-    installations:z.array(z.object({id:z.string(),path:z.string(),realPath:z.string(),version:z.string().optional()})).optional(),
+    acpFailureStage:z.enum(['spawn','handshake','session','unknown']).optional(),
+    acpLaunchFingerprint:z.string().optional(),
+    installations:z.array(z.object({
+      id:z.string(),
+      path:z.string(),
+      realPath:z.string(),
+      version:z.string().optional(),
+      shim:z.boolean().optional(),
+      sourceHint:z.enum(['nvm','fnm','mise','asdf','volta','npm','unknown']).optional(),
+      runtime:z.object({kind:z.literal('node'),binDir:z.string()}).optional()
+    })).optional(),
     latest:z.string().optional(),checkedAt:z.string().optional(),updateError:z.string().optional(),
     nativeUpdate:z.object({command:z.string(),args:z.array(z.string()),versionArgs:z.array(z.string()),version:z.string(),target:z.enum(['agent','wecode'])}).optional(),
-    nativeAcpArgs:z.array(z.enum(['acp','--acp','--experimental-acp','opencode'])).optional()
+    nativeAcpArgs:z.array(z.string().min(1)).optional()
   }))
+})
+
+/** v2 keys are SHA-256 fingerprints — never raw command/args/env (credentials). */
+export const agentModelCacheSchema = z.object({
+  schemaVersion: z.literal(2),
+  entries: z.record(
+    z.string().regex(/^[a-f0-9]{64}$/),
+    z.object({
+      models: z.array(z.object({ id: z.string(), name: z.string() })),
+      currentModelId: z.string().optional(),
+      fetchedAt: z.string()
+    })
+  )
 })

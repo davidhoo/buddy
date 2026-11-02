@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ArrowUp, ChevronDown, Square, X, Image as ImageIcon } from 'lucide-react'
 import { AcpModelInfo, Attachment, TaskSettings, TaskState } from '../../shared/types'
-import { taskActors, ACTOR_LABEL_KEY, Actor } from '../lib/format'
+import { taskActors, actorOptionLabel, modelOptionLabel, Actor } from '../lib/format'
 import { useT, useSendShortcut } from '../hooks/useI18n'
 import { IMAGE_EXTS, EXT_ICON_MAP, generateAttachmentId, isImageAttachment, fileExt, fileIconForName, mimeTypeForExt } from '../lib/attachments'
 
@@ -95,9 +95,14 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
       selected: pickModelId(saved)
     })
     const cwd = taskState?.repo_root?.trim() || undefined
+    const taskLauncher = settings?.launchers?.[nextActor]
+    const modelContext = {
+      launcher: taskLauncher,
+      ...(taskId && workspaceKey ? { taskId, workspaceKey } : {})
+    }
     const pending = nextProtocol === 'acp'
-      ? window.buddy?.listAcpModels?.(nextActor, cwd)
-      : window.buddy?.listCliModels?.(nextActor)
+      ? window.buddy?.listAcpModels?.(nextActor, cwd, modelContext)
+      : window.buddy?.listCliModels?.(nextActor, modelContext)
     if (!pending) {
       if (!hasCache) {
         setModelState({
@@ -147,8 +152,34 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
           selected: pickModelId(saved)
         })
       })
-    return () => { cancelled = true }
-  }, [nextProtocol, nextActor, taskState?.repo_root])
+    const unsub = window.buddy?.onModelCatalog?.(update => {
+      if (cancelled) return
+      if (update.actor !== nextActor || update.protocol !== nextProtocol) return
+      const models = update.list?.models ?? []
+      if (update.list?.error && models.length === 0) {
+        const stale = modelCatalogByActorRef.current.get(catalogKey)
+        if (stale && stale.length > 0) {
+          setModelState({
+            status: 'ready',
+            actor: nextActor,
+            protocol: nextProtocol,
+            models: stale,
+            selected: pickModelId(saved)
+          })
+          return
+        }
+      }
+      modelCatalogByActorRef.current.set(catalogKey, models)
+      setModelState({
+        status: 'ready',
+        actor: nextActor,
+        protocol: nextProtocol,
+        models,
+        selected: pickModelId(saved)
+      })
+    })
+    return () => { cancelled = true; unsub?.() }
+  }, [nextProtocol, nextActor, taskState?.repo_root, settings?.launchers, taskId, workspaceKey])
 
   const handleModelChange = (model: string) => {
     setModelState(prev => ({ ...prev, selected: model }))
@@ -417,7 +448,7 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
                 className="appearance-none bg-transparent text-sm font-medium pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent"
               >
                 {participants.map(a => (
-                  <option key={a} value={a}>{t(ACTOR_LABEL_KEY[a])}</option>
+                  <option key={a} value={a}>{actorOptionLabel(a, t)}</option>
                 ))}
               </select>
               <ChevronDown
@@ -451,7 +482,9 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
                 {modelState.models.length > 0
                   && modelState.selected
                   && !modelState.models.some(model => model.id === modelState.selected) && (
-                  <option value={modelState.selected}>{modelState.selected}</option>
+                  <option value={modelState.selected}>
+                    {modelOptionLabel(modelState.selected, modelState.models, { nativeLabel: t('agents.native') })}
+                  </option>
                 )}
                 {modelState.models.map(model => (
                   <option key={model.id} value={model.id}>{model.name}</option>

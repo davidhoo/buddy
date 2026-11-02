@@ -112,3 +112,54 @@ CodeBuddy CLI 另做真实生成冒烟测试：使用新命令构建器指定 `d
 更新由主进程持久队列管理；立即返回批次，跨页面及 macOS 关窗继续执行。活动进度与“最后更新记录”分区，支持取消剩余、重试失败项、全局状态、完成通知、正常退出协调及中断恢复。安装子进程在身份持久化后才开始实际修改，重试先排除存活的旧进程。WeCode 包装器与内层更新仍使用各自的原生命令和版本。
 
 相关单测 43 项、页面 E2E 10 项、类型检查与构建通过；独立 Electron 数据目录中的临时 CLI 验证了关窗续跑、重启恢复和退出等待。未更新用户的真实 Agent。全量测试仍有任务服务清理 `kill EPERM` 的既有失败，未修改的 HEAD 快照也可复现。完整范围及验证边界见 `docs/plans/2026-10-29-agent-update-background-jobs-proposal.md` 第 9 节。
+
+
+## 2026-11-02：Agent 发现扩充 — Review 修复与能力表追加
+
+在 v2.0.10（`f28cf80`）工作区改动上修复 R1–R4，并部分落地 D1/D3。本轮**没有**调用真实 Agent 生成、没有升级/安装本机 Agent、没有发布。
+
+### Review 缺陷
+
+| 项 | 状态 | 实现要点 | 自动化证据 |
+| --- | --- | --- | --- |
+| R1 自动 ACP 贯通 | 已修复 | `resolveEffectiveAgentLaunch`；新建任务/模型查询/configure 共用；不把 normalize 默认当作用户选择 | `buddy-agent-remediation.test.ts` R1 |
+| R2 ACP 失败恢复 | 已修复 | `acpFailureStage` + 启动指纹；握手失败可重扫恢复；会话认证失败需完整 probe；设置页「重新验证」 | remediation R2；既有 session auth 回归 |
+| R3 模型缓存凭据 | 已修复 | SHA-256 磁盘 key、schema v2、旧明文缓存迁移丢弃、0o600 | remediation R3；`buddy-cli-model-cache.test.ts` |
+| R4 别名身份 | 已修复 | `cbc`/`agent`/`snow` 需 realpath/包身份；假 cbc 不进入任务 | remediation R4 |
+
+### 首批及声明式产品能力表（本轮）
+
+| 产品 | 发现规则 | 身份依据 | CLI 适配 | ACP 入口 | 模型/更新 | 自动化 | 真实生成 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemini | recipe + ACP args | 主命令 | **未实现**（contract 拒绝保留） | `--experimental-acp` | modelFlag 有 | 默认 ACP 单测 | 未验证 |
+| Qwen | recipe + `--acp` | 主命令 | 未适配 | `--acp` | modelFlag | 假 ACP 握手/任务协议解析 | 本机无安装 |
+| Copilot | recipe | 主命令 | 未适配 | `--acp --stdio` | — | recipe/握手夹具 | 本机无安装 |
+| Goose | recipe | 主命令 | 未适配 | `acp` | — | recipe | 本机无安装 |
+| Droid | recipe | 主命令 | 未适配 | `exec --output-format acp` | modelFlag | recipe | 本机无安装 |
+| CodeBuddy | 主命令 + `cbc` 别名 | npm 包 / realpath basename | 原生 | `--acp` | 有 | 真/假 cbc 身份测试 | 历史冒烟见上文 |
+| P2/P3 目录行 | 已声明 | 见 recipe；通用名受别名门控 | 大多未适配 | 仅有文档依据的入口 | 不等同已接入 | recipe 注册测试 | 未验证 |
+
+说明：仅发现、未适配的产品 `runnable=false` 且无 verified ACP 时**不**进入任务选项；不得把假 ACP 结果写成厂商真实验证通过。Gemini 原生 CLI 明确保留为待完成项。
+
+### D 项进度
+
+| 项 | 状态 | 备注 |
+| --- | --- | --- |
+| D1 App 内 CLI / adapter | 部分 | `appCli` + `findAppBundledCli`；adapter 在主命令缺失时仍采集；缺少更多 bundle 证据 |
+| D2 wrapper / runtime | 已完成（夹具） | `inspectLaunchTarget` / `withCompatibleRuntimeEnv`：asdf/mise/volta shim 有界识别、off-PATH Node 钉住、空格路径、断链、两安装不按版本自动替换；已接入 runFile / ACP transport / launchers |
+| D3 路径刷新 | 部分 | 重新扫描调用 `refreshShellPath`；失败保留原 PATH 并诊断；未做完整 shell 超时夹具矩阵 |
+| D4 能力表与首批执行 | 部分 | 本表已追加；隔离假 stdio 两轮已有；本机无新增 Agent 真实验证 |
+| D5 模型缓存交互 | 部分 | Cache-First + 后台刷新 + `buddy:model-catalog` 推送；以自动化夹具为准 |
+
+本轮续：D2 落地；AgentsSettings 模型触发器恢复原始 ID；E2E 补新建任务 ACP 与重新验证。真实产品生成仍未验证。
+
+### 审查打回后的阻塞项修复（同日续）
+
+| 阻塞项 | 修复 |
+| --- | --- |
+| R2 旧缓存无指纹被浅握手洗白 | 缺失指纹视为同目标；unknown/无 stage 的 failed 必须完整 probe 才能清除 |
+| R3 冷启动未迁移明文缓存 | initializeAgents() 调用 modelDiskCache.ensureLoaded() |
+| R1 模型查询无任务上下文 | ModelListContext（launcher / taskId+workspaceKey）；Composer 传入任务 launcher |
+| R4 多安装测试缩水 | 假+真 cbc 共存：真路径保留，假路径不进 installations |
+| D4 首批执行 | buddy-new-agent-acp-roundtrip：qwen+goose、copilot+droid 假 stdio dual-break（隔离证据） |
+| D5 后台目录推送 | buddy:model-catalog 事件；设置/新建任务 query 与 Composer 订阅 |

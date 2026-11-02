@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { AgentUpdateBatch, AgentUpdateItem, AgentUpdateSnapshot, LocalAgent } from '../../../shared/agents'
-import { isAgentUpdateTerminal, isNewerStableVersion } from '../../../shared/agents'
+import { agentUpdateRuntimeReady, isAgentUpdateTerminal, isNewerStableVersion } from '../../../shared/agents'
 import { agentUpdateJobsSchema, agentUpdateSnapshotSchema } from '../schemas'
 import { atomicWriteJson } from '../store'
 import { redactSensitiveText } from '../redact'
@@ -182,7 +182,7 @@ export class AgentUpdateQueue {
           item.status='verifying';await this.persist()
           const after=await this.deps.verify(agent)
           item.after=agent.nativeUpdate?after?.nativeUpdate?.version:after?.version
-          if(!after?.runnable || !item.after || item.before && isNewerStableVersion(item.before,item.after) || !agent.nativeUpdate && item.after!==agent.latest)throw new Error('Updated installation failed version/runtime verification')
+          if(!after || !agentUpdateRuntimeReady(after) || !item.after || item.before && isNewerStableVersion(item.before,item.after) || !agent.nativeUpdate && item.after!==agent.latest)throw new Error('Updated installation failed version/runtime verification')
           item.status=item.before===item.after?'up_to_date':'updated'
           item.process=undefined
         } catch(error) {

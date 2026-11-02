@@ -262,18 +262,43 @@ export function discoverUserBinDirs(
 }
 
 export function fixShellPath(): void {
-  if (process.platform !== 'darwin') return
-  if (process.env.NODE_ENV === 'test') return
+  refreshShellPath()
+}
 
-  const home = homedir()
+/**
+ * Re-read the user login shell PATH (used at startup and on explicit rescan).
+ * On timeout/empty/invalid output, keeps the previous PATH and returns a diagnostic.
+ * Does not rewrite env of already-running child processes.
+ */
+export function refreshShellPath(options?: {
+  platform?: NodeJS.Platform
+  env?: NodeJS.ProcessEnv
+  home?: string
+  timeoutMs?: number
+}): { ok: true; path: string } | { ok: false; error: string; path: string } {
+  const platform = options?.platform ?? process.platform
+  const env = options?.env ?? process.env
+  const previous = env.PATH || ''
+  if (platform !== 'darwin') return { ok: true, path: previous }
+  if (env.NODE_ENV === 'test' && !options?.env) return { ok: true, path: previous }
+
+  const home = options?.home ?? homedir()
   const fallbacks = discoverUserBinDirs(home)
-
-  const shell = resolveUserShell()
-  const extracted = extractShellEnv(shell)
-
-  // Prefer the login-shell PATH; append discovered dirs only if they were missing.
-  const basePath = extracted.path || process.env.PATH || ''
-  process.env.PATH = mergePathEntries(fallbacks.join(':'), basePath.split(':').filter(Boolean))
-
-  applyShellProxyEnv(process.env, extracted.proxyEnv)
+  const shell = resolveUserShell(env)
+  let extracted: { path?: string; proxyEnv: Record<string, string> }
+  try {
+    extracted = extractShellEnv(shell, { timeoutMs: options?.timeoutMs ?? 5000, env })
+  } catch (error) {
+    return { ok: false, error: String(error), path: previous }
+  }
+  if (!extracted.path?.trim()) {
+    return {
+      ok: false,
+      error: 'Login shell did not return a usable PATH; keeping previous discovery PATH',
+      path: previous
+    }
+  }
+  env.PATH = mergePathEntries(fallbacks.join(':'), extracted.path.split(':').filter(Boolean))
+  applyShellProxyEnv(env, extracted.proxyEnv)
+  return { ok: true, path: env.PATH || '' }
 }

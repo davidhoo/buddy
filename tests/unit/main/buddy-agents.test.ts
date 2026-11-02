@@ -2,8 +2,57 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildLauncherCommand } from '../../../src/main/buddy/launchers'
 import { acquireAgentUse, acquireAgentUpdate } from '../../../src/main/buddy/agents/locks'
 import { newer } from '../../../src/main/buddy/agents/service'
-import { parseAcpAuthFailure } from '../../../src/shared/agents'
+import {
+  AGENT_RECIPES,
+  agentProtocolReady,
+  agentTaskSelectable,
+  agentUpdateRuntimeReady,
+  defaultSelectedProtocol,
+  parseAcpAuthFailure,
+  resolveAgentProtocol
+} from '../../../src/shared/agents'
 import { normalizeGlobalSettings, normalizeLauncher } from '../../../src/shared/defaults'
+
+describe('agent protocol readiness', () => {
+  it('gates task selection on the selected protocol, not a loose OR', () => {
+    const geminiCliPreferred = {
+      id: 'gemini', installationId: 'g', name: 'Gemini', path: '/bin/gemini', realPath: '/bin/gemini',
+      source: 'npm' as const, runnable: false, enabled: true, selectedProtocol: 'cli' as const,
+      cli: { command: '/bin/gemini', args: [], env: {}, timeout_seconds: 10 },
+      acp: { command: '/bin/gemini', args: ['--experimental-acp'], env: {}, timeout_seconds: 10, protocol: 'acp' as const },
+      acpStatus: 'verified' as const
+    }
+    expect(resolveAgentProtocol(geminiCliPreferred)).toBe('cli')
+    expect(agentProtocolReady(geminiCliPreferred)).toBe(false)
+    expect(agentTaskSelectable(geminiCliPreferred)).toBe(false)
+    expect(agentTaskSelectable({ ...geminiCliPreferred, selectedProtocol: 'acp' })).toBe(true)
+    expect(defaultSelectedProtocol({ runnable: false, acp: geminiCliPreferred.acp })).toBe('acp')
+    expect(agentUpdateRuntimeReady({ ...geminiCliPreferred, runnable: false })).toBe(true)
+  })
+  it('registers P1–P3 discovery recipes with documented ACP entries', () => {
+    expect(AGENT_RECIPES.map(r => r.id)).toEqual(expect.arrayContaining([
+      'gemini', 'qwen', 'copilot', 'goose', 'droid',
+      'pi', 'omp', 'cline', 'crush', 'qoder', 'qoder_cn', 'hermes',
+      'mimo', 'mcode', 'deveco', 'stepcode', 'commandcode',
+      'atomcode', 'snow', 'jcode', 'devin', 'mothx', 'penguin', 'omo', 'prime_agent', 'empryo', 'ante'
+    ]))
+    expect(AGENT_RECIPES.find(r => r.id === 'codebuddy')?.aliases).toContain('cbc')
+    expect(AGENT_RECIPES.find(r => r.id === 'copilot')?.acp).toEqual(['--acp', '--stdio'])
+    expect(AGENT_RECIPES.find(r => r.id === 'droid')?.acp).toEqual(['exec', '--output-format', 'acp'])
+    expect(AGENT_RECIPES.find(r => r.id === 'omp')?.acp).toEqual(['acp'])
+    expect(AGENT_RECIPES.find(r => r.id === 'pi')?.adapter).toBe('pi-acp')
+    expect(AGENT_RECIPES.find(r => r.id === 'cline')?.acp).toEqual(['--acp'])
+    expect(AGENT_RECIPES.find(r => r.id === 'qoder')?.aliases).toContain('qodercli')
+    expect(AGENT_RECIPES.find(r => r.id === 'qoder_cn')?.command).toBe('qodercn')
+    expect(AGENT_RECIPES.find(r => r.id === 'hermes')?.acp).toEqual(['acp'])
+    expect(AGENT_RECIPES.find(r => r.id === 'mimo')?.acp).toEqual(['acp'])
+    expect(AGENT_RECIPES.find(r => r.id === 'mcode')?.acp).toEqual(['acp'])
+    // Discovery-only / ambiguous-name rows: no ACP claim; avoid bare `step`/`grok`.
+    expect(AGENT_RECIPES.find(r => r.id === 'stepcode')?.acp).toBeUndefined()
+    expect(AGENT_RECIPES.find(r => r.id === 'stepcode')?.command).toBe('stepcode')
+    expect(AGENT_RECIPES.find(r => r.id === 'grok')).toBeUndefined()
+  })
+})
 
 describe('parseAcpAuthFailure', () => {
   it('extracts wecode login from expired-token probe errors', () => {
@@ -53,7 +102,7 @@ describe('local agent configuration and execution',()=>{
   })
 })
 
-import { mkdtemp, mkdir, writeFile, symlink, rm, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, symlink, rm, realpath, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentManagementService } from '../../../src/main/buddy/agents/service'
@@ -119,6 +168,58 @@ it('saves WeCode ACP to CLI immediately without waiting for discovery or probing
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
+it('defaults Gemini to ACP when CLI is present but not natively adapted', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buddy-gemini-default-'))
+  try {
+    const bin = join(root, 'bin')
+    await mkdir(bin)
+    await writeFile(join(bin, 'gemini'), '#!/bin/sh\necho 1.0.0\n', { mode: 0o755 })
+    const store = new BuddyStore(join(root, 'data'))
+    const service = new AgentManagementService(store, {
+      dirs: [bin],
+      appRoots: [],
+      recipes: [{ id: 'gemini', name: 'Gemini CLI', command: 'gemini', acp: ['--experimental-acp'], npm: '@google/gemini-cli', modelFlag: '--model' }],
+      run: async () => '1.0.0'
+    })
+    vi.spyOn(service as unknown as { probeTarget(a: import('../../../src/shared/agents').LocalAgent): Promise<import('../../../src/shared/agents').LocalAgent> }, 'probeTarget')
+      .mockImplementation(async agent => { agent.acpStatus = 'verified'; return agent })
+    const [agent] = await service.list()
+    expect(agent.runnable).toBe(false)
+    expect(agent.selectedProtocol).toBe('acp')
+    expect(agent.acp?.args).toEqual(['--experimental-acp'])
+    expect(agent.acpStatus).toBe('verified')
+    expect(agentTaskSelectable(agent)).toBe(true)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('discovers CodeBuddy via cbc alias and keeps automaticCli consistent with cache reload', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buddy-cbc-alias-'))
+  try {
+    const primary = join(root, 'primary'), aliasDir = join(root, 'alias')
+    await mkdir(primary); await mkdir(aliasDir)
+    const target = join(primary, 'codebuddy')
+    await writeFile(target, '#!/bin/sh\necho 1.2.3\n', { mode: 0o755 })
+    await symlink(target, join(aliasDir, 'cbc'))
+    const store = new BuddyStore(join(root, 'data'))
+    const options = {
+      dirs: [aliasDir],
+      appRoots: [] as string[],
+      recipes: [{ id: 'codebuddy', name: 'CodeBuddy', command: 'codebuddy', aliases: ['cbc'], acp: ['--acp'], npm: '@tencent-ai/codebuddy-code' }],
+      run: async () => '1.2.3'
+    }
+    const service = new AgentManagementService(store, options)
+    vi.spyOn(service as unknown as { probeTarget(a: import('../../../src/shared/agents').LocalAgent): Promise<import('../../../src/shared/agents').LocalAgent> }, 'probeTarget')
+      .mockImplementation(async agent => agent)
+    const [agent] = await service.list()
+    expect(agent.path).toBe(join(aliasDir, 'cbc'))
+    expect(agent.runnable).toBe(true)
+    expect(agent.automaticCli?.command).toBe(join(aliasDir, 'cbc'))
+    expect(agent.installations?.map(i => i.path)).toEqual([join(aliasDir, 'cbc')])
+    const restored = new AgentManagementService(store, options)
+    expect((await restored.getInventory()).agents[0].automaticCli?.command).toBe(join(aliasDir, 'cbc'))
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 it('does not discover desktop-only apps and only rescans an edited launch target', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buddy-target-scan-'))
   try {
@@ -148,7 +249,7 @@ it('does not discover desktop-only apps and only rescans an edited launch target
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-it('marks ACP failed when initialize succeeds but session/new surfaces expired auth', async () => {
+it('scan only handshakes; session probe publishes, persists, and later scans keep auth failure', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buddy-acp-session-probe-'))
   try {
     const command = join(root, 'claude-agent-acp')
@@ -175,9 +276,21 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
       recipes: [{ id: 'wecode_claude', name: 'WeCode Claude', command: 'wecode', adapter: 'claude-agent-acp' }],
       run: async () => '1.0.0'
     })
-    const [agent] = await service.list()
-    expect(agent.acpStatus).toBe('failed')
-    expect(parseAcpAuthFailure(agent.acpError)).toEqual({ command: 'wecode login' })
+    const snapshots: import('../../../src/shared/agents').AgentInventorySnapshot[] = []
+    service.subscribe(snapshot => snapshots.push(snapshot))
+    const [scanned] = await service.list()
+    expect(scanned.acpStatus).toBe('verified')
+    const beforeProbe = snapshots.length
+    const probed = await service.probe('wecode_claude')
+    expect(probed.acpStatus).toBe('failed')
+    expect(parseAcpAuthFailure(probed.acpError)).toEqual({ command: 'wecode login' })
+    expect(snapshots.length).toBeGreaterThan(beforeProbe)
+    expect(snapshots.at(-1)?.agents.find(a => a.id === 'wecode_claude')?.acpStatus).toBe('failed')
+    const disk = JSON.parse(await readFile(join(root, 'data/global/agent-inventory-cache.json'), 'utf8'))
+    expect(disk.agents.find((a: { id: string }) => a.id === 'wecode_claude').acpStatus).toBe('failed')
+    const [refreshed] = await service.list(true)
+    expect(refreshed.acpStatus).toBe('failed')
+    expect(parseAcpAuthFailure(refreshed.acpError)).toEqual({ command: 'wecode login' })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 

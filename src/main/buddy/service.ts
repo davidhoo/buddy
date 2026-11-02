@@ -52,12 +52,20 @@ import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutError, parserActorForKind, runLauncher, runLauncherWithPty, splitCommand, type LauncherRunResult } from './launchers'
 import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, probeAcpModels, resolveAcpBinary, checkGlobalAcpAdapters, type GlobalAcpAdaptersStatus } from './acp'
 import { detectModelFromConfig } from './model-detect'
-import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, defaultLauncherFor } from '../../shared/defaults'
+import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, defaultLauncherFor, normalizeLauncher } from '../../shared/defaults'
+import { resolveProtocolLauncher } from '../../shared/agents'
 import { buildPingPrompt, actorDisplayName } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
-import { mergeChildEnv } from './shell-path'
+import { mergeChildEnv, refreshShellPath } from './shell-path'
 import { redactSensitiveText } from './redact'
+import {
+  MODEL_CACHE_ERROR_TTL_MS,
+  MODEL_CACHE_TTL_MS,
+  ModelCatalogDiskCache,
+  modelCatalogCacheKey,
+  type ModelCacheMemEntry
+} from './model-cache'
 
 export interface BuddyCoreServiceOptions {
   dataRoot?: string
@@ -70,16 +78,19 @@ export class BuddyCoreService {
   private readonly runner: BuddyRunner
   private readonly events?: BuddyEventBus
   private coordinator?: QueueCoordinator
-  private readonly acpModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
+  private readonly modelDiskCache: ModelCatalogDiskCache
+  private readonly acpModelCache = new Map<string, ModelCacheMemEntry>()
   private readonly acpModelInflight = new Map<string, Promise<AcpModelList>>()
-  private readonly cliModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
+  private readonly cliModelCache = new Map<string, ModelCacheMemEntry>()
   private readonly cliModelInflight = new Map<string, Promise<AcpModelList>>()
+  private readonly modelCatalogListeners = new Set<(update: import('../../shared/types').ModelCatalogUpdate) => void>()
 
   constructor(options: BuddyCoreServiceOptions | string = {}) {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
     this.agents = new AgentManagementService(this.store)
+    this.modelDiskCache = new ModelCatalogDiskCache(this.store.dataRoot)
     const notifier = createTaskNotifier(this.store)
     this.runner = new BuddyRunner(this.store, { events: normalized.events, notifier })
     this.coordinator = new QueueCoordinator({ store: this.store, runner: this.runner, events: normalized.events })
@@ -89,60 +100,174 @@ export class BuddyCoreService {
   }
 
   /**
-   * List models advertised by a CLI actor. Cached like ACP probes so switching
-   * handoff actors in the composer does not respawn slow CLIs (e.g. agy models).
+   * List models advertised by a CLI actor. Memory TTL avoids respawning slow
+   * CLIs while switching actors; disk cache survives restarts (Cache-First +
+   * background refresh).
    */
-  listCliModels(id: string): Promise<AcpModelList> {
-    return this.withAgentUse(() => this.listCliModelsInner(id))
+  listCliModels(id: string, context?: import('../../shared/types').ModelListContext): Promise<AcpModelList> {
+    // Cache reads stay lock-free; resolveModelCatalog takes withAgentUse only around the probe.
+    return this.listCliModelsInner(id, context)
   }
 
-  private async listCliModelsInner(id: string): Promise<AcpModelList> {
-    const inventory = await this.agents.getInventory()
-    const agent = inventory.agents.find(a => a.id === id)
-    const cli = agent?.cli
-    if (!cli) return { models: [] }
-
-    const cacheKey = JSON.stringify([id, cli.command, cli.args, cli.env])
-    const cached = this.cliModelCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) return cached.list
-
-    const inflight = this.cliModelInflight.get(cacheKey)
-    if (inflight) return inflight
-
-    const pending = (async (): Promise<AcpModelList> => {
+  private async resolveModelListLauncher(
+    actor: string,
+    protocol: 'cli' | 'acp',
+    context?: import('../../shared/types').ModelListContext
+  ): Promise<import('../../shared/types').Launcher | undefined> {
+    if (context?.launcher?.command) {
+      return normalizeLauncher(actor, { ...context.launcher, protocol: context.launcher.protocol || protocol })
+    }
+    if (context?.taskId && context.workspaceKey) {
       try {
-        const list = await this.agents.models(id)
-        this.cliModelCache.set(cacheKey, {
-          list,
-          expiresAt: Date.now() + 5 * 60 * 1000
-        })
-        return list
-      } catch (error) {
-        const message = redactSensitiveText(String(error))
-        const stale = this.cliModelCache.get(cacheKey)
-        if (stale) return { ...stale.list, error: message }
-        return { models: [], error: message }
-      } finally {
-        this.cliModelInflight.delete(cacheKey)
+        const taskSettings = await this.store.readTaskSettings(context.taskId, context.workspaceKey)
+        const fromTask = taskSettings.launchers?.[actor]
+        const taskProtocol = fromTask?.protocol === 'acp' ? 'acp' : 'cli'
+        if (fromTask?.command && taskProtocol === protocol) {
+          return normalizeLauncher(actor, { ...fromTask, protocol })
+        }
+      } catch {
+        /* fall through to global/inventory */
       }
-    })()
+    }
+    const settings = await this.store.readGlobalSettings()
+    const inventory = await this.agents.getInventory()
+    const agent = inventory.agents.find(a => a.id === actor)
+    const resolved = resolveProtocolLauncher(protocol, agent, {
+      agentConfig: settings.agent_management?.[actor],
+      savedLauncher: settings.launchers?.[actor]
+    })
+    return resolved?.command
+      ? normalizeLauncher(actor, { ...resolved, protocol })
+      : undefined
+  }
 
-    this.cliModelInflight.set(cacheKey, pending)
-    return pending
+  private async listCliModelsInner(id: string, context?: import('../../shared/types').ModelListContext): Promise<AcpModelList> {
+    const cli = await this.resolveModelListLauncher(id, 'cli', context)
+    if (!cli?.command) return { models: [] }
+
+    const cacheKey = modelCatalogCacheKey({
+      protocol: 'cli',
+      actor: id,
+      command: cli.command,
+      args: cli.args,
+      env: cli.env
+    })
+    return this.resolveModelCatalog({
+      cacheKey,
+      memory: this.cliModelCache,
+      inflight: this.cliModelInflight,
+      fetch: () => this.agents.models(id, cli),
+      actor: id,
+      protocol: 'cli'
+    })
+  }
+
+  /**
+   * Shared Cache-First resolver: fresh memory hit returns immediately; stale
+   * memory/disk returns immediately while a background probe refreshes; only a
+   * true cold miss waits on the probe.
+   */
+  subscribeModelCatalog(listener: (update: import('../../shared/types').ModelCatalogUpdate) => void) {
+    this.modelCatalogListeners.add(listener)
+    return () => { this.modelCatalogListeners.delete(listener) }
+  }
+
+  private publishModelCatalog(update: import('../../shared/types').ModelCatalogUpdate) {
+    for (const listener of this.modelCatalogListeners) {
+      try { listener(update) } catch { /* subscriber errors must not break refresh */ }
+    }
+  }
+
+  private async resolveModelCatalog(options: {
+    cacheKey: string
+    memory: Map<string, ModelCacheMemEntry>
+    inflight: Map<string, Promise<AcpModelList>>
+    fetch: () => Promise<AcpModelList>
+    actor: string
+    protocol: 'cli' | 'acp'
+  }): Promise<AcpModelList> {
+    await this.modelDiskCache.ensureLoaded()
+    const now = Date.now()
+    let cached = options.memory.get(options.cacheKey)
+    if (!cached) {
+      const fromDisk = this.modelDiskCache.get(options.cacheKey)
+      if (fromDisk) {
+        options.memory.set(options.cacheKey, fromDisk)
+        cached = fromDisk
+      }
+    }
+    if (cached && cached.expiresAt > now) return cached.list
+
+    const refresh = (): Promise<AcpModelList> => {
+      const existing = options.inflight.get(options.cacheKey)
+      if (existing) return existing
+      // Occupy inflight synchronously before any await (including withAgentUse),
+      // so concurrent callers share one probe instead of racing a lock gap.
+      const pending = (async (): Promise<AcpModelList> => {
+        try {
+          const list = await this.withAgentUse(() => options.fetch())
+          const entry = { list, expiresAt: Date.now() + MODEL_CACHE_TTL_MS }
+          options.memory.set(options.cacheKey, entry)
+          void this.modelDiskCache.set(options.cacheKey, list).catch(() => {})
+          this.publishModelCatalog({ actor: options.actor, protocol: options.protocol, list })
+          return list
+        } catch (error) {
+          const message = redactSensitiveText(String(error))
+          const stale = options.memory.get(options.cacheKey)
+          if (stale) {
+            options.memory.set(options.cacheKey, {
+              list: { ...stale.list, error: message },
+              expiresAt: Date.now() + MODEL_CACHE_ERROR_TTL_MS
+            })
+            this.publishModelCatalog({
+              actor: options.actor,
+              protocol: options.protocol,
+              list: { ...stale.list, error: message }
+            })
+            return { ...stale.list, error: message }
+          }
+          const empty = { models: [], error: message }
+          this.publishModelCatalog({ actor: options.actor, protocol: options.protocol, list: empty })
+          return empty
+        } finally {
+          options.inflight.delete(options.cacheKey)
+        }
+      })()
+      options.inflight.set(options.cacheKey, pending)
+      return pending
+    }
+
+    if (cached) {
+      void refresh()
+      return cached.list
+    }
+    return refresh()
   }
   async listLocalAgents(force=false) { return force ? this.refreshLocalAgents('scan').then(s=>s.agents) : (await this.agents.getInventory()).agents }
   getAgentInventory() { return this.agents.getInventory() }
   getAgentUpdateState() { return this.agents.updates.getState() }
   startAgentUpdates(ids:string[],requestId:string) { return this.agents.updates.start(ids,requestId) }
   async initializeAgents() {
-    try {await this.agents.initialize()} finally {
+    try {
+      await this.agents.initialize()
+      // Migrate/discard legacy plaintext model-cache keys even when no model UI is opened.
+      await this.modelDiskCache.ensureLoaded()
+    } finally {
       // An unreadable update history must not prevent inventory discovery.
       void this.withAgentUse(async()=>{if(this.agents.needsStartupRefresh())await this.agents.refresh();await this.agents.checkUpdates(false)}).catch(()=>{})
     }
   }
   refreshLocalAgents(mode:'all'|'scan'|'updates'='all') {
     return this.withAgentUse(async()=>{
-      if(mode!=='updates')await this.agents.refresh()
+      // Rescan / refresh-all re-read the login shell PATH so installs added after
+      // Buddy started become visible. Update-only checks keep the existing snapshot.
+      if(mode!=='updates') {
+        const pathRefresh = refreshShellPath()
+        if (!pathRefresh.ok) {
+          this.agents.noteRefreshDiagnostic(pathRefresh.error)
+        }
+        await this.agents.refresh()
+      }
       if(mode!=='scan')await this.agents.checkUpdates(mode==='all' || mode==='updates')
       return this.agents.getInventory()
     })
@@ -452,61 +577,62 @@ export class BuddyCoreService {
 
   /**
    * Probe an ACP actor for the models it currently advertises. CLI actors
-   * resolve to an empty list. Results are cached briefly so the create-task
-   * modal can reopen without spawning the agent again. Callers keep showing
-   * the previous catalog while this refresh runs; a failed refresh falls back
-   * to the last good list instead of wiping it.
+   * resolve to an empty list. Memory + disk Cache-First with background
+   * refresh; a failed refresh falls back to the last good list.
    */
-  listAcpModels(actor:string,cwd?:string):Promise<AcpModelList> {
-    return this.withAgentUse(()=>this.listAcpModelsInner(actor,cwd))
+  listAcpModels(
+    actor: string,
+    cwd?: string,
+    context?: import('../../shared/types').ModelListContext
+  ): Promise<AcpModelList> {
+    // Cache reads stay lock-free; resolveModelCatalog takes withAgentUse only around the probe.
+    return this.listAcpModelsInner(actor, cwd, context)
   }
-  private async listAcpModelsInner(actor: string, cwd?: string): Promise<AcpModelList> {
+  private async listAcpModelsInner(
+    actor: string,
+    cwd?: string,
+    context?: import('../../shared/types').ModelListContext
+  ): Promise<AcpModelList> {
     const empty: AcpModelList = { models: [] }
-    const settings = await this.store.readGlobalSettings()
-    const launchers = normalizeGlobalSettings(settings).launchers ?? {}
-    const launcher = launchers[actor]
-    if (launcher?.protocol !== 'acp') return empty
+    const launcher = await this.resolveModelListLauncher(actor, 'acp', context)
+    if (!launcher?.command) return empty
 
-    const cacheKey = JSON.stringify([actor,launcher.command,launcher.args,launcher.env,cwd])
-    const cached = this.acpModelCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.list
-    }
-    const inflight = this.acpModelInflight.get(cacheKey)
-    if (inflight) return inflight
-
-    const pending = (async (): Promise<AcpModelList> => {
-      try {
+    const cacheKey = modelCatalogCacheKey({
+      protocol: 'acp',
+      actor,
+      command: launcher.command,
+      args: launcher.args,
+      env: launcher.env,
+      cwd
+    })
+    return this.resolveModelCatalog({
+      cacheKey,
+      memory: this.acpModelCache,
+      inflight: this.acpModelInflight,
+      actor,
+      protocol: 'acp',
+      fetch: async () => {
         const baseArgs = Array.isArray(launcher.args)
           ? launcher.args
           : defaultAcpArgs(launcher.command, actor)
-        const resolved = resolveAcpBinary(launcher.command, baseArgs)
+        const binary = resolveAcpBinary(launcher.command, baseArgs)
         const acpEnv = await prepareAcpEnvironment(actor, launcher.env, this.store.dataRoot)
-        const list = await probeAcpModels({
-          command: resolved.command,
-          args: resolved.args,
-          cwd,
-          env: acpEnv
-        })
-        this.agents.recordAcpProbe(actor, { ok: true })
-        this.acpModelCache.set(cacheKey, {
-          list,
-          expiresAt: Date.now() + 5 * 60 * 1000
-        })
-        return list
-      } catch (error) {
-        const message = redactSensitiveText(String(error))
-        this.agents.recordAcpProbe(actor, { ok: false, error: message })
-        const stale = this.acpModelCache.get(cacheKey)
-        if (stale) return { ...stale.list, error: message }
-        return { models: [], error: message }
-      } finally {
-        this.acpModelInflight.delete(cacheKey)
+        try {
+          const list = await probeAcpModels({
+            command: binary.command,
+            args: binary.args,
+            cwd,
+            env: acpEnv
+          })
+          this.agents.recordAcpProbe(actor, { ok: true })
+          return list
+        } catch (error) {
+          const message = redactSensitiveText(String(error))
+          this.agents.recordAcpProbe(actor, { ok: false, error: message })
+          throw error
+        }
       }
-    })()
-
-    this.acpModelInflight.set(cacheKey, pending)
-    return pending
+    })
   }
 
   testLauncher(actor:string,command:string,env?:Record<string,string>,protocol?:'cli'|'acp',args?:string[]):Promise<TestLauncherResult> {

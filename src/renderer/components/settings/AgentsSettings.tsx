@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Download, ChevronDown, SlidersHorizontal, Check, Loader2 } from 'lucide-react'
-import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts, parseAcpAuthFailure } from '../../../shared/agents'
+import { RefreshCw, Download, ChevronDown, SlidersHorizontal, Check, Loader2, ShieldCheck } from 'lucide-react'
+import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts, parseAcpAuthFailure, resolveAgentProtocol, agentProtocolReady } from '../../../shared/agents'
 import type { AgentConfiguration, LocalAgent, AgentInventorySnapshot, AgentUpdateItemStatus } from '../../../shared/agents'
 import type { Launcher } from '../../../shared/types'
 import { useT, type TFunction } from '../../hooks/useI18n'
+import { modelOptionLabel } from '../../lib/format'
 import { Switch } from '../Switch'
 import { AgentIcon } from './AgentIcon'
 import { JsonEditor } from './JsonEditor'
@@ -12,7 +13,6 @@ import { useAgentInventory, useAgentUpdateState, startAgentUpdates, acceptAgentS
 import { AgentUpdateStatus, updateStatusKey } from './AgentUpdateStatus'
 import './agents-settings.css'
 
-const canRun = (a: LocalAgent) => a.runnable || a.acpStatus === 'verified'
 const hasExecutionEntry = (a: LocalAgent) => !!(a.cli || a.acp)
 const hasUpdate = (a: LocalAgent) => !!(a.manager && a.latest && a.version && isNewerStableVersion(a.latest, a.version))
 const acpStatusLabel = (a: LocalAgent, t: TFunction) => {
@@ -88,7 +88,18 @@ export function AgentsSettings() {
     {updateState?.activeBatch&&<AgentUpdateStatus batch={updateState.activeBatch} active/>}
     <div className="agent-list-card">
       <div role="list" aria-label={t('settings.tab.agents')}>
-        {agents.map(a => <CompactAgentRow key={a.id} agent={a} updateStatus={updateState?.activeBatch?.items.find(item=>item.agentId===a.id)?.status} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => startAgentUpdates(cache,[a.id]))} />)}
+        {agents.map(a => <CompactAgentRow key={a.id} agent={a} updateStatus={updateState?.activeBatch?.items.find(item=>item.agentId===a.id)?.status} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => startAgentUpdates(cache,[a.id]))} onReverify={async () => {
+          setSaving(previous => new Set(previous).add(a.id))
+          setMessage('')
+          try {
+            const probed = await window.buddy.probeLocalAgent(a.id)
+            patch(a.id, () => probed)
+          } catch (error) {
+            setMessage(String(error))
+          } finally {
+            setSaving(previous => { const next = new Set(previous); next.delete(a.id); return next })
+          }
+        }} />)}
         {!agents.length && <div className="agent-list-empty">{isFetching || refreshing ? t('common.loading') : t('agents.empty')}</div>}
       </div>
     </div>
@@ -155,12 +166,14 @@ function AgentAdvancedSettings({ agent: a, protocol, launcher, disabled, onSave 
   </form>
 }
 
-function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate }: { agent: LocalAgent; updateStatus?:AgentUpdateItemStatus; busy: boolean; onSave: (config: AgentConfiguration) => Promise<void>; onUpdate: () => void }) {
+function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate, onReverify }: { agent: LocalAgent; updateStatus?:AgentUpdateItemStatus; busy: boolean; onSave: (config: AgentConfiguration) => Promise<void>; onUpdate: () => void; onReverify: () => Promise<void> }) {
   const t = useT()
   const [advanced, setAdvanced] = useState(false)
-  const protocol = a.selectedProtocol || (a.cli ? 'cli' : 'acp')
-  const available = canRun(a)
+  const [reverifyBusy, setReverifyBusy] = useState(false)
+  const protocol = resolveAgentProtocol(a)
+  const available = agentProtocolReady(a, protocol)
   const launcher = a[protocol]
+  const needsReverify = !!a.acp && (a.acpStatus === 'failed' || a.acpStatus === 'unverified' || a.acpStatus === 'incompatible')
   const advancedId = `agent-advanced-${a.id}`
   return <div className="agent-list-entry" role="listitem" data-agent-id={a.id}>
     <div className="agent-compact-row">
@@ -170,6 +183,7 @@ function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate }: { a
         {a.version && <span className="agent-row-version">{a.appVersion ? 'CLI ' : ''}{a.version}</span>}
         <span className="agent-row-actions">
         <button className="agent-update-pill" disabled={!launcher} aria-label={`${a.name} ${t('agents.advanced')}`} aria-expanded={advanced} aria-controls={advancedId} onClick={() => setAdvanced(value => !value)}><SlidersHorizontal size={11} />{t('agents.advanced')}</button>
+        {needsReverify && <button className="agent-update-pill" disabled={busy || reverifyBusy} aria-label={`${a.name} ${t('agents.reverify')}`} onClick={() => { setReverifyBusy(true); void onReverify().finally(() => setReverifyBusy(false)) }}>{reverifyBusy ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}{t('agents.reverify')}</button>}
         {updateStatus&&<span className="agent-update-pill" role="status">{t(updateStatusKey(updateStatus))}</span>}
         {!updateStatus && hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${t('agents.update')} ${a.latest}`}><Download size={11} /><span>{t('agents.update')} {a.latest}</span></button>}
         {!updateStatus && !hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}`}><Download size={11} /><span>{t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}</span></button>}
@@ -177,16 +191,16 @@ function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate }: { a
         {a.appVersion && <span className="agent-row-version agent-app-version">App {a.appVersion}</span>}
       </div>
       <div className="agent-row-description"><span className={`agent-status-dot ${available && a.enabled ? 'enabled' : ''}`} />
-        <span>{available ? `${t(a.enabled ? 'agents.ready' : 'agents.disabled')} · ${a.cli && a.acpStatus === 'verified' ? 'CLI / ACP' : protocol.toUpperCase()}` : t('agents.appOnly')}</span>
+        <span>{!(a.cli || a.acp) ? t('agents.appOnly') : `${t(!a.enabled ? 'agents.disabled' : available ? 'agents.ready' : 'agents.protocolUnavailable')} · ${a.runnable && a.acpStatus === 'verified' ? 'CLI / ACP' : protocol.toUpperCase()}`}</span>
         {a.acp && a.acpStatus !== 'verified' && <span title={a.acpError}>· {acpStatusLabel(a, t)}</span>}
       </div>
     </div>
     <div className="agent-row-controls">
-      {available ? <label className="agent-protocol-control"><span className="sr-only">{a.name} {t('settings.launcher.mode')}</span><select value={protocol} disabled={busy} onChange={e => { const p = e.target.value as 'cli' | 'acp'; void onSave({ protocol: p, [p]: a[p] }) }}>
-        <option value="cli" disabled={!a.cli}>CLI</option><option value="acp" disabled={!a.acp}>ACP</option>
+      {a.cli || a.acp ? <label className="agent-protocol-control"><span className="sr-only">{a.name} {t('settings.launcher.mode')}</span><select value={protocol} disabled={busy} onChange={e => { const p = e.target.value as 'cli' | 'acp'; void onSave({ protocol: p, [p]: a[p] }) }}>
+        <option value="cli" disabled={!a.runnable}>CLI</option><option value="acp" disabled={!a.acp}>ACP</option>
       </select><ChevronDown size={10} /></label> : <span className="agent-protocol-placeholder" />}
       <ModelControl agent={a} protocol={protocol} disabled={busy || !available || (protocol === 'cli' && !a.modelFlag)} onSave={onSave} />
-      <Switch checked={available && a.enabled} disabled={busy || !available} ariaLabel={`${a.name} ${t('agents.enabled')}`} onChange={enabled => { void onSave({ enabled }) }} />
+      <Switch checked={a.enabled} disabled={busy || !(a.cli || a.acp)} ariaLabel={`${a.name} ${t('agents.enabled')}`} onChange={enabled => { void onSave({ enabled }) }} />
     </div>
     </div>
     {advanced && launcher && <section id={advancedId} aria-label={`${a.name} ${t('agents.advanced')}`}>
@@ -220,6 +234,9 @@ function ModelControl({ agent: a, protocol, disabled, onSave }: { agent: LocalAg
     setOpen(false)
     void onSave({ [protocol]: { ...launcher, model } })
   }
+  // Trigger keeps the saved model ID for E2E/accessibility. Only beautify empty /
+  // Cursor wire ids (default[] → Auto); never substitute catalog display names here.
+  const label = modelOptionLabel(current, undefined, { nativeLabel: t('agents.default'), autoLabel: 'Auto' })
   return <div className="agent-model-control" ref={box} onKeyDown={event => {
     if (!open || !['ArrowDown', 'ArrowUp'].includes(event.key) || event.target instanceof HTMLInputElement) return
     const options = Array.from(box.current?.querySelectorAll<HTMLButtonElement>('[role=option]') || [])
@@ -228,8 +245,8 @@ function ModelControl({ agent: a, protocol, disabled, onSave }: { agent: LocalAg
     const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement)
     options[(currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length].focus()
   }}>
-    <button className="agent-model-trigger" disabled={disabled} aria-label={`${a.name} ${t('agents.model')}`} aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(value => !value)}>
-      <AgentIcon id={a.id} model={current} size={14} /><span>{current || t('agents.default')}</span><ChevronDown size={11} />
+    <button className="agent-model-trigger" disabled={disabled} aria-label={`${a.name} ${t('agents.model')}`} aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(value => !value)} title={current || undefined} data-model-id={current || undefined}>
+      <AgentIcon id={a.id} model={current} size={14} /><span>{label}</span><ChevronDown size={11} />
     </button>
     {open && <div className="agent-model-popover">
       <div role="listbox" aria-label={`${a.name} ${t('agents.model')}`}>

@@ -90,13 +90,23 @@ export function defaultAcpArgs(command: string, actor?: string): string[] {
   const exe = basename(rawTokens[0] || '').toLowerCase()
   const secondToken = rawTokens[1]?.toLowerCase()
 
-  // If command already contains 'acp' argument anywhere, do not duplicate
-  if (rawTokens.some((t) => t.toLowerCase() === 'acp')) {
+  // Already carries an ACP mode flag/subcommand — do not append another.
+  // Match `acp`, `--acp`, `--experimental-acp` (not bare `--experimental`).
+  if (rawTokens.some((t) => {
+    const bare = t.replace(/^-+/, '').toLowerCase()
+    return bare === 'acp' || bare === 'experimental-acp'
+  })) {
     return []
   }
 
   // If invoking an adapter package directly
-  if (exe.includes('codex-acp') || exe.includes('claude-agent-acp')) {
+  if (
+    exe.includes('codex-acp') ||
+    exe.includes('claude-agent-acp') ||
+    exe === 'pi-acp' ||
+    exe === 'crush-acp' ||
+    exe === 'hermes-acp'
+  ) {
     return []
   }
 
@@ -117,6 +127,16 @@ export function defaultAcpArgs(command: string, actor?: string): string[] {
   if (exe === 'agent' || exe === 'cursor-agent') {
     return ['acp']
   }
+
+  if (exe === 'gemini') return ['--experimental-acp']
+  if (exe === 'codebuddy' || exe === 'cbc') return ['--acp']
+  if (exe === 'qwen') return ['--acp']
+  if (exe === 'copilot') return ['--acp', '--stdio']
+  if (exe === 'goose' || exe === 'omp' || exe === 'hermes' || exe === 'crush') return ['acp']
+  if (exe === 'droid') return ['exec', '--output-format', 'acp']
+  if (exe === 'cline') return ['--acp']
+  if (exe === 'qoder' || exe === 'qodercli' || exe === 'qodercn' || exe === 'qoderclicn') return ['--acp']
+  if (exe === 'mimo' || exe === 'mimocode' || exe === 'mcode' || exe === 'deveco') return ['acp']
 
   return ['acp']
 }

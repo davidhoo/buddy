@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline'
 import { mergeChildEnv } from '../shell-path'
+import { withCompatibleRuntimeEnv } from '../agents/discovery'
 import { splitCommand } from '../launchers'
 import type { JsonRpcMessage } from './types'
 
@@ -40,7 +41,7 @@ export class AcpStdioTransport implements AcpTransport {
 
     const [cmd, ...prefixArgs] = splitCommand(this.options.command)
     const fullArgs = [...prefixArgs, ...(this.options.args ?? [])]
-    const childEnv = mergeChildEnv(process.env, this.options.env)
+    const childEnv = mergeChildEnv(process.env, withCompatibleRuntimeEnv(cmd, this.options.env))
     const child = spawn(cmd, fullArgs, {
       cwd: this.options.cwd,
       env: childEnv,

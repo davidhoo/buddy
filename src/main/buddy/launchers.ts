@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { basename, dirname, resolve } from 'node:path'
 import { existsSync, statSync, chmodSync } from 'node:fs'
+import { withCompatibleRuntimeEnv } from './agents/discovery'
 import { installHintFor, mergeChildEnv } from './shell-path'
 
 export type LauncherCommandKind =
@@ -159,7 +160,7 @@ export async function runLauncherWithPty(input: {
     cols: 200,
     rows: 50,
     cwd: input.cwd,
-    env: mergeChildEnv(process.env, input.env)
+    env: mergeChildEnv(process.env, withCompatibleRuntimeEnv(command, input.env))
   })
 
   let exited = false
@@ -218,6 +219,15 @@ export async function runLauncherWithPty(input: {
   }
 }
 
+/** Product CLIs that Buddy discovers but has not adapted for native task protocol. */
+const UNADAPTED_NATIVE_EXECUTABLES = new Set([
+  'gemini', 'qwen', 'copilot', 'goose', 'droid',
+  'pi', 'omp', 'cline', 'crush', 'qoder', 'qodercli', 'qodercn', 'qoderclicn',
+  'hermes', 'mimo', 'mimocode', 'mcode', 'deveco', 'stepcode',
+  'command-code', 'commandcode', 'atomcode', 'snow', 'jcode', 'devin',
+  'mothx', 'penguin', 'omo', 'prime-agent', 'empryo', 'ante'
+])
+
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
   let baseCmd = [...splitCommand(input.command), ...(input.args ?? [])]
   if(input.model) {
@@ -227,6 +237,11 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
     baseCmd.push(flag,input.model)
   }
   const kind = commandKindFor(input.actor, baseCmd)
+  const executable = basename(baseCmd[0] ?? '')
+  // Block only the product's own unadapted binary — custom contract wrappers keep working.
+  if (kind === 'contract' && UNADAPTED_NATIVE_EXECUTABLES.has(executable)) {
+    throw new LauncherConfigError(`${executable} has no native CLI adapter yet; select ACP, use a contract wrapper, or wait for a native adapter`)
+  }
   if (!baseCmd[0] && kind !== 'contract') {
     if (input.actor === 'wecode_claude') baseCmd = ['wecode']
     else if (input.actor === 'wecode_codex') baseCmd = ['wecode', 'codex']
@@ -499,7 +514,7 @@ export async function runLauncher(input: {
   try {
     child = spawn(command, [...prefixArgs, ...input.args], {
       cwd: input.cwd,
-      env: mergeChildEnv(process.env, input.env),
+      env: mergeChildEnv(process.env, withCompatibleRuntimeEnv(command, input.env)),
       stdio: ['pipe', 'pipe', 'pipe']
     })
   } catch (error) {

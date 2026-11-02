@@ -1,10 +1,19 @@
 import { parseAgyModels, parseCursorModels, parseKimiModels } from './models'
 import { kimiAcpArgsFromHelp, nativeUpdateCommandFromHelp } from './capabilities'
-import { agentLaunchChanged, applyAgentConfiguration } from '../../../shared/agents'
+import {
+  agentLaunchChanged,
+  applyAgentConfiguration,
+  acpLaunchFingerprint,
+  defaultSelectedProtocol,
+  parseAcpAuthFailure,
+  resolveEffectiveAgentLaunch,
+  type AcpFailureStage
+} from '../../../shared/agents'
 import { defaultLauncherFor, globalLauncherTimeout } from '../../../shared/defaults'
 import { isNewerStableVersion as newer } from '../../../shared/agents'
 import { agentInventoryCacheSchema } from '../schemas'
 import { AgentUpdateQueue, runUpdateCommand } from './updates'
+import { extraDiscoveryBinDirs, findAppBundledCli, inspectLaunchTarget, isAmbiguousAgentAlias, verifyAmbiguousAliasIdentity, withCompatibleRuntimeEnv } from './discovery'
 import { atomicWriteJson } from '../store'
 import { execFile } from 'node:child_process'
 import { access, readFile, realpath } from 'node:fs/promises'
@@ -20,19 +29,51 @@ import type { BuddyStore } from '../store'
 import { redactSensitiveText } from '../redact'
 
 export function runFile(command: string, args: string[], timeout = 3000, env?: Record<string, string>): Promise<string> {
-  return new Promise((resolve, reject) => execFile(command, args, { timeout, maxBuffer: 1024 * 1024, env: {...process.env, ...env, PATH: dirname(command)+':'+(env?.PATH ?? process.env.PATH ?? '')} }, (err, stdout, stderr) => err ? reject(new Error(redactSensitiveText(stderr || err.message))) : resolve(stdout.trim())))
+  const childEnv = { ...process.env, ...withCompatibleRuntimeEnv(command, env) }
+  return new Promise((resolve, reject) => execFile(command, args, { timeout, maxBuffer: 1024 * 1024, env: childEnv }, (err, stdout, stderr) => err ? reject(new Error(redactSensitiveText(stderr || err.message))) : resolve(stdout.trim())))
 }
 export { newer }
+
+export function discoveryDirs(dirs?: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const dir of [...(dirs || (process.env.PATH || '').split(':').filter(Boolean)), ...extraDiscoveryBinDirs(homedir(), { dirs })]) {
+    if (!dir || seen.has(dir)) continue
+    seen.add(dir)
+    out.push(dir)
+  }
+  return out
+}
 
 async function executable(path: string): Promise<boolean> { try { await access(path, constants.X_OK); return true } catch { return false } }
 async function find(name: string, dirs?:string[]): Promise<string | undefined> {
   if(name.includes('/')) return await executable(name) ? name : undefined
-  for(const dir of dirs || [...(process.env.PATH || '').split(':'), join(homedir(),'.local/bin'),join(homedir(),'.bun/bin'),join(homedir(),'.wecode-cli/bin'),'/opt/homebrew/bin','/usr/local/bin']) {
+  for(const dir of discoveryDirs(dirs)) {
     const path=join(dir,name); if(await executable(path)) return path
   }
 }
 export function installationIdentity(path: string): string {
   return createHash('sha256').update(path).digest('hex').slice(0,20)
+}
+
+/** Session/auth failures require a full session probe to clear; handshake alone is insufficient. */
+function isSessionScopedFailure(agent: Pick<LocalAgent, 'acpStatus' | 'acpFailureStage' | 'acpError'>): boolean {
+  if (agent.acpStatus !== 'failed') return false
+  if (agent.acpFailureStage === 'session') return true
+  if (agent.acpFailureStage === 'spawn' || agent.acpFailureStage === 'handshake') return false
+  // Legacy/unknown stage: never clear via handshake — require explicit re-verify.
+  return true
+}
+
+/** Legacy rows may lack a fingerprint; treat missing as same-target until launch config changes. */
+function fingerprintMatches(previous: string | undefined, current: string): boolean {
+  if (!previous) return true
+  return previous === current
+}
+
+/** Failures that a shallow handshake must not wash to verified. */
+function mustPreserveFailureAcrossHandshake(agent: Pick<LocalAgent, 'acpStatus' | 'acpFailureStage' | 'acpError'>): boolean {
+  return isSessionScopedFailure(agent)
 }
 export class AgentManagementService {
   private inventory: LocalAgent[] = []
@@ -46,6 +87,7 @@ export class AgentManagementService {
   private cacheWrites: Promise<void> = Promise.resolve()
   private inventoryRevision = 0
   private refreshError?: string
+  private refreshDiagnostic?: string
   private checking?: Promise<LocalAgent[]>
   private inventoryListeners = new Set<(snapshot: AgentInventorySnapshot) => void>()
   private configQueue:Promise<unknown>=Promise.resolve()
@@ -68,7 +110,13 @@ export class AgentManagementService {
   private run(command:string,args:string[],timeout?:number,env?:Record<string,string>){return (this.options.run || runFile)(command,args,timeout,env)}
   subscribe(listener: (snapshot: AgentInventorySnapshot) => void) { this.inventoryListeners.add(listener); return () => {this.inventoryListeners.delete(listener)} }
   private snapshot(): AgentInventorySnapshot {
-    return {revision:this.inventoryRevision,agents:this.inventory,scannedAt:this.scannedAt?new Date(this.scannedAt).toISOString():undefined,refreshing:!!this.scanPending || !!this.checking,error:this.refreshError}
+    const error = this.refreshError || this.refreshDiagnostic
+    return {revision:this.inventoryRevision,agents:this.inventory,scannedAt:this.scannedAt?new Date(this.scannedAt).toISOString():undefined,refreshing:!!this.scanPending || !!this.checking,error}
+  }
+  /** Soft diagnostic (e.g. shell PATH refresh failed) — does not clear inventory. */
+  noteRefreshDiagnostic(message: string) {
+    this.refreshDiagnostic = redactSensitiveText(message)
+    this.publish()
   }
   private publish() { this.inventoryRevision++; for(const listener of this.inventoryListeners)try{listener(this.snapshot())}catch{} }
   private async configurationHash() {
@@ -84,7 +132,6 @@ export class AgentManagementService {
         this.inventory = await Promise.all(cached.agents.map(async metadata => {
           const recipe = (this.options.recipes || AGENT_RECIPES).find(r=>r.id===metadata.id)
           const config = settings.agent_management?.[metadata.id]
-          const selected = config?.protocol || settings.launchers?.[metadata.id]?.protocol || 'cli'
           const saved = settings.launchers?.[metadata.id]
           const fallback = {args:[] as string[],env:{},timeout_seconds:globalLauncherTimeout(settings)}
           const automaticCli = metadata.path ? {...fallback,command:metadata.path,args:splitCommand(recipe?.command || '').slice(1),protocol:'cli' as const} : undefined
@@ -95,7 +142,24 @@ export class AgentManagementService {
           const acpCandidate = config?.acp || (saved?.protocol==='acp'?saved:automaticAcp)
           const acp=acpCandidate?{...acpCandidate,args:acpCandidate.args?.length?acpCandidate.args:defaultAcpArgs(acpCandidate.command,metadata.id),timeout_seconds:globalLauncherTimeout(settings)}:undefined
           const {nativeAcpArgs: _args, ...rest} = metadata
-          return {...rest,cli,acp,automaticCli,automaticAcp,enabled:config?.enabled!==false,selectedProtocol:selected,acpStatus:matches?rest.acpStatus:acp?'unverified' as const:'missing' as const}
+          const selected = config?.protocol || settings.launchers?.[metadata.id]?.protocol || defaultSelectedProtocol({runnable:rest.runnable,acp})
+          const acpStatus = matches ? rest.acpStatus : acp ? 'unverified' as const : 'missing' as const
+          // Legacy failed rows without a stage need an explicit re-verify path.
+          const acpFailureStage = acpStatus === 'failed'
+            ? (rest.acpFailureStage || 'unknown' as const)
+            : undefined
+          return {
+            ...rest,
+            cli,
+            acp,
+            automaticCli,
+            automaticAcp,
+            enabled: config?.enabled !== false,
+            selectedProtocol: selected,
+            acpStatus,
+            acpFailureStage,
+            acpLaunchFingerprint: acpStatus === 'failed' ? (rest.acpLaunchFingerprint || acpLaunchFingerprint(acp)) : rest.acpLaunchFingerprint
+          }
         }))
         this.scannedAt = matches && cached.scannedAt ? Date.parse(cached.scannedAt) || 0 : 0
       } catch { /* A missing, legacy or invalid cache triggers discovery at startup, never an empty overwrite. */ }
@@ -118,6 +182,7 @@ export class AgentManagementService {
     await this.loadCache()
     if(this.scanPending)return this.scanPending
     this.refreshError=undefined
+    this.refreshDiagnostic=undefined
     if(targets)for(const id of targets)this.dirtyAgents.delete(id)
     else this.dirtyAgents.clear()
     this.scanPending=this.scan(targets).catch(error=>{
@@ -129,9 +194,12 @@ export class AgentManagementService {
   }
   private async persistInventory() {
     const configurationHash=this.dirtyAgents.size?'':await this.configurationHash()
+    const cacheableAcpArg = (arg: string) => ['acp','--acp','--experimental-acp','opencode','--stdio','exec','--output-format'].includes(arg)
     const agents=this.inventory.map(({cli,acp,automaticCli,automaticAcp,...metadata})=>({
       ...metadata,
-      nativeAcpArgs:automaticAcp?.command===metadata.path && automaticAcp.args?.every(arg=>['acp','--acp','--experimental-acp','opencode'].includes(arg)) ? automaticAcp.args : metadata.id==='kimi' && ['acp','--acp'].includes(automaticAcp?.args?.at(-1) || '') ? automaticAcp?.args?.slice(-1) : undefined
+      nativeAcpArgs:automaticAcp?.command===metadata.path && !!automaticAcp.args?.length && automaticAcp.args.every(cacheableAcpArg)
+        ? automaticAcp.args
+        : metadata.id==='kimi' && ['acp','--acp'].includes(automaticAcp?.args?.at(-1) || '') ? automaticAcp?.args?.slice(-1) : undefined
     }))
     const data={schemaVersion:2,scannedAt:this.scannedAt?new Date(this.scannedAt).toISOString():undefined,configurationHash,agents}
     const pending=this.cacheWrites.catch(()=>{}).then(()=>atomicWriteJson(join(this.store.dataRoot,'global','agent-inventory-cache.json'),data))
@@ -155,24 +223,59 @@ export class AgentManagementService {
       if (!recipe.command && !saved?.command && !config?.acp?.command) return
       const tokens=splitCommand(saved?.command || recipe.command)
       let path=tokens[0]?await find(tokens[0],this.options.dirs):undefined
-      if(!path && !saved) for(const alias of recipe.aliases || []) {path=await find(alias,this.options.dirs); if(path) break}
+      let identityError: string|undefined
+      if(!path && !saved) for(const alias of recipe.aliases || []) {
+        const candidate=await find(alias,this.options.dirs)
+        if(!candidate) continue
+        if(!isAmbiguousAgentAlias(recipe, alias)) { path=candidate; break }
+        const real=await realpath(candidate).catch(()=>candidate)
+        const identity=verifyAmbiguousAliasIdentity({recipe, path:candidate, realPath:real})
+        if(identity.ok) { path=candidate; break }
+        identityError=identity.reason
+      }
       let appVersion: string|undefined
       if(recipe.app) for(const root of this.options.appRoots || ['/Applications',join(homedir(),'Applications')]) {
         try { appVersion=await this.run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',join(root,recipe.app+'.app/Contents/Info.plist')]); break } catch { /* no app */ }
       }
-      if(!path && !appVersion && !config && (!saved || saved.command===recipe.command) && settings.launchers?.[recipe.id]?.protocol!=='acp') return
+      // Known App-bundle CLI paths are candidates for the same product — not a new Actor.
+      if(!path && !saved && recipe.app && recipe.appCli?.length) {
+        const bundled=findAppBundledCli({appName:recipe.app, relativePaths:recipe.appCli, appRoots:this.options.appRoots})
+        if(bundled) path=bundled
+      }
+      // Collect adapter before the early return so a standalone adapter is not skipped
+      // merely because the primary CLI is missing from PATH.
+      const adapterEarly=recipe.adapter?await find(recipe.adapter,this.options.dirs):undefined
+      const savedAcp=config?.acp || (settings.launchers?.[recipe.id]?.protocol==='acp'?settings.launchers[recipe.id]:undefined)
+      if(!path && !appVersion && !config && !adapterEarly && !savedAcp && (!saved || saved.command===recipe.command)) return
       const real=path?await realpath(path).catch(()=>path!):''
       const installations:NonNullable<LocalAgent['installations']>=[]
       const knownPaths=new Set<string>()
-      for(const dir of this.options.dirs || (process.env.PATH || '').split(':')) {
-        const candidate=join(dir,splitCommand(recipe.command)[0] || '__absent__')
-        if(!await executable(candidate))continue
-        const target=await realpath(candidate).catch(()=>candidate)
-        if(knownPaths.has(target))continue
-        knownPaths.add(target)
-        let detectedVersion:string|undefined
-        try {detectedVersion=(await this.run(candidate,[...splitCommand(recipe.command).slice(1),'--version'])).match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0]} catch { /* retain installation evidence */ }
-        installations.push({id:installationIdentity(candidate),path:candidate,realPath:target,version:detectedVersion})
+      const commandNames=[...new Set([splitCommand(recipe.command)[0],...(recipe.aliases || [])].filter((name): name is string => !!name && !name.includes('/')))]
+      for(const dir of discoveryDirs(this.options.dirs)) {
+        for(const name of commandNames) {
+          const candidate=join(dir,name)
+          if(!await executable(candidate))continue
+          const inspected=inspectLaunchTarget(candidate)
+          if(inspected.broken) continue
+          const target=inspected.realPath || await realpath(candidate).catch(()=>candidate)
+          if(isAmbiguousAgentAlias(recipe, name)) {
+            const identity=verifyAmbiguousAliasIdentity({recipe, path:candidate, realPath:target})
+            if(!identity.ok) { identityError=identityError || identity.reason; continue }
+          }
+          if(knownPaths.has(target))continue
+          knownPaths.add(target)
+          let detectedVersion:string|undefined
+          try {detectedVersion=(await this.run(candidate,[...splitCommand(recipe.command).slice(1),'--version'])).match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0]} catch { /* retain installation evidence */ }
+          installations.push({
+            id:installationIdentity(candidate),
+            path:candidate,
+            realPath:target,
+            version:detectedVersion,
+            shim: inspected.shim,
+            sourceHint: inspected.sourceHint,
+            runtime: inspected.runtime ? { kind: inspected.runtime.kind, binDir: inspected.runtime.binDir } : undefined
+          })
+        }
       }
       const brew=/^(.*)\/(?:Cellar|Caskroom)\/([^/]+)\//.exec(real)
       const node=recipe.npm?real.indexOf('/lib/node_modules/'+recipe.npm): -1
@@ -209,8 +312,11 @@ export class AgentManagementService {
           }
         } catch { /* Help failure does not make a runnable CLI unavailable. */ }
       }
-      const adapter=recipe.adapter?await find(recipe.adapter,this.options.dirs):undefined
+      const adapter=adapterEarly
       let automaticAcp=adapter?{command:adapter,args:[],env:{},timeout_seconds:timeout,protocol:'acp' as const}:path && recipe.acp?{command:path,args:recipe.acp,env:{},timeout_seconds:timeout,protocol:'acp' as const}:undefined
+      if (recipe.adapter && !adapter && !automaticAcp && !savedAcp) {
+        identityError = identityError || `Missing local ACP adapter '${recipe.adapter}'`
+      }
       if (cli && nativeKind==='native_kimi' && !automaticAcp) {
         try {
           const help=await this.run(cli.command,[...cli.args,'--help'],3000,cli.env)
@@ -220,12 +326,53 @@ export class AgentManagementService {
       }
       const acpCandidate=config?.acp || (settings.launchers?.[recipe.id]?.protocol==='acp'?settings.launchers[recipe.id]:undefined) || automaticAcp
       const acp=acpCandidate?{...acpCandidate,args:acpCandidate.args?.length?acpCandidate.args:defaultAcpArgs(acpCandidate.command,recipe.id),timeout_seconds:timeout}:undefined
-      const defaultPath=recipe.command?await find(splitCommand(recipe.command)[0],this.options.dirs):undefined
+      // Prefer primary command, then verified aliases; fall back to the already-resolved path so
+      // alias-only installs still expose automaticCli (matches cache reload from metadata.path).
+      let defaultPath: string | undefined
+      if (recipe.command) {
+        defaultPath = await find(splitCommand(recipe.command)[0], this.options.dirs)
+        if (!defaultPath) for (const alias of recipe.aliases || []) {
+          const candidate = await find(alias, this.options.dirs)
+          if (!candidate) continue
+          if (isAmbiguousAgentAlias(recipe, alias)) {
+            const target = await realpath(candidate).catch(() => candidate)
+            if (!verifyAmbiguousAliasIdentity({ recipe, path: candidate, realPath: target }).ok) continue
+          }
+          defaultPath = candidate
+          break
+        }
+      }
+      if (!defaultPath && path && !saved) defaultPath = path
       const automaticCli=defaultPath?{command:defaultPath,args:splitCommand(recipe.command).slice(1),env:{},timeout_seconds:timeout,protocol:'cli' as const}:undefined
       if (!cli && !acp) return
-      out.push({nativeUpdate,automaticCli,automaticAcp,installations,id:recipe.id,installationId:installationIdentity(path || recipe.id),name:recipe.name,path:path || '',realPath:real,version,appVersion,source,prefix,manager,package:source==='uv'||source==='pipx'?(recipe.id==='kimi'?'kimi-cli':undefined):brew?.[2] || recipe.npm,selectedProtocol:config?.protocol || settings.launchers?.[recipe.id]?.protocol || 'cli',runnable:!!cli&&!error&&(native||!!config?.contract),enabled:config?.enabled!==false,error,cli,acp,acpStatus:acp?'unverified':'missing',modelFlag:recipe.modelFlag})
+      const runnable=!!cli&&!error&&(native||!!config?.contract)
+      const explicitProtocol=config?.protocol || settings.launchers?.[recipe.id]?.protocol
+      out.push({nativeUpdate,automaticCli,automaticAcp,installations,id:recipe.id,installationId:installationIdentity(path || recipe.id),name:recipe.name,path:path || '',realPath:real,version,appVersion,source,prefix,manager,package:source==='uv'||source==='pipx'?(recipe.id==='kimi'?'kimi-cli':undefined):brew?.[2] || recipe.npm,selectedProtocol:explicitProtocol || defaultSelectedProtocol({runnable,acp}),runnable,enabled:config?.enabled!==false,error:error || (!path && identityError ? identityError : undefined),cli,acp,acpStatus:acp?'unverified':'missing',modelFlag:recipe.modelFlag})
     }))
-    for(let offset=0;offset<out.length;offset+=4) await Promise.all(out.slice(offset,offset+4).filter(a=>a.acp&&!/\bnpx\b/.test(a.acp.command)).map(a=>this.probeTarget(a).catch(error=>{a.acpStatus='failed';a.acpError=redactSensitiveText(String(error));return a})))
+    // Session/auth and legacy-unknown failures survive a new scan for the same
+    // (or missing) launch fingerprint. Transient spawn/handshake failures start clean.
+    for (const agent of out) {
+      const previous = this.inventory.find(row => row.id === agent.id)
+      const fingerprint = acpLaunchFingerprint(agent.acp)
+      if (
+        previous?.acpStatus === 'failed' &&
+        fingerprintMatches(previous.acpLaunchFingerprint, fingerprint) &&
+        mustPreserveFailureAcrossHandshake(previous)
+      ) {
+        agent.acpStatus = 'failed'
+        agent.acpError = previous.acpError
+        agent.acpFailureStage = previous.acpFailureStage || 'unknown'
+        agent.acpLaunchFingerprint = fingerprint || previous.acpLaunchFingerprint
+      }
+    }
+    // Scan only does ACP handshake (initialize). session/new waits for explicit probe/task start.
+    for(let offset=0;offset<out.length;offset+=4) await Promise.all(out.slice(offset,offset+4).filter(a=>a.acp&&!/\bnpx\b/.test(a.acp.command)).map(a=>this.probeTarget(a,'handshake').catch(error=>{
+      a.acpStatus='failed'
+      a.acpError=redactSensitiveText(String(error))
+      a.acpFailureStage='spawn'
+      a.acpLaunchFingerprint=acpLaunchFingerprint(a.acp)
+      return a
+    })))
     if (!targets) this.scannedAt=Date.now()
     const previousInventory = this.inventory
     const discovered = targets ? [...this.inventory.filter(a=>!targets.has(a.id)), ...out] : out
@@ -237,7 +384,22 @@ export class AgentManagementService {
     // Preserve update-channel metadata when only runtime discovery changed.
     for (const agent of this.inventory) {
       const cached = previousInventory.find(a=>a.id===agent.id && a.installationId===agent.installationId && a.source===agent.source && a.package===agent.package && a.prefix===agent.prefix)
-      if(cached) {agent.latest=cached.latest;agent.checkedAt=cached.checkedAt;agent.updateError=cached.updateError}
+      if(cached) {
+        agent.latest=cached.latest;agent.checkedAt=cached.checkedAt;agent.updateError=cached.updateError
+        // Handshake must not erase session/auth or legacy-unknown failures.
+        const fingerprint = acpLaunchFingerprint(agent.acp)
+        if (
+          cached.acpStatus === 'failed' &&
+          agent.acpStatus === 'verified' &&
+          fingerprintMatches(cached.acpLaunchFingerprint, fingerprint) &&
+          mustPreserveFailureAcrossHandshake(cached)
+        ) {
+          agent.acpStatus = 'failed'
+          agent.acpError = cached.acpError
+          agent.acpFailureStage = cached.acpFailureStage || 'unknown'
+          agent.acpLaunchFingerprint = fingerprint || cached.acpLaunchFingerprint
+        }
+      }
     }
     await this.persistInventory()
     return this.inventory
@@ -257,85 +419,165 @@ export class AgentManagementService {
       if (next[protocol]) next[protocol] = { ...next[protocol], timeout_seconds: timeout }
     }
     const agent=this.inventory.find(a=>a.id===id)
-    const protocol=next.protocol || settings.launchers?.[id]?.protocol || 'cli'
-    const existing = settings.launchers?.[id]
-    const launcher=next[protocol] || agent?.[protocol] || ((existing?.protocol || 'cli') === protocol ? existing : undefined) || (protocol === 'cli' ? defaultLauncherFor(id) : undefined)
-    if (!launcher) throw new Error('No configured ACP entry for '+id)
-    await this.store.updateGlobalSettings({...settings,agent_management:{...settings.agent_management,[id]:next},launchers:{...settings.launchers,[id]:{...launcher,protocol,timeout_seconds:timeout}}})
+    const patched = agent ? applyAgentConfiguration(agent, next) : undefined
+    const { protocol, launcher: resolved } = resolveEffectiveAgentLaunch(patched, {
+      agentConfig: next,
+      savedLauncher: settings.launchers?.[id]
+    })
+    const candidate = next[protocol] || resolved || (protocol === 'cli' ? defaultLauncherFor(id) : undefined)
+    if (!candidate?.command) throw new Error('No configured ACP entry for '+id)
+    const launcher = {
+      command: candidate.command,
+      args: candidate.args || [],
+      env: candidate.env || {},
+      timeout_seconds: timeout,
+      protocol,
+      ...(typeof candidate.model === 'string' && candidate.model.trim() ? { model: candidate.model.trim() } : {})
+    }
+    // Persist the resolved protocol so enable/model saves cannot rewrite ACP → CLI.
+    next.protocol = protocol
+    await this.store.updateGlobalSettings({...settings,agent_management:{...settings.agent_management,[id]:next},launchers:{...settings.launchers,[id]:launcher}})
     this.configurationOverrides.set(id, { revision: ++this.configurationRevision, config: next })
     if (!agent || agentLaunchChanged(agent, config)) this.dirtyAgents.add(id)
-    this.inventory = this.inventory.map(a => a.id === id ? {...applyAgentConfiguration(a, next),...(this.dirtyAgents.has(id)?{acpStatus:next.acp || a.acp?'unverified' as const:'missing' as const}:{})} : a)
+    const launchChanged = !agent || agentLaunchChanged(agent, config)
+    this.inventory = this.inventory.map(a => a.id === id ? {
+      ...applyAgentConfiguration(a, next),
+      selectedProtocol: protocol,
+      ...(launchChanged ? {
+        acpStatus: (next.acp || a.acp ? 'unverified' : 'missing') as LocalAgent['acpStatus'],
+        acpError: undefined,
+        acpFailureStage: undefined,
+        acpLaunchFingerprint: undefined
+      } : {})
+    } : a)
     this.publish()
     if (this.inventory.length) await this.persistInventory()
   }
   async probe(id:string): Promise<LocalAgent> {
     const a=(await this.list()).find(a=>a.id===id); if(!a?.acp) throw new Error('ACP entry unavailable')
-    return this.probeTarget(a)
+    const probed = await this.probeTarget(a,'session')
+    this.publish()
+    await this.persistInventory()
+    return probed
   }
   /** Model-list / runtime failures can outrank a stale scan verdict. */
   recordAcpProbe(id:string, result:{ok:true}|{ok:false;error:string}):void {
     const agent=this.inventory.find(a=>a.id===id)
     if(!agent?.acp) return
+    const fingerprint = acpLaunchFingerprint(agent.acp)
     if(result.ok) {
       if(agent.acpStatus==='verified' && !agent.acpError) return
-      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'verified' as const,acpError:undefined}:a)
+      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'verified' as const,acpError:undefined,acpFailureStage:undefined,acpLaunchFingerprint:fingerprint}:a)
     } else {
       const acpError=redactSensitiveText(result.error)
-      if(agent.acpStatus==='failed' && agent.acpError===acpError) return
-      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'failed' as const,acpError}:a)
+      const stage: AcpFailureStage = parseAcpAuthFailure(acpError) ? 'session' : 'handshake'
+      if(agent.acpStatus==='failed' && agent.acpError===acpError && agent.acpFailureStage===stage) return
+      this.inventory=this.inventory.map(a=>a.id===id?{...a,acpStatus:'failed' as const,acpError,acpFailureStage:stage,acpLaunchFingerprint:fingerprint}:a)
     }
     this.publish()
     void this.persistInventory()
   }
-  private async probeTarget(a:LocalAgent):Promise<LocalAgent> {
+  /**
+   * handshake: initialize only (used by inventory scan).
+   * session: also session/new — catches auth failures that only surface there.
+   * Handshake success clears spawn/handshake/unknown failures for the same launch
+   * fingerprint, but never clears a known session/auth failure.
+   */
+  private async probeTarget(a:LocalAgent, depth:'handshake'|'session'='handshake'):Promise<LocalAgent> {
     if(!a.acp) return a
     const id=a.id
+    const fingerprint = acpLaunchFingerprint(a.acp)
+    // Stale failure from a different launch config must not block this probe.
+    if (a.acpLaunchFingerprint && a.acpLaunchFingerprint !== fingerprint) {
+      a.acpStatus = a.acp ? 'unverified' : 'missing'
+      a.acpError = undefined
+      a.acpFailureStage = undefined
+      a.acpLaunchFingerprint = undefined
+    }
     if(/\bnpx\b/.test(a.acp.command)) throw new Error('Install a local ACP adapter before scanning')
     const tokens=splitCommand(a.acp.command)
     const cwd=homedir()
+    let stage: AcpFailureStage = 'spawn'
     const transport=new AcpStdioTransport({command:tokens[0],args:[...tokens.slice(1),...(a.acp.args || [])],cwd,env:await prepareAcpEnvironment(id,a.acp.env,this.store.dataRoot)})
     const client=new AcpClient(transport,{timeoutMs:10000})
     try {
       transport.start()
+      stage = 'handshake'
       const result=await client.initialize({clientCapabilities:{},capabilities:{}})
       if(Number(result.protocolVersion)!==1) {
         a.acpStatus='incompatible'
         a.acpError=undefined
-      } else {
-        // initialize alone is a shallow handshake; claude-agent-acp only fails auth on session/new.
+        a.acpFailureStage=undefined
+        a.acpLaunchFingerprint=fingerprint
+      } else if (depth === 'session') {
+        stage = 'session'
         await client.newSession({cwd,mcpServers:[]})
         a.acpStatus='verified'
         a.acpError=undefined
+        a.acpFailureStage=undefined
+        a.acpLaunchFingerprint=fingerprint
+      } else if (
+        mustPreserveFailureAcrossHandshake(a) &&
+        fingerprintMatches(a.acpLaunchFingerprint, fingerprint)
+      ) {
+        // Keep session/auth or legacy-unknown failure; handshake alone is not proof of login.
+        a.acpStatus = 'failed'
+        a.acpFailureStage = a.acpFailureStage || 'unknown'
+        a.acpLaunchFingerprint = fingerprint || a.acpLaunchFingerprint
+      } else {
+        a.acpStatus='verified'
+        a.acpError=undefined
+        a.acpFailureStage=undefined
+        a.acpLaunchFingerprint=fingerprint
       }
     }
-    catch(e) { a.acpStatus='failed';a.acpError=redactSensitiveText(String(e)) }
+    catch(e) {
+      const acpError=redactSensitiveText(String(e))
+      if (stage === 'session' || parseAcpAuthFailure(acpError)) stage = 'session'
+      a.acpStatus='failed'
+      a.acpError=acpError
+      a.acpFailureStage=stage
+      a.acpLaunchFingerprint=fingerprint
+    }
     finally {await client.close().catch(()=>{});await transport.close().catch(()=>{})}
     return a
   }
-  async models(id:string):Promise<import('../../../shared/types').AcpModelList> {
+  async models(
+    id: string,
+    launcherOverride?: Partial<import('../../../shared/types').Launcher>
+  ): Promise<import('../../../shared/types').AcpModelList> {
     const a=this.inventory.find(a=>a.id===id) ?? (await this.list()).find(a=>a.id===id)
-    if(!a?.cli) return {models:[]}
-    const tokens=splitCommand(a.cli.command)
-    const args=[...tokens.slice(1),...(a.cli.args || [])]
+    const cli = launcherOverride?.command
+      ? {
+          command: launcherOverride.command,
+          args: launcherOverride.args || [],
+          env: launcherOverride.env || {},
+          model: launcherOverride.model,
+          timeout_seconds: launcherOverride.timeout_seconds || 20
+        }
+      : a?.cli
+    if(!cli?.command) return {models:[]}
+    const tokens=splitCommand(cli.command)
+    const args=[...tokens.slice(1),...(cli.args || [])]
     const kind=commandKindFor(id,[tokens[0],...args])
     if(kind==='native_cursor') {
-      const raw=await this.run(tokens[0],[...args,'models'],30000,a.cli.env)
-      return {models:parseCursorModels(raw),currentModelId:a.cli.model}
+      const raw=await this.run(tokens[0],[...args,'models'],30000,cli.env)
+      return {models:parseCursorModels(raw),currentModelId:cli.model}
     }
     if(kind==='native_kimi') {
-      const raw=await this.run(tokens[0],[...args,'provider','list','--json'],10000,a.cli.env)
-      return {models:parseKimiModels(raw),currentModelId:a.cli.model}
+      const raw=await this.run(tokens[0],[...args,'provider','list','--json'],10000,cli.env)
+      return {models:parseKimiModels(raw),currentModelId:cli.model}
     }
     if(kind==='native_agy') {
-      const raw=await this.run(tokens[0],[...args,'models'],30000,a.cli.env)
-      return {models:parseAgyModels(raw),currentModelId:a.cli.model}
+      const raw=await this.run(tokens[0],[...args,'models'],30000,cli.env)
+      return {models:parseAgyModels(raw),currentModelId:cli.model}
     }
     if(kind==='native_opencode') {
-      const raw=await this.run(tokens[0],[...args,'models'],15000,a.cli.env)
+      const raw=await this.run(tokens[0],[...args,'models'],15000,cli.env)
       return {models:raw.split('\n').map(id=>id.trim()).filter(id=>/^[^\s]+\/[^\s]+$/.test(id)).map(id=>({id,name:id}))}
     }
     if(kind==='native_codebuddy') {
-      const help=await this.run(tokens[0],[...args,'--help'],3000,a.cli.env)
+      const help=await this.run(tokens[0],[...args,'--help'],3000,cli.env)
       const values=/Currently supported: \(([^)]+)\)/.exec(help)?.[1]
       return {models:values?values.split(',').map(id=>({id:id.trim(),name:id.trim()})):[]}
     }

@@ -42,8 +42,11 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
     startAgentUpdates: (ids:string[],requestId:string) => ipc.invoke('buddy:startAgentUpdates',ids,requestId) as Promise<import('../shared/agents').AgentUpdateSnapshot>,
     onAgentInventory: (callback:(state:import('../shared/agents').AgentInventorySnapshot)=>void) => subscribe('buddy:agent-inventory',callback),
     onAgentUpdate: (callback:(state:import('../shared/agents').AgentUpdateSnapshot)=>void) => subscribe('buddy:agent-update',callback),
+    onModelCatalog: (callback:(update:import('../shared/types').ModelCatalogUpdate)=>void) =>
+      subscribe('buddy:model-catalog', callback),
     onOpenAgentUpdates: (callback:()=>void) => subscribe('buddy:open-agents',callback),
-    listCliModels: (id:string) => ipc.invoke('buddy:listCliModels',id) as Promise<AcpModelList>,
+    listCliModels: (id:string, context?: import('../shared/types').ModelListContext) =>
+      ipc.invoke('buddy:listCliModels', id, context) as Promise<AcpModelList>,
     listLocalAgents: (force=false) => ipc.invoke('buddy:listLocalAgents',force) as Promise<import('../shared/agents').LocalAgent[]>,
     configureAgent: (id:string,config:import('../shared/agents').AgentConfiguration) => ipc.invoke('buddy:configureAgent',id,config) as Promise<void>,
     probeLocalAgent: (id:string) => ipc.invoke('buddy:probeLocalAgent',id) as Promise<import('../shared/agents').LocalAgent>,
@@ -133,8 +136,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ),
     detectActorModels: (): Promise<Record<string, string | undefined>> =>
       ipc.invoke('buddy:detectActorModels') as Promise<Record<string, string | undefined>>,
-    listAcpModels: (actor: string, cwd?: string): Promise<AcpModelList> =>
-      ipc.invoke('buddy:listAcpModels', actor, cwd) as Promise<AcpModelList>,
+    listAcpModels: (actor: string, cwd?: string, context?: import('../shared/types').ModelListContext): Promise<AcpModelList> =>
+      ipc.invoke('buddy:listAcpModels', actor, cwd, context) as Promise<AcpModelList>,
     updateTaskText: (taskId: string, workspaceKey: string, taskText: string): Promise<void> =>
       ipc.invoke('buddy:updateTaskText', taskId, workspaceKey, taskText) as Promise<void>,
     updateTaskLauncherModel: (taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings> =>
