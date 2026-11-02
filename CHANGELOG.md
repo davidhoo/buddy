@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-11-02
+
+### Changed
+- WeCode 包装的 Claude / Codex / OpenCode 三入口共用同一更新目标：一次 `upgrade --cli-only`，设置页去重计数与进度，按钮文案为「更新 WeCode 至 {version}」
+- Agent 批量更新用 `selectionKey` 固定用户所选 CLI；准备阶段允许 PATH 解析到新安装，配置被改则失败；Update All 仅针对有新版本的条目
+- WeCode 版本源改为只读解析本机 bundle 的 GitLab 配置，认证仅存内存；探测时注入 `WECODE_NO_AUTO_UPGRADE` 并失效旧缓存中的内层更新命令
+
+### Fixed
+- 提交弹窗模型标签将 Cursor `default[]` 显示为 Auto，与 Agents 设置 / Composer 一致
+- 更新历史不再写入凭据；选择摘要排除 model / enabled / timeout
+
+---
+
 ## [2.0.11] - 2026-11-02
 
 ### Added
