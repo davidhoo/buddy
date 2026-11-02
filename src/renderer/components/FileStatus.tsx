@@ -9,7 +9,7 @@ import { formatBinding, loadBindings } from '../lib/keyboard'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChangesModal } from './ChangesModal'
 import { BranchModal } from './BranchModal'
-import { ACTOR_LABEL_KEY } from '../lib/format'
+import { ACTOR_LABEL_KEY, modelOptionLabel } from '../lib/format'
 import { DEFAULT_LAUNCHER_ORDER, normalizeLauncher, normalizeGlobalSettings } from '../../shared/defaults'
 
 export interface CommitFeedback {
@@ -373,12 +373,15 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
     const launcher = resolveLauncherForActor(actor)
     if (launcher.protocol === 'acp') {
       // Prefer the model already chosen for this task / global launcher —
-      // never a commit-modal override.
+      // never a commit-modal override. Beautify Cursor wire ids (default[] → Auto)
+      // the same way AgentsSettings / Composer do via modelOptionLabel.
       const model = launcher.model?.trim()
-      return model ? `${name} · ${model}` : name
+      if (!model) return name
+      return `${name} · ${modelOptionLabel(model, undefined, { autoLabel: 'Auto' })}`
     }
     const model = cliModels[actor]
-    return model ? `${name} (${model})` : name
+    if (!model) return name
+    return `${name} (${modelOptionLabel(model, undefined, { autoLabel: 'Auto' })})`
   }, [t, resolveLauncherForActor, cliModels])
 
   const handleActorChange = useCallback((actor: string) => {

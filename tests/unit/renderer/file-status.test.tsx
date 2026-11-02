@@ -282,6 +282,74 @@ describe('CommitModal actor selection', () => {
     expect(screen.queryByLabelText(/modal\.create\.model/)).not.toBeInTheDocument()
   })
 
+  it('beautifies Cursor ACP default[] to Auto like other model labels', async () => {
+    renderModal({
+      taskSettings: {
+        implementer_actor: 'cursor',
+        reviewer_actor: 'claude',
+        launchers: {
+          cursor: {
+            protocol: 'acp',
+            command: 'cursor-agent',
+            args: ['acp'],
+            env: {},
+            timeout_seconds: 7200,
+            model: 'default[]'
+          }
+        }
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'actor.cursor · Auto' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('option', { name: /default\[\]/ })).not.toBeInTheDocument()
+  })
+
+  it('beautifies Cursor ACP default[] inherited from globalSettings', async () => {
+    renderModal({
+      taskSettings: {
+        implementer_actor: 'cursor',
+        reviewer_actor: 'claude'
+      },
+      globalSettings: {
+        ...makeSettings(false),
+        launchers: {
+          cursor: {
+            protocol: 'acp',
+            command: 'cursor-agent',
+            args: ['acp'],
+            env: {},
+            timeout_seconds: 7200,
+            model: 'default[]'
+          }
+        }
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'actor.cursor · Auto' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('option', { name: /default\[\]/ })).not.toBeInTheDocument()
+  })
+
+  it('beautifies Cursor CLI detected default/auto to Auto', async () => {
+    vi.mocked(window.buddy.detectActorModels).mockResolvedValue({
+      cursor: 'default',
+      claude: 'auto'
+    })
+    renderModal({
+      taskSettings: {
+        implementer_actor: 'cursor',
+        reviewer_actor: 'claude'
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'actor.cursor (Auto)' })).toBeInTheDocument()
+    })
+    expect(screen.getByRole('option', { name: 'actor.claude (Auto)' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /actor\.cursor \(default\)/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /actor\.claude \(auto\)/ })).not.toBeInTheDocument()
+  })
+
   it('generates commit message with correct actor', async () => {
     const mockGenerate = vi.mocked(api.generateCommitMessage)
     mockGenerate.mockResolvedValue({ message: 'feat: test message' })
