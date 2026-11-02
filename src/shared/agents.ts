@@ -52,6 +52,17 @@ export function isNewerStableVersion(a: string, b: string): boolean {
   return false
 }
 
+/** Detect ACP probe failures that ask the user to sign in, and optional login command. */
+export function parseAcpAuthFailure(error?: string): { command?: string } | undefined {
+  if (!error) return undefined
+  if (!/(authentication(?:\s+token)?|token\s+has\s+expired|not\s+logged\s+in|please\s+(?:run|login|sign\s*in)|(?:^|[^\w])login(?:[^\w]|$)|sign[\s-]?in\s+required|unauthorized)/i.test(error)) {
+    return undefined
+  }
+  const command = error.match(/\b((?:wecode|claude|codex|agy|antigravity|opencode|kimi|dsh|gemini|codebuddy|cursor-agent)(?:\s+[a-z0-9_-]+)?\s+login)\b/i)?.[1]
+    || error.match(/^\s*((?:[\w./-]+\/)?[\w.-]+\s+login)\s*$/im)?.[1]
+  return { command: command?.trim() }
+}
+
 /** Transport changes need fresh discovery; model/default/enable changes do not. */
 export function agentLaunchChanged(agent: LocalAgent, config: AgentConfiguration): boolean {
   const key = (launcher?: Launcher) => JSON.stringify([launcher?.command, launcher?.args ?? [], Object.entries(launcher?.env ?? {}).sort(([a], [b]) => a.localeCompare(b))])

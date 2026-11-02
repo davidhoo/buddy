@@ -323,7 +323,7 @@ export class AgentManagementService {
     await this.loadCache()
     const agents=this.inventory.filter(a=>!targets || targets.has(a.id))
     for(let offset=0;offset<agents.length;offset+=4) await Promise.all(agents.slice(offset,offset+4).map(async a=>{
-      if(!force && a.checkedAt && Date.now()-Date.parse(a.checkedAt)<6*3600000 && !a.updateError)return
+      if(!force && a.checkedAt && Date.now()-Date.parse(a.checkedAt)<3600000 && !a.updateError)return
       a.checkedAt=new Date().toISOString(); a.updateError=undefined;a.latest=undefined
       try {
         if(a.source==='brew'&&a.manager&&a.package) {const info=JSON.parse(await this.run(a.manager,['info','--json=v2',a.package],30000));a.latest=info.formulae?.[0]?.versions?.stable || info.casks?.[0]?.version}

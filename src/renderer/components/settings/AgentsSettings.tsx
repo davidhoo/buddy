@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Download, ChevronDown, SlidersHorizontal, Check, Loader2 } from 'lucide-react'
-import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts } from '../../../shared/agents'
+import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts, parseAcpAuthFailure } from '../../../shared/agents'
 import type { AgentConfiguration, LocalAgent, AgentInventorySnapshot, AgentUpdateItemStatus } from '../../../shared/agents'
 import type { Launcher } from '../../../shared/types'
-import { useT } from '../../hooks/useI18n'
+import { useT, type TFunction } from '../../hooks/useI18n'
 import { Switch } from '../Switch'
 import { AgentIcon } from './AgentIcon'
 import { JsonEditor } from './JsonEditor'
@@ -15,6 +15,13 @@ import './agents-settings.css'
 const canRun = (a: LocalAgent) => a.runnable || a.acpStatus === 'verified'
 const hasExecutionEntry = (a: LocalAgent) => !!(a.cli || a.acp)
 const hasUpdate = (a: LocalAgent) => !!(a.manager && a.latest && a.version && isNewerStableVersion(a.latest, a.version))
+const acpStatusLabel = (a: LocalAgent, t: TFunction) => {
+  if (a.acpStatus === 'failed') {
+    return parseAcpAuthFailure(a.acpError) ? t('agents.status.loginRequired') : t('agents.status.failed')
+  }
+  if (a.acpStatus === 'incompatible') return t('agents.status.incompatible')
+  return t('agents.status.unverified')
+}
 const modelCatalogKey = (a: LocalAgent, protocol: 'cli' | 'acp') => [
   'agentModels', a.id, a.installationId, protocol, a.version,
   a[protocol]?.command, a[protocol]?.args, a[protocol]?.env
@@ -114,6 +121,7 @@ function AgentAdvancedSettings({ agent: a, protocol, launcher, disabled, onSave 
     env = parsed
   } catch { envError = t('agents.invalidEnv') }
   const installations = a.installations || []
+  const displayError = protocol === 'acp' ? (a.acpError || a.error) : (a.error || a.acpError)
   return <form className="agent-advanced-form" onSubmit={event => {
     event.preventDefault()
     if (disabled || !command.trim() || argsError || envError) return
@@ -139,7 +147,7 @@ function AgentAdvancedSettings({ agent: a, protocol, launcher, disabled, onSave 
       </label>
       <JsonEditor label={t('agents.args')} value={argsText} onChange={setArgsText} error={argsError} />
       <JsonEditor label={t('agents.env')} value={envText} onChange={setEnvText} error={envError} />
-      {(protocol === 'acp' ? a.acpError || a.error : a.error) && <p role="alert" className="text-danger break-all">{protocol === 'acp' ? a.acpError || a.error : a.error}</p>}
+      {displayError && <p role="alert" className="text-danger break-all">{displayError}</p>}
       <div className="agent-advanced-actions"><button type="submit" className="agent-update-pill" disabled={!command.trim() || !!argsError || !!envError}>
         {disabled ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}{t('common.save')}
       </button></div>
@@ -170,7 +178,7 @@ function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate }: { a
       </div>
       <div className="agent-row-description"><span className={`agent-status-dot ${available && a.enabled ? 'enabled' : ''}`} />
         <span>{available ? `${t(a.enabled ? 'agents.ready' : 'agents.disabled')} · ${a.cli && a.acpStatus === 'verified' ? 'CLI / ACP' : protocol.toUpperCase()}` : t('agents.appOnly')}</span>
-        {a.acp && a.acpStatus !== 'verified' && <span title={a.acpError}>· {t(a.acpStatus === 'failed' ? 'agents.status.failed' : a.acpStatus === 'incompatible' ? 'agents.status.incompatible' : 'agents.status.unverified')}</span>}
+        {a.acp && a.acpStatus !== 'verified' && <span title={a.acpError}>· {acpStatusLabel(a, t)}</span>}
       </div>
     </div>
     <div className="agent-row-controls">

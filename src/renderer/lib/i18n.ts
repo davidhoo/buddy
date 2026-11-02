@@ -57,6 +57,7 @@ const en = {
   'agents.status.missing': 'ACP unavailable',
   'agents.status.incompatible': 'ACP incompatible',
   'agents.status.failed': 'ACP check failed',
+  'agents.status.loginRequired': 'Sign in again',
 
   'agents.add': 'Add custom local agent',
   'agents.id': 'Agent ID',
@@ -651,6 +652,7 @@ const zhCN: typeof en = {
   'agents.status.missing': 'ACP 不可用',
   'agents.status.incompatible': 'ACP 版本不兼容',
   'agents.status.failed': 'ACP 检测失败',
+  'agents.status.loginRequired': '需要重新登录',
 
   'agents.add': '添加自定义本机 Agent',
   'agents.id': 'Agent 标识',
@@ -1224,6 +1226,7 @@ const zhTW: typeof en = {
   'agents.status.missing': 'ACP 不可用',
   'agents.status.incompatible': 'ACP 版本不相容',
   'agents.status.failed': 'ACP 檢測失敗',
+  'agents.status.loginRequired': '需要重新登入',
 
   'agents.add': '新增自訂本機 Agent',
   'agents.id': 'Agent 識別碼',

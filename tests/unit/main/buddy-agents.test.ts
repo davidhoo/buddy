@@ -2,7 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildLauncherCommand } from '../../../src/main/buddy/launchers'
 import { acquireAgentUse, acquireAgentUpdate } from '../../../src/main/buddy/agents/locks'
 import { newer } from '../../../src/main/buddy/agents/service'
+import { parseAcpAuthFailure } from '../../../src/shared/agents'
 import { normalizeGlobalSettings, normalizeLauncher } from '../../../src/shared/defaults'
+
+describe('parseAcpAuthFailure', () => {
+  it('extracts wecode login from expired-token probe errors', () => {
+    const codex = 'Error: ACP Error 1001: Codex process has exited with code 1:\n⚠️  Authentication token has expired or is invalid.\n🔐 Please run the following command to login:\n\n  wecode login'
+    const opencode = 'Error: Process exited with code 1: ⚠️  Authentication token has expired or is invalid.\n🔐 Please run the following command to login:\n\n  wecode login'
+    expect(parseAcpAuthFailure(codex)).toEqual({ command: 'wecode login' })
+    expect(parseAcpAuthFailure(opencode)).toEqual({ command: 'wecode login' })
+  })
+  it('ignores non-auth probe failures', () => {
+    expect(parseAcpAuthFailure('spawn ENOENT')).toBeUndefined()
+    expect(parseAcpAuthFailure('ACP Request timeout after 10000ms for method initialize')).toBeUndefined()
+  })
+})
 
 describe('local agent configuration and execution',()=>{
   it('preserves CLI argv containing spaces and replaces a previous model once',()=>{
