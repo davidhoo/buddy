@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-11-02
+
+### Added
+- Composer 支持选择 CLI 协议 Actor 的模型，并可清空选择以回退到原生默认；不再自动套用探测列表的第一项或当前模型
+- Agent 设置识别 ACP 认证失效 / Token 过期，展示「需要重新登录」提示，并尽量提取可用的登录命令
+
+### Changed
+- CLI 模型探测增加主进程缓存（TTL + inflight 复用）与失败回退；Composer 跨 Actor 切换使用目录缓存，后台刷新时保持已有列表，减少闪烁
+- Agent 版本更新检查缓存间隔由 6 小时缩短为 1 小时
+
+### Fixed
+- ACP 探测在 `initialize` 之外补充 `session/new`，并在模型拉取时同步库存的 `acpStatus` / `acpError`，避免浅层握手漏掉鉴权失效
+
+---
+
 ## [2.0.9] - 2026-10-29
 
 ### Fixed
