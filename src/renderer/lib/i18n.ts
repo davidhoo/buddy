@@ -41,7 +41,6 @@ export function resolveLanguage(pref: LanguagePref): Language {
 const en = {
   'agents.advanced': 'Advanced',
   'agents.nativeUpdate': 'Check and update',
-  'agents.updateWecode': 'Update WeCode',
   'agents.formatJson': 'Format JSON',
   'agents.invalidJson': 'Invalid JSON syntax',
   'agents.default': 'Default',
@@ -638,7 +637,6 @@ const en = {
 const zhCN: typeof en = {
   'agents.advanced': '高级',
   'agents.nativeUpdate': '检查并更新',
-  'agents.updateWecode': '更新 WeCode',
   'agents.formatJson': '格式化 JSON',
   'agents.invalidJson': 'JSON 语法有误',
   'agents.default': '默认',
@@ -1214,7 +1212,6 @@ const zhCN: typeof en = {
 const zhTW: typeof en = {
   'agents.advanced': '進階',
   'agents.nativeUpdate': '檢查並更新',
-  'agents.updateWecode': '更新 WeCode',
   'agents.formatJson': '格式化 JSON',
   'agents.invalidJson': 'JSON 語法有誤',
   'agents.default': '預設',

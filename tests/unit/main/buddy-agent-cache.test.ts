@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AgentManagementService } from '../../../src/main/buddy/agents/service'
 import { BuddyStore } from '../../../src/main/buddy/store'
+import { acquireAgentUse } from '../../../src/main/buddy/agents/locks'
 let root:string
 beforeEach(async()=>{root=await mkdtemp(join(tmpdir(),'buddy-inventory-'));await mkdir(join(root,'bin'))})
 afterEach(async()=>{vi.unstubAllGlobals();vi.restoreAllMocks();await rm(root,{recursive:true,force:true})})
@@ -74,4 +75,69 @@ it('restores discovered Kimi ACP flags and inherits the current CLI environment 
   expect(disk).not.toContain('private-profile');expect(disk).not.toContain('private-env')
   const restored=new AgentManagementService(store,options)
   expect((await restored.getInventory()).agents.find(a=>a.id==='kimi')?.acp).toMatchObject({args:['--profile','private-profile','--acp'],env:{PRIVATE_VALUE:'private-env'}})
+})
+
+it.each([
+  { selection: 'automatic', installed: '0.166.0', status: 'up_to_date' },
+  { selection: 'automatic', installed: '0.165.0', status: 'updated' },
+  { selection: 'explicit', installed: '0.166.0', status: 'updated' }
+])('resolves a stale Codex cache with $selection selection and a new PATH installation at $installed',async({selection,installed,status})=>{
+  const resolvedRoot=await realpath(root)
+  const previous=join(resolvedRoot,'npm-global'),preferred=join(resolvedRoot,'homebrew')
+  const versions=new Map<string,string>()
+  const install=async(prefix:string,version:string)=>{
+    const bin=join(prefix,'bin'),pkg=join(prefix,'lib/node_modules/@openai/codex')
+    await mkdir(bin,{recursive:true});await mkdir(pkg,{recursive:true})
+    await writeFile(join(pkg,'cli.js'),'#!/bin/sh\nexit 0\n',{mode:0o755})
+    await symlink(join(pkg,'cli.js'),join(bin,'codex'))
+    versions.set(join(bin,'codex'),version)
+  }
+  await install(previous,'0.163.0')
+  const run=vi.fn(async(command:string,args:string[])=>{
+    if(args[0]==='install'){
+      versions.set(join(args[args.indexOf('--prefix')+1],'bin/codex'),'0.166.0')
+      return ''
+    }
+    return versions.get(command) || ''
+  })
+  vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({version:'0.166.0'})})))
+  const service=new AgentManagementService(new BuddyStore(join(root,'data')),{
+    dirs:[join(preferred,'bin'),join(previous,'bin')],appRoots:[],
+    recipes:[{id:'codex',name:'Codex',command:'codex',npm:'@openai/codex'}],run
+  })
+  await service.refresh();await service.checkUpdates()
+  const cached=(await service.getInventory()).agents[0]
+  expect(cached.path).toBe(join(previous,'bin/codex'))
+  if(selection==='explicit')await service.configure('codex',{cli:cached.cli})
+  await install(preferred,installed)
+  const accepted=await service.updates.start(['codex'],'path-change')
+  expect(accepted.activeBatch?.items[0].installationId).toBe(cached.installationId)
+  await service.updates.waitForIdle()
+  const result=(await service.updates.getState()).lastCompletedBatch!.items[0]
+  const resolved=(await service.getInventory()).agents[0]
+  const selectedPrefix=selection==='explicit'?previous:preferred
+  expect(resolved.path).toBe(join(selectedPrefix,'bin/codex'))
+  expect(result).toMatchObject({status,installationId:resolved.installationId,source:'npm',after:'0.166.0'})
+  expect(result.error).toBeUndefined()
+  const installers=run.mock.calls.filter(([,args])=>args[0]==='install')
+  if(status==='up_to_date')expect(installers).toEqual([])
+  else expect(installers).toEqual([[join(selectedPrefix,'bin/npm'),['install','-g','--prefix',selectedPrefix,'@openai/codex@0.166.0'],600000,undefined]])
+  expect(versions.get(join(selection==='explicit'?preferred:previous,'bin/codex'))).toBe(selection==='explicit'?installed:'0.163.0')
+})
+
+it.each(['command','args','env'] as const)('rejects an explicit CLI %s change while an update waits',async(field)=>{
+  const {service,run}=await fixture('codex','codex')
+  run.mockImplementation(async(_command,args)=>args.includes('--help')?'Commands:\n  upgrade  Upgrade Codex':'0.163.0')
+  await service.refresh()
+  const cli=(await service.getInventory()).agents[0].cli!
+  const release=await acquireAgentUse()
+  try {
+    await service.updates.start(['codex'],'configuration-change')
+    const change=field==='command'?{command:cli.command+'-other'}:field==='args'?{args:['--profile','changed']}:{env:{TEST_TOKEN:'private-new-value'}}
+    await service.configure('codex',{cli:{...cli,...change}})
+  }finally{release()}
+  await service.updates.waitForIdle()
+  expect((await service.updates.getState()).lastCompletedBatch?.items[0]).toMatchObject({status:'failed',error:expect.stringContaining('configuration changed')})
+  expect(run.mock.calls.some(([,args])=>args.includes('upgrade'))).toBe(false)
+  expect(await readFile(join(root,'data/global/agent-update-jobs.json'),'utf8')).not.toContain('private-new-value')
 })

@@ -89,6 +89,16 @@ describe('durable global Agent update queue',()=>{
     await q.start(['a'],'downgrade');await q.waitForIdle()
     expect((await q.getState()).lastCompletedBatch?.items[0].status).toBe('failed')
   })
+  it('rejects a resolved installation changing again after batch preparation',async()=>{
+    const deps=dependencies()
+    deps.execute.mockImplementation(async()=>{
+      deps.targets.mockResolvedValue([agent('a'),{...agent('b'),installationId:'different-installation'}])
+    })
+    const q=new AgentUpdateQueue({...deps,selectionKeys:async ids=>Object.fromEntries(ids.map(id=>[id,'unchanged-'+id]))})
+    await q.start(['a','b'],'changed-after-preparation');await q.waitForIdle()
+    expect(deps.execute).toHaveBeenCalledTimes(1)
+    expect((await q.getState()).lastCompletedBatch?.items.map(item=>item.status)).toEqual(['updated','failed'])
+  })
   it('recovers interrupted work without replaying it and blocks retry until its process group exits',async()=>{
     await atomicWriteJson(join(root,'global/agent-update-jobs.json'),{schemaVersion:2,revision:8,activeBatch:{id:'old',requestId:'old',status:'running',cancelRequested:false,items:[{id:'old-a',agentId:'a',name:'a',status:'installing',process:{pid:123,started:'old',command:'installer'}}]}})
     const deps=dependencies(),alive=vi.fn(async()=>true),q=new AgentUpdateQueue({...deps,processAlive:alive})

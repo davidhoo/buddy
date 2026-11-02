@@ -48,7 +48,6 @@ export function AgentsSettings() {
     }
   }
   const updates = agents.filter(hasUpdate)
-  const updateTargets = agents.filter(a => hasUpdate(a) || a.nativeUpdate)
   const action = async (fn: () => Promise<unknown>) => {
     setBusy(true); setMessage('')
     try {
@@ -80,7 +79,7 @@ export function AgentsSettings() {
         <select className="agent-refresh-options" aria-label={t('agents.refreshOptions')} value="" disabled={busy||refreshing} onChange={event=>action(()=>refresh(event.target.value as 'all'|'scan'|'updates'))}>
           <option value="" disabled>{t('agents.refreshOptions')}</option><option value="scan">{t('agents.scanOnly')}</option><option value="updates">{t('agents.checkOnly')}</option>
         </select>
-        <button className="agent-update-pill" disabled={busy || refreshing || !updateTargets.length} onClick={() => action(() => startAgentUpdates(cache,updateTargets.map(a => a.id)))}><Download size={12} />{progress?t('agents.globalProgress',{n:progress.processed,total:progress.total}):t('agents.updateAll')}</button>
+        <button className="agent-update-pill" disabled={busy || refreshing || !updates.length} onClick={() => action(() => startAgentUpdates(cache,updates.map(a => a.id)))}><Download size={12} />{progress?t('agents.globalProgress',{n:progress.processed,total:progress.total}):t('agents.updateAll')}</button>
       </div>
     </div>
     {snapshot?.scannedAt&&<p className="agent-cache-time">{t(refreshing?'agents.refreshingCache':'agents.lastScan',{time:new Date(snapshot.scannedAt).toLocaleString()})}</p>}
@@ -186,7 +185,7 @@ function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate, onRev
         {needsReverify && <button className="agent-update-pill" disabled={busy || reverifyBusy} aria-label={`${a.name} ${t('agents.reverify')}`} onClick={() => { setReverifyBusy(true); void onReverify().finally(() => setReverifyBusy(false)) }}>{reverifyBusy ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}{t('agents.reverify')}</button>}
         {updateStatus&&<span className="agent-update-pill" role="status">{t(updateStatusKey(updateStatus))}</span>}
         {!updateStatus && hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${t('agents.update')} ${a.latest}`}><Download size={11} /><span>{t('agents.update')} {a.latest}</span></button>}
-        {!updateStatus && !hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}`}><Download size={11} /><span>{t(a.nativeUpdate.target === 'wecode' ? 'agents.updateWecode' : 'agents.nativeUpdate')}</span></button>}
+        {!updateStatus && !hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t('agents.nativeUpdate')}`}><Download size={11} /><span>{t('agents.nativeUpdate')}</span></button>}
         </span>
         {a.appVersion && <span className="agent-row-version agent-app-version">App {a.appVersion}</span>}
       </div>

@@ -72,6 +72,8 @@ export async function runUpdateCommand(command: string, args: string[], env: Rec
 interface UpdateDependencies {
   dataRoot: string
   targets(): Promise<LocalAgent[]>
+  /** User-selected command/args/env, independent of cached discovery metadata. */
+  selectionKeys?(ids: string[]): Promise<Record<string, string>>
   prepare(ids: string[]): Promise<LocalAgent[]>
   execute(agent: LocalAgent, onProcess: (info: NonNullable<AgentUpdateItem['process']>) => Promise<void>): Promise<void>
   verify(agent: LocalAgent): Promise<LocalAgent | undefined>
@@ -126,10 +128,11 @@ export class AgentUpdateQueue {
       for(const item of this.state.lastCompletedBatch?.items || []) {
         if(item.process && await (this.deps.processAlive || updateProcessAlive)(item.process))throw new Error('A previous installer is still running; retry after it exits')
       }
+      const selectionKeys=await this.deps.selectionKeys?.(ids)
       const targets=await this.deps.targets()
       const batch:AgentUpdateBatch={id:randomUUID(),requestId,createdAt:now(),status:'queued',cancelRequested:false,items:ids.map(id=>{
         const agent=targets.find(a=>a.id===id)
-        return {id:randomUUID(),agentId:id,name:agent?.name || id,target:agent?.nativeUpdate?.target,source:agent?.source,installationId:agent?.installationId,targetKey:agent?updateTargetKey(agent):undefined,status:'queued'}
+        return {id:randomUUID(),agentId:id,name:agent?.name || id,target:agent?.nativeUpdate?.target,source:agent?.source,installationId:agent?.installationId,targetKey:agent?updateTargetKey(agent):undefined,selectionKey:selectionKeys?.[id],status:'queued'}
       })}
       this.state.activeBatch=batch
       try {await this.persist()} catch(error){this.state.activeBatch=undefined;throw error}
@@ -163,14 +166,20 @@ export class AgentUpdateQueue {
       if(batch.cancelRequested)return
       batch.status='preparing';await this.persist()
       let targets=await this.deps.prepare(batch.items.map(i=>i.agentId))
+      // Cache-first inventory can refer to an older PATH selection. Resolve it once
+      // during preparation, then keep guarding that resolved target for this batch.
+      const preparedKeys=new Map(targets.map(agent=>[agent.id,updateTargetKey(agent)]))
       const seen=new Set<string>()
       for(const item of batch.items) {
         if(batch.cancelRequested)break
         item.startedAt=now();item.status='preparing';batch.status='running';await this.persist()
         try {
           const agent=targets.find(a=>a.id===item.agentId)
-          if(!agent || item.targetKey && item.targetKey!==updateTargetKey(agent))throw new Error('Installation or launch configuration changed; refresh and retry')
-          item.installationId=agent.installationId;item.targetKey=updateTargetKey(agent)
+          const selectionKeys=await this.deps.selectionKeys?.([item.agentId])
+          const sameSelection=!!item.selectionKey && item.selectionKey===selectionKeys?.[item.agentId]
+          const expectedKey=sameSelection?preparedKeys.get(item.agentId):item.targetKey
+          if(!agent || item.selectionKey && !sameSelection || expectedKey && expectedKey!==updateTargetKey(agent))throw new Error('Installation or launch configuration changed; refresh and retry')
+          item.installationId=agent.installationId;item.targetKey=updateTargetKey(agent);item.source=agent.source;item.target=agent.nativeUpdate?.target
           const key=updaterKey(agent)
           if(seen.has(key)){item.status='skipped';continue}
           seen.add(key)

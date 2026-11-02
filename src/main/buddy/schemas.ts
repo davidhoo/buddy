@@ -241,7 +241,7 @@ export const kimiProviderModelListSchema = z.object({
 })
 
 export const agentUpdateItemSchema = z.object({
-  id: z.string(), agentId: z.string(), name: z.string(), installationId: z.string().optional(), targetKey: z.string().optional(),
+  id: z.string(), agentId: z.string(), name: z.string(), installationId: z.string().optional(), targetKey: z.string().optional(), selectionKey: z.string().optional(),
   target:z.enum(['agent','wecode']).optional(),source:z.enum(['npm','pnpm','bun','brew','uv','pipx','self','unknown']).optional(),
   status: z.enum(['queued','preparing','installing','verifying','updated','up_to_date','failed','skipped','cancelled','interrupted']),
   before: z.string().optional(), after: z.string().optional(), startedAt: z.string().optional(), finishedAt: z.string().optional(), error: z.string().optional(),

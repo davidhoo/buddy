@@ -95,6 +95,7 @@ export class AgentManagementService {
     this.updates = new AgentUpdateQueue({
       dataRoot: store.dataRoot,
       targets: async () => (await this.getInventory()).agents,
+      selectionKeys: ids => this.updateSelectionKeys(ids),
       prepare: async ids => { await this.refresh(new Set(ids)); return this.checkUpdates(false,new Set(ids)) },
       execute: (agent, onProcess) => this.executeUpdate(agent, onProcess),
       verify: async agent => {
@@ -122,6 +123,19 @@ export class AgentManagementService {
   private async configurationHash() {
     const settings = await this.store.readGlobalSettings()
     return createHash('sha256').update(JSON.stringify([settings.launchers,settings.agent_management])).digest('hex')
+  }
+  private async updateSelectionKeys(ids: string[]): Promise<Record<string, string>> {
+    const settings = await this.store.readGlobalSettings()
+    return Object.fromEntries(ids.map(id => {
+      const saved = settings.launchers?.[id]
+      const cli = settings.agent_management?.[id]?.cli || (saved?.protocol !== 'acp' ? saved : undefined)
+      const recipe = (this.options.recipes || AGENT_RECIPES).find(recipe => recipe.id === id)
+      const tokens = splitCommand(cli?.command || recipe?.command || '')
+      // Exclude model, enabled state and timeout; none changes the installation.
+      // Hash arguments/environment so update history never persists credentials.
+      const selection = [tokens[0], [...tokens.slice(1), ...(cli?.args || [])], Object.entries(cli?.env || {}).sort(([a], [b]) => a.localeCompare(b))]
+      return [id, createHash('sha256').update(JSON.stringify(selection)).digest('hex')]
+    }))
   }
   private loadCache() {
     return this.cacheLoaded ??= (async () => {

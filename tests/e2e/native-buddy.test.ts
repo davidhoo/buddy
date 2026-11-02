@@ -295,7 +295,7 @@ test('native update capability has an action without claiming a known newer vers
   await page.getByRole('button', { name: 'Agent', exact: true }).click()
   const row = page.locator('[data-agent-id="wecode_claude"]')
   await page.getByRole('button', { name: '重新扫描', exact:true }).click()
-  await expect(row.getByRole('button', { name: 'WeCode Claude 更新 WeCode', exact: true })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'WeCode Claude 检查并更新', exact: true })).toBeVisible()
   await expect(row.getByRole('button', { name: 'WeCode Claude 高级', exact: true })).toBeVisible()
   await expect(page.getByRole('status').first()).toContainText('3 个 Agent 有新版本')
 })

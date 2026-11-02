@@ -232,6 +232,8 @@ export interface AgentUpdateItem {
   name: string
   installationId?: string
   targetKey?: string
+  /** Digest of the requested CLI selection, before discovery resolves its executable path. */
+  selectionKey?: string
   target?: 'agent' | 'wecode'
   source?: LocalAgent['source']
   status: AgentUpdateItemStatus
