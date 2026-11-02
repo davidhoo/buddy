@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-11-02
+
+### Added
+- Agent 声明式发现扩充：识别 Qwen Code、GitHub Copilot CLI、Goose、Factory Droid，以及 Pi / Oh My Pi / Cline / Crush / Qoder / Hermes、MiMo / MiniMax / DevEco 等更多本机产品
+- Agent 设置支持对失败的 ACP 入口重新验证；模型目录改为 Cache-First，并推送 `buddy:model-catalog` 事件
+
+### Changed
+- 新建任务与模型查询统一走 `resolveEffectiveAgentLaunch`，复用发现得到的协议与启动器，不再把 normalize 默认当成用户选择
+- 模型目录磁盘缓存改用 SHA-256 key（schema v2），冷启动迁移丢弃旧明文缓存
+- 发现链路支持有界 shim/runtime、别名身份门控、App 内 CLI / 独立 adapter，刷新时重读 shell PATH
+
+### Fixed
+- 未适配原生 CLI 的 Agent 不再误落入通用 contract 启动器
+- ACP 失败按 spawn / handshake / session 分层记录；浅层握手成功不能洗白认证或会话失败
+
+---
+
 ## [2.0.10] - 2026-11-02
 
 ### Added
