@@ -47,11 +47,14 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 
-  it('discovers three WeCode updater contexts via help, checks read-only and executes only requested native updates', async () => {
+  it('checks one shared WeCode version and updates all wrapper contexts once without updating engines', async () => {
     const root = await mkdtemp(join(tmpdir(), 'buddy-wecode-update-'))
     try {
       const bin = join(root, 'bin'); await mkdir(bin)
       const command = join(bin, 'wecode'); await writeFile(command, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      await writeFile(join(bin, 'cli.js'), '/* WeCoder CLI v4.0.39 | build */\nvar endpoint="https://git.intra.weibo.com/api/v4/projects/fixture/repository/files/dist%2Fcli.js/raw", token="fixture-secret"; async function check(){return fetch(`${endpoint}?ref=master`,{headers:{"PRIVATE-TOKEN":token}})}')
+      const fetchMock=vi.fn(async()=>new Response('/* WeCoder CLI v4.0.40 | build */'))
+      vi.stubGlobal('fetch',fetchMock)
       const store = new BuddyStore(join(root, 'data'))
       const calls: string[][] = []
       let updated = false
@@ -59,29 +62,41 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
         { id: 'wecode_claude', name: 'WeCode Claude', command: 'wecode' },
         { id: 'wecode_codex', name: 'WeCode Codex', command: 'wecode codex' },
         { id: 'wecode_opencode', name: 'WeCode OpenCode', command: 'wecode opencode' }
-      ], run: async (_command, args) => {
+      ], run: async (_command, args, _timeout, env) => {
+        expect(env?.WECODE_NO_AUTO_UPGRADE).toBe('1')
         calls.push(args)
-        if (args.at(-1) === 'help') return 'Commands:\n  upgrade   Upgrade to the latest version\n'
-        if (args.at(-1) === 'upgrade') { updated = true; return '' }
+        if (args.at(-1) === 'help') return 'Commands:\n  upgrade   Upgrade to the latest version\n  upgrade --cli-only Only update wrapper\n'
+        if (args.includes('upgrade')) { updated = true; return '' }
         if (args[0] === 'version') return 'wecode-cli version: ' + (updated ? '4.0.40' : '4.0.39')
         return args[0] === 'codex' ? '0.164.0' : args[0] === 'opencode' ? '1.19.4' : '2.1.159'
       } })
       await service.refresh()
       const agents = await service.checkUpdates()
-      expect(calls.filter(args => args.at(-1) === 'help')).toEqual(expect.arrayContaining([['help'], ['codex', 'help'], ['opencode', 'help']]))
+      expect(calls.filter(args => args.at(-1) === 'help')).toEqual([['help'], ['help'], ['help']])
       expect(calls.some(args => args.includes('--help') || args.includes('upgrade'))).toBe(false)
-      expect(agents.find(a => a.id === 'wecode_claude')?.nativeUpdate).toMatchObject({ args: ['upgrade'], version: '4.0.39', target: 'wecode' })
-      expect(agents.find(a => a.id === 'wecode_codex')?.nativeUpdate).toMatchObject({ args: ['codex', 'upgrade'], version: '0.164.0', target: 'agent' })
-      expect(agents.find(a => a.id === 'wecode_opencode')?.nativeUpdate).toMatchObject({ args: ['opencode', 'upgrade'], target: 'agent' })
+      expect(agents.find(a => a.id === 'wecode_claude')?.nativeUpdate).toMatchObject({ args: ['upgrade', '--cli-only'], version: '4.0.39', target: 'wecode' })
+      expect(agents.find(a => a.id === 'wecode_codex')?.nativeUpdate).toMatchObject({ args: ['upgrade', '--cli-only'], version: '4.0.39', target: 'wecode' })
+      expect(agents.find(a => a.id === 'wecode_opencode')?.nativeUpdate).toMatchObject({ args: ['upgrade', '--cli-only'], target: 'wecode' })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(agents.map(a=>a.latest)).toEqual(['4.0.40','4.0.40','4.0.40'])
       // Saving an absolute executable keeps the wrapper subcommand in args.
       await service.configure('wecode_codex', { cli: { ...agents.find(a => a.id === 'wecode_codex')!.cli!, model: 'test-model' } })
       const rescanned = await service.list(true)
-      expect(rescanned.find(a => a.id === 'wecode_codex')).toMatchObject({ version: '0.164.0', cli: { args: ['codex'] }, nativeUpdate: { args: ['codex', 'upgrade'] } })
-      const jobs = await service.update(['wecode_claude', 'wecode_claude'])
-      expect(calls.filter(args => args.at(-1) === 'upgrade')).toEqual([['upgrade']])
-      expect(jobs.map(j => j.status)).toEqual(['success', 'skipped'])
+      expect(rescanned.find(a => a.id === 'wecode_codex')).toMatchObject({ version: '0.164.0', cli: { args: ['codex'] }, nativeUpdate: { args: ['upgrade', '--cli-only'] } })
+      const jobs = await service.update(['wecode_opencode', 'wecode_codex', 'wecode_claude'])
+      expect(calls.filter(args => args.includes('upgrade'))).toEqual([['upgrade','--cli-only']])
+      expect(jobs.map(j => j.status)).toEqual(['success'])
       expect(jobs[0]).toMatchObject({ before: '4.0.39', after: '4.0.40' })
-    } finally { await rm(root, { recursive: true, force: true }) }
+      expect((await service.list()).map(a=>a.nativeUpdate?.version)).toEqual(['4.0.40','4.0.40','4.0.40'])
+      const unchanged=await service.update(['wecode_codex'])
+      expect(unchanged[0]).toMatchObject({status:'success',before:'4.0.40',after:'4.0.40'})
+      expect(calls.filter(args=>args.includes('upgrade'))).toHaveLength(1)
+      fetchMock.mockImplementation(async()=>new Response('',{status:403}))
+      const failed=await service.checkUpdates(true)
+      expect(failed.every(a=>!a.latest && a.updateError?.includes('403'))).toBe(true)
+      await service.update(['wecode_claude'])
+      expect(calls.filter(args=>args.includes('upgrade'))).toHaveLength(1)
+    } finally { vi.unstubAllGlobals(); await rm(root, { recursive: true, force: true }) }
   })
 
   it('keeps the General timeout across protocol switches and stale advanced/model saves', async () => {

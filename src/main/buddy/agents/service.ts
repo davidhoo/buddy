@@ -1,3 +1,5 @@
+import { latestWecodeVersion, wecodeBundle } from './wecode-updates'
+import { agentUpdateGroupKey } from '../../../shared/agents'
 import { parseAgyModels, parseCursorModels, parseKimiModels } from './models'
 import { kimiAcpArgsFromHelp, nativeUpdateCommandFromHelp } from './capabilities'
 import {
@@ -99,7 +101,7 @@ export class AgentManagementService {
       prepare: async ids => { await this.refresh(new Set(ids)); return this.checkUpdates(false,new Set(ids)) },
       execute: (agent, onProcess) => this.executeUpdate(agent, onProcess),
       verify: async agent => {
-        const related = new Set(this.inventory.filter(a => a.path === agent.path).map(a => a.id))
+        const related = new Set(this.inventory.filter(a => agentUpdateGroupKey(a) === agentUpdateGroupKey(agent)).map(a => a.id))
         related.add(agent.id)
         await this.refresh(related)
         for(const a of this.inventory)if(related.has(a.id)){a.checkedAt=undefined;a.updateError=undefined}
@@ -108,7 +110,7 @@ export class AgentManagementService {
       }
     })
   }
-  private run(command:string,args:string[],timeout?:number,env?:Record<string,string>){return (this.options.run || runFile)(command,args,timeout,env)}
+  private run(command:string,args:string[],timeout?:number,env?:Record<string,string>){return (this.options.run || runFile)(command,args,timeout,basename(command)==='wecode'?{...env,WECODE_NO_AUTO_UPGRADE:'1'}:env)}
   subscribe(listener: (snapshot: AgentInventorySnapshot) => void) { this.inventoryListeners.add(listener); return () => {this.inventoryListeners.delete(listener)} }
   private snapshot(): AgentInventorySnapshot {
     const error = this.refreshError || this.refreshDiagnostic
@@ -144,6 +146,7 @@ export class AgentManagementService {
         const settings = await this.store.readGlobalSettings()
         const matches = cached.configurationHash === await this.configurationHash()
         this.inventory = await Promise.all(cached.agents.map(async metadata => {
+          if(metadata.id.startsWith('wecode_') && !metadata.nativeUpdate?.sharedKey)this.dirtyAgents.add(metadata.id)
           const recipe = (this.options.recipes || AGENT_RECIPES).find(r=>r.id===metadata.id)
           const config = settings.agent_management?.[metadata.id]
           const saved = settings.launchers?.[metadata.id]
@@ -164,6 +167,8 @@ export class AgentManagementService {
             : undefined
           return {
             ...rest,
+            // Old caches described inner WeCode updaters; require discovery before updating.
+            ...(metadata.id.startsWith('wecode_') && !rest.nativeUpdate?.sharedKey ? {nativeUpdate:undefined,latest:undefined,checkedAt:undefined} : {}),
             cli,
             acp,
             automaticCli,
@@ -316,13 +321,13 @@ export class AgentManagementService {
           const wecode = basename(cli.command) === 'wecode'
           const prefix = wecode && ['codex', 'opencode'].includes(cli.args[0]) ? [cli.args[0]] : []
           // WeCode forwards --help to the inner CLI; only its help subcommand describes the wrapper.
-          const help = await this.run(cli.command, [...prefix, wecode ? 'help' : '--help'], 5000, cli.env)
+          const help = await this.run(cli.command, wecode ? ['help'] : [...prefix, '--help'], 5000, cli.env)
           const update = nativeUpdateCommandFromHelp(help)
-          if (update) {
-            const versionArgs = wecode && !prefix.length ? ['version'] : [...prefix, '--version']
+          if (update && (!wecode || help.includes('--cli-only'))) {
+            const versionArgs = wecode ? ['version'] : [...prefix, '--version']
             const rawVersion = await this.run(cli.command, versionArgs, 3000, cli.env)
             const updateVersion = rawVersion.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0] || rawVersion.trim().slice(0, 100)
-            if (updateVersion) nativeUpdate = { command: cli.command, args: [...prefix, update], versionArgs, version: updateVersion, target: wecode && !prefix.length ? 'wecode' : 'agent' }
+            if (updateVersion) nativeUpdate = { command: cli.command, args: wecode ? [update, '--cli-only'] : [...prefix, update], versionArgs, version: updateVersion, target: wecode ? 'wecode' : 'agent', sharedKey: wecode ? (await wecodeBundle(cli.command).catch(()=>real)) + ':' + (cli.env?.WECODE_INSTALL_BRANCH || process.env.WECODE_INSTALL_BRANCH || 'master') : undefined }
           }
         } catch { /* Help failure does not make a runnable CLI unavailable. */ }
       }
@@ -398,7 +403,7 @@ export class AgentManagementService {
     // Preserve update-channel metadata when only runtime discovery changed.
     for (const agent of this.inventory) {
       const cached = previousInventory.find(a=>a.id===agent.id && a.installationId===agent.installationId && a.source===agent.source && a.package===agent.package && a.prefix===agent.prefix)
-      if(cached) {
+      if(cached && cached.nativeUpdate?.target===agent.nativeUpdate?.target && cached.nativeUpdate?.sharedKey===agent.nativeUpdate?.sharedKey) {
         agent.latest=cached.latest;agent.checkedAt=cached.checkedAt;agent.updateError=cached.updateError
         // Handshake must not erase session/auth or legacy-unknown failures.
         const fingerprint = acpLaunchFingerprint(agent.acp)
@@ -512,7 +517,7 @@ export class AgentManagementService {
     const tokens=splitCommand(a.acp.command)
     const cwd=homedir()
     let stage: AcpFailureStage = 'spawn'
-    const transport=new AcpStdioTransport({command:tokens[0],args:[...tokens.slice(1),...(a.acp.args || [])],cwd,env:await prepareAcpEnvironment(id,a.acp.env,this.store.dataRoot)})
+    const transport=new AcpStdioTransport({command:tokens[0],args:[...tokens.slice(1),...(a.acp.args || [])],cwd,env:{...await prepareAcpEnvironment(id,a.acp.env,this.store.dataRoot),...(id.startsWith('wecode_')?{WECODE_NO_AUTO_UPGRADE:'1'}:{})}})
     const client=new AcpClient(transport,{timeoutMs:10000})
     try {
       transport.start()
@@ -605,12 +610,21 @@ export class AgentManagementService {
   }
   private async checkUpdatesInner(force=false,targets?:ReadonlySet<string>): Promise<LocalAgent[]> {
     await this.loadCache()
-    const agents=this.inventory.filter(a=>!targets || targets.has(a.id))
+    const selected=this.inventory.filter(a=>!targets || targets.has(a.id))
+    const groups=new Set(selected.filter(a=>a.nativeUpdate?.target==='wecode').map(agentUpdateGroupKey))
+    const agents=this.inventory.filter(a=>selected.includes(a) || groups.has(agentUpdateGroupKey(a)))
+    const checks=new Map<string,Promise<string>>()
     for(let offset=0;offset<agents.length;offset+=4) await Promise.all(agents.slice(offset,offset+4).map(async a=>{
       if(!force && a.checkedAt && Date.now()-Date.parse(a.checkedAt)<3600000 && !a.updateError)return
       a.checkedAt=new Date().toISOString(); a.updateError=undefined;a.latest=undefined
       try {
-        if(a.source==='brew'&&a.manager&&a.package) {const info=JSON.parse(await this.run(a.manager,['info','--json=v2',a.package],30000));a.latest=info.formulae?.[0]?.versions?.stable || info.casks?.[0]?.version}
+        if(a.nativeUpdate?.target==='wecode') {
+          const key=agentUpdateGroupKey(a)
+          let check=checks.get(key)
+          if(!check){check=latestWecodeVersion(a.nativeUpdate.command,a.cli?.env);checks.set(key,check)}
+          a.latest=await check
+        }
+        else if(a.source==='brew'&&a.manager&&a.package) {const info=JSON.parse(await this.run(a.manager,['info','--json=v2',a.package],30000));a.latest=info.formulae?.[0]?.versions?.stable || info.casks?.[0]?.version}
         else if(['npm','pnpm','bun','self'].includes(a.source)&&a.package) {
           const response=await fetch('https://registry.npmjs.org/'+encodeURIComponent(a.package)+'/latest',{signal:AbortSignal.timeout(15000)})
           if(!response.ok)throw new Error('Version registry returned '+response.status)
@@ -644,7 +658,7 @@ export class AgentManagementService {
     return this.getJobs()
   }
   private async executeUpdate(a:LocalAgent,onProcess: Parameters<typeof runUpdateCommand>[3]) {
-    if(!a.nativeUpdate && (!a.latest || !a.version || !newer(a.latest,a.version)))throw new Error('No newer stable version available')
+    if((!a.nativeUpdate || a.nativeUpdate.target==='wecode') && (!a.latest || !(a.nativeUpdate?.version || a.version) || !newer(a.latest,(a.nativeUpdate?.version || a.version)!)))throw new Error('No newer stable version available')
     const args=a.nativeUpdate?.args || (a.source==='brew'?['upgrade',...(a.realPath.includes('/Caskroom/')?['--cask']:[]),a.package!]
       :a.source==='self'?['update']
       :a.source==='uv'?['tool','upgrade',a.package!]

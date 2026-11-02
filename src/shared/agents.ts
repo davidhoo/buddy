@@ -82,7 +82,7 @@ export interface LocalAgent {
   automaticCli?: Launcher
   automaticAcp?: Launcher
   latest?: string; updateError?: string; checkedAt?: string
-  nativeUpdate?: { command: string; args: string[]; versionArgs: string[]; version: string; target: 'agent' | 'wecode' }
+  nativeUpdate?: { command: string; args: string[]; versionArgs: string[]; version: string; target: 'agent' | 'wecode'; sharedKey?: string }
   acpError?:string
   acpStatus?: 'verified' | 'unverified' | 'missing' | 'incompatible' | 'failed'
   /** Layer that produced the current ACP failure; omitted on success. */
@@ -231,6 +231,7 @@ export interface AgentUpdateItem {
   agentId: string
   name: string
   installationId?: string
+  updateKey?: string
   targetKey?: string
   /** Digest of the requested CLI selection, before discovery resolves its executable path. */
   selectionKey?: string
@@ -265,4 +266,15 @@ export function agentUpdateCounts(batch: AgentUpdateBatch) {
   const count = (status: AgentUpdateItemStatus) => batch.items.filter(item => item.status === status).length
   return { total: batch.items.length, processed: batch.items.filter(item => isAgentUpdateTerminal(item.status)).length,
     updated: count('updated'), upToDate: count('up_to_date'), failed: count('failed') + count('interrupted'), cancelled: count('cancelled'), skipped: count('skipped') }
+}
+
+/** Shared public component identity; inner Agent argv must not split a WeCode update. */
+export function agentUpdateGroupKey(agent: LocalAgent): string {
+  return agent.nativeUpdate?.target === 'wecode'
+    ? 'wecode:' + (agent.nativeUpdate.sharedKey || agent.nativeUpdate.command)
+    : agent.id
+}
+export function hasAgentUpdate(agent: LocalAgent): boolean {
+  const version = agent.nativeUpdate?.version || agent.version
+  return !!(agent.latest && version && (agent.manager || agent.nativeUpdate) && isNewerStableVersion(agent.latest, version))
 }

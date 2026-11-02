@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Download, ChevronDown, SlidersHorizontal, Check, Loader2, ShieldCheck } from 'lucide-react'
-import { isNewerStableVersion, applyAgentConfiguration, agentUpdateCounts, parseAcpAuthFailure, resolveAgentProtocol, agentProtocolReady } from '../../../shared/agents'
+import { agentUpdateGroupKey, hasAgentUpdate, applyAgentConfiguration, agentUpdateCounts, parseAcpAuthFailure, resolveAgentProtocol, agentProtocolReady } from '../../../shared/agents'
 import type { AgentConfiguration, LocalAgent, AgentInventorySnapshot, AgentUpdateItemStatus } from '../../../shared/agents'
 import type { Launcher } from '../../../shared/types'
 import { useT, type TFunction } from '../../hooks/useI18n'
@@ -14,7 +14,7 @@ import { AgentUpdateStatus, updateStatusKey } from './AgentUpdateStatus'
 import './agents-settings.css'
 
 const hasExecutionEntry = (a: LocalAgent) => !!(a.cli || a.acp)
-const hasUpdate = (a: LocalAgent) => !!(a.manager && a.latest && a.version && isNewerStableVersion(a.latest, a.version))
+const hasUpdate = hasAgentUpdate
 const acpStatusLabel = (a: LocalAgent, t: TFunction) => {
   if (a.acpStatus === 'failed') {
     return parseAcpAuthFailure(a.acpError) ? t('agents.status.loginRequired') : t('agents.status.failed')
@@ -47,7 +47,7 @@ export function AgentsSettings() {
       cache.setQueryData(agentInventoryKey,{revision:0,agents,refreshing:false})
     }
   }
-  const updates = agents.filter(hasUpdate)
+  const updates = [...new Map(agents.filter(hasUpdate).map(a=>[agentUpdateGroupKey(a),a])).values()]
   const action = async (fn: () => Promise<unknown>) => {
     setBusy(true); setMessage('')
     try {
@@ -73,7 +73,7 @@ export function AgentsSettings() {
   }
   return <div className="agent-catalog">
     <div className="agent-list-toolbar">
-      <span role="status">{updates.length ? t('agents.updatesAvailable', { n: updates.length, names: updates.map(a => a.name).join(', ') }) : t('agents.discovered', { n: agents.length })}</span>
+      <span role="status">{updates.length ? t('agents.updatesAvailable', { n: updates.length, names: updates.map(a => a.nativeUpdate?.target==='wecode'?'WeCode':a.name).join(', ') }) : t('agents.discovered', { n: agents.length })}</span>
       <div className="agent-toolbar-actions">
         <button className="agent-icon-button" disabled={busy || refreshing} title={t('agents.refreshAll')} aria-label={t('agents.rescan')} onClick={()=>action(()=>refresh('all'))}><RefreshCw size={14} className={refreshing?'animate-spin':''}/></button>
         <select className="agent-refresh-options" aria-label={t('agents.refreshOptions')} value="" disabled={busy||refreshing} onChange={event=>action(()=>refresh(event.target.value as 'all'|'scan'|'updates'))}>
@@ -87,7 +87,7 @@ export function AgentsSettings() {
     {updateState?.activeBatch&&<AgentUpdateStatus batch={updateState.activeBatch} active/>}
     <div className="agent-list-card">
       <div role="list" aria-label={t('settings.tab.agents')}>
-        {agents.map(a => <CompactAgentRow key={a.id} agent={a} updateStatus={updateState?.activeBatch?.items.find(item=>item.agentId===a.id)?.status} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => startAgentUpdates(cache,[a.id]))} onReverify={async () => {
+        {agents.map(a => <CompactAgentRow key={a.id} agent={a} updateStatus={updateState?.activeBatch?.items.find(item=>item.agentId===a.id || item.updateKey===agentUpdateGroupKey(a))?.status} busy={busy || saving.has(a.id)} onSave={config => save(a, config)} onUpdate={() => action(() => startAgentUpdates(cache,[a.id]))} onReverify={async () => {
           setSaving(previous => new Set(previous).add(a.id))
           setMessage('')
           try {
@@ -184,8 +184,8 @@ function CompactAgentRow({ agent: a, busy, updateStatus, onSave, onUpdate, onRev
         <button className="agent-update-pill" disabled={!launcher} aria-label={`${a.name} ${t('agents.advanced')}`} aria-expanded={advanced} aria-controls={advancedId} onClick={() => setAdvanced(value => !value)}><SlidersHorizontal size={11} />{t('agents.advanced')}</button>
         {needsReverify && <button className="agent-update-pill" disabled={busy || reverifyBusy} aria-label={`${a.name} ${t('agents.reverify')}`} onClick={() => { setReverifyBusy(true); void onReverify().finally(() => setReverifyBusy(false)) }}>{reverifyBusy ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}{t('agents.reverify')}</button>}
         {updateStatus&&<span className="agent-update-pill" role="status">{t(updateStatusKey(updateStatus))}</span>}
-        {!updateStatus && hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${t('agents.update')} ${a.latest}`}><Download size={11} /><span>{t('agents.update')} {a.latest}</span></button>}
-        {!updateStatus && !hasUpdate(a) && a.nativeUpdate && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={`${a.nativeUpdate.target === 'wecode' ? 'WeCode ' : ''}${a.nativeUpdate.version}`} aria-label={`${a.name} ${t('agents.nativeUpdate')}`}><Download size={11} /><span>{t('agents.nativeUpdate')}</span></button>}
+        {!updateStatus && hasUpdate(a) && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} aria-label={`${a.name} ${a.nativeUpdate?.target === 'wecode' ? t('agents.updateWecode', { version: a.latest! }) : `${t('agents.update')} ${a.latest}`}`}><Download size={11} /><span>{a.nativeUpdate?.target === 'wecode' ? t('agents.updateWecode', { version: a.latest! }) : `${t('agents.update')} ${a.latest}`}</span></button>}
+        {!updateStatus && !hasUpdate(a) && a.nativeUpdate?.target === 'agent' && <button className="agent-update-pill" disabled={busy} onClick={onUpdate} title={a.nativeUpdate.version} aria-label={`${a.name} ${t('agents.nativeUpdate')}`}><Download size={11} /><span>{t('agents.nativeUpdate')}</span></button>}
         </span>
         {a.appVersion && <span className="agent-row-version agent-app-version">App {a.appVersion}</span>}
       </div>

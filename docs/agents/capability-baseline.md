@@ -97,8 +97,8 @@ CodeBuddy CLI 另做真实生成冒烟测试：使用新命令构建器指定 `d
 - 常规超时同步到 CLI/ACP 配置，保存高级配置、模型或切换协议不会恢复旧超时。
 - Cursor 官方 ACP 启动方式是 `agent acp`：https://cursor.com/docs/cli/acp 。旧配置仅有 `cursor-agent` 命令、无 args 时，管理页曾漏补 `acp`，而 runner 会补，导致误报 10 秒 initialize 超时。现在统一参数回退规则。真实 `agent acp` / `cursor-agent acp` 均约 0.5 秒完成协议 1 握手；修正后的 AgentManagementService 同样验证通过。
 - 真实 `cursor-agent models` 读取 36 个模型；保留真实 ID/名称，移除 current/default 标记和重复项，CLI 模型选择已接入。
-- WeCode 必须使用 `wecode help`、`wecode codex help`、`wecode opencode help`；`--help` 被转发至内层 CLI。读取命令声明检测原生更新，已有包管理器的安装仍按原渠道更新。
-- 本机 WeCode wrapper 为 4.0.39，Claude/Codex/OpenCode 内层分别为 2.1.159 / 0.164.0 / 1.19.4。根入口使用 `wecode upgrade` + `wecode version`；子入口使用 help 声明的 `wecode codex update` / `wecode opencode update`，以及各自 `--version` 复验。更新目标和版本不混用，去重按真实执行文件加子命令计算。
+- WeCode 包装入口通过 `wecode help` 读取公共组件更新能力；`--help` 被转发至内层 CLI。三个入口共享公共组件更新，见下方“ WeCode 共享更新目标”。
+- 本机 WeCode 4.1.3 已验证支持 `wecode upgrade --cli-only`；公共组件用 `wecode version` 复验，内层 Agent 更新由原生条目承担，包装条目不再执行 Codex/OpenCode 内层更新命令。
 - 没有独立只读 latest 查询的原生渠道显示“检查并更新”（根 WeCode 显示“更新 WeCode”），不会把已支持更新误标成“发现新版本”；列表扫描/刷新不执行 upgrade/update。
 - 本机验证仅执行帮助、版本、模型列表和 ACP initialize；实际升级流程使用临时安装树和受控执行器测试，没有升级用户的软件。
 
@@ -163,3 +163,11 @@ CodeBuddy CLI 另做真实生成冒烟测试：使用新命令构建器指定 `d
 | R4 多安装测试缩水 | 假+真 cbc 共存：真路径保留，假路径不进 installations |
 | D4 首批执行 | buddy-new-agent-acp-roundtrip：qwen+goose、copilot+droid 假 stdio dual-break（隔离证据） |
 | D5 后台目录推送 | buddy:model-catalog 事件；设置/新建任务 query 与 Composer 订阅 |
+
+### WeCode 共享更新目标（2026-11-02）
+
+- WeCode Claude / Codex / OpenCode 保留各自启动入口和内层版本；三个包装条目的更新统一指向 WeCode 公共组件，真实 Agent 由独立原生条目管理。
+- 只读查询复用已安装 WeCode bundle 中的 GitLab 版本源与分支，解析远端 CLI 文件头版本；认证仅在内存中使用，不持久化、不执行远端代码。未知布局或接口返回错误时保留诊断，不猜测最新版本。
+- 同一 bundle 和分支只查询一次。三个条目均显示“更新 WeCode 至 {version}”，共用一个更新任务、进度及结果，全部更新计数为一项。不同安装或分支分别管理。
+- 仅对 help 明确声明 `--cli-only` 的版本启用公共组件更新，执行 `wecode upgrade --cli-only`。更新后重新探测所有关联条目，验证公共组件版本达到查询目标。
+- 版本与 ACP 探测显式设置 `WECODE_NO_AUTO_UPGRADE=1`，避免扫描触发 WeCode 自升级。旧缓存中的内层 WeCode 更新命令失效并等待重扫。

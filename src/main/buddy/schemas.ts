@@ -241,7 +241,7 @@ export const kimiProviderModelListSchema = z.object({
 })
 
 export const agentUpdateItemSchema = z.object({
-  id: z.string(), agentId: z.string(), name: z.string(), installationId: z.string().optional(), targetKey: z.string().optional(), selectionKey: z.string().optional(),
+  id: z.string(), agentId: z.string(), name: z.string(), installationId: z.string().optional(), updateKey: z.string().optional(), targetKey: z.string().optional(), selectionKey: z.string().optional(),
   target:z.enum(['agent','wecode']).optional(),source:z.enum(['npm','pnpm','bun','brew','uv','pipx','self','unknown']).optional(),
   status: z.enum(['queued','preparing','installing','verifying','updated','up_to_date','failed','skipped','cancelled','interrupted']),
   before: z.string().optional(), after: z.string().optional(), startedAt: z.string().optional(), finishedAt: z.string().optional(), error: z.string().optional(),
@@ -273,7 +273,7 @@ export const agentInventoryCacheSchema = z.object({
       runtime:z.object({kind:z.literal('node'),binDir:z.string()}).optional()
     })).optional(),
     latest:z.string().optional(),checkedAt:z.string().optional(),updateError:z.string().optional(),
-    nativeUpdate:z.object({command:z.string(),args:z.array(z.string()),versionArgs:z.array(z.string()),version:z.string(),target:z.enum(['agent','wecode'])}).optional(),
+    nativeUpdate:z.object({command:z.string(),args:z.array(z.string()),versionArgs:z.array(z.string()),version:z.string(),sharedKey:z.string().optional(),target:z.enum(['agent','wecode'])}).optional(),
     nativeAcpArgs:z.array(z.string().min(1)).optional()
   }))
 })

@@ -19,7 +19,7 @@ export function AgentUpdateStatus({batch,active,disabled=false}:{batch:AgentUpda
   const retry=batch.items.filter(item=>['failed','interrupted'].includes(item.status)).map(item=>item.agentId)
   const action=async(fn:()=>Promise<unknown>)=>{setPending(true);setError('');try{await fn()}catch(e){setError(String(e))}finally{setPending(false)}}
   const details=<ul className="agent-update-items">{batch.items.map(item=><li key={item.id}>
-    <div><strong>{item.name}{item.target==='wecode' ? ' · WeCode' : ''}</strong><span>{t(updateStatusKey(item.status))}</span></div>
+    <div><strong>{item.name}{item.target==='wecode' && item.name!=='WeCode' ? ' · WeCode' : ''}</strong><span>{t(updateStatusKey(item.status))}</span></div>
     {(item.before || item.after) && <p>{item.before || '—'}{item.after?` → ${item.after}`:''}{item.startedAt&&item.finishedAt?` · ${Math.max(0,Math.round((Date.parse(item.finishedAt)-Date.parse(item.startedAt))/1000))}s`:''}</p>}
     {item.error&&<p className="text-danger">{item.error}</p>}
   </li>)}</ul>

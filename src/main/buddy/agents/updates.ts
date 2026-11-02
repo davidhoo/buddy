@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { AgentUpdateBatch, AgentUpdateItem, AgentUpdateSnapshot, LocalAgent } from '../../../shared/agents'
-import { agentUpdateRuntimeReady, isAgentUpdateTerminal, isNewerStableVersion } from '../../../shared/agents'
+import { agentUpdateGroupKey, agentUpdateRuntimeReady, isAgentUpdateTerminal, isNewerStableVersion } from '../../../shared/agents'
 import { agentUpdateJobsSchema, agentUpdateSnapshotSchema } from '../schemas'
 import { atomicWriteJson } from '../store'
 import { redactSensitiveText } from '../redact'
@@ -13,9 +13,10 @@ import { waitForAgentUpdate } from './locks'
 const now = () => new Date().toISOString()
 const safeError = (error: unknown) => redactSensitiveText(String(error)).slice(0, 2000)
 export function updateTargetKey(a: LocalAgent): string {
-  return createHash('sha256').update(JSON.stringify([a.installationId,a.source,a.prefix,a.package,a.nativeUpdate?.command,a.nativeUpdate?.args,a.cli?.command,a.cli?.args,a.cli?.env])).digest('hex')
+  return createHash('sha256').update(JSON.stringify([a.installationId,a.source,a.prefix,a.package,a.nativeUpdate?.command,a.nativeUpdate?.args,a.nativeUpdate?.sharedKey,a.cli?.command,a.cli?.args,a.cli?.env])).digest('hex')
 }
 export function updaterKey(a: LocalAgent): string {
+  if(a.nativeUpdate?.target==='wecode')return agentUpdateGroupKey(a)
   return JSON.stringify(a.nativeUpdate ? [a.nativeUpdate.command,a.nativeUpdate.args] : [a.source,a.prefix,a.package,a.manager])
 }
 const ps = (args: string[]) => new Promise<string>((resolve, reject) => execFile('/bin/ps', args, {timeout:3000}, (error, stdout) => error ? reject(error) : resolve(stdout.trim())))
@@ -130,9 +131,11 @@ export class AgentUpdateQueue {
       }
       const selectionKeys=await this.deps.selectionKeys?.(ids)
       const targets=await this.deps.targets()
-      const batch:AgentUpdateBatch={id:randomUUID(),requestId,createdAt:now(),status:'queued',cancelRequested:false,items:ids.map(id=>{
+      const shared=new Set<string>()
+      const uniqueIds=ids.filter(id=>{const a=targets.find(a=>a.id===id);if(a?.nativeUpdate?.target!=='wecode')return true;const key=agentUpdateGroupKey(a);if(shared.has(key))return false;shared.add(key);return true})
+      const batch:AgentUpdateBatch={id:randomUUID(),requestId,createdAt:now(),status:'queued',cancelRequested:false,items:uniqueIds.map(id=>{
         const agent=targets.find(a=>a.id===id)
-        return {id:randomUUID(),agentId:id,name:agent?.name || id,target:agent?.nativeUpdate?.target,source:agent?.source,installationId:agent?.installationId,targetKey:agent?updateTargetKey(agent):undefined,selectionKey:selectionKeys?.[id],status:'queued'}
+        return {id:randomUUID(),agentId:id,name:agent?.nativeUpdate?.target==='wecode'?'WeCode':agent?.name || id,updateKey:agent?agentUpdateGroupKey(agent):undefined,target:agent?.nativeUpdate?.target,source:agent?.source,installationId:agent?.installationId,targetKey:agent?updateTargetKey(agent):undefined,selectionKey:selectionKeys?.[id],status:'queued'}
       })}
       this.state.activeBatch=batch
       try {await this.persist()} catch(error){this.state.activeBatch=undefined;throw error}
@@ -184,14 +187,15 @@ export class AgentUpdateQueue {
           if(seen.has(key)){item.status='skipped';continue}
           seen.add(key)
           item.before=agent.nativeUpdate?.version || agent.version
+          if(agent.nativeUpdate?.target==='wecode' && !agent.latest)throw new Error(agent.updateError || 'WeCode latest version unavailable')
           if(!agent.nativeUpdate && (!agent.manager || !agent.package || !agent.latest))throw new Error(agent.updateError || 'Verified updater unavailable')
-          if(!agent.nativeUpdate && (agent.latest===agent.version || isNewerStableVersion(agent.version!,agent.latest!))){item.status='up_to_date';item.after=item.before;continue}
+          if((!agent.nativeUpdate || agent.nativeUpdate.target==='wecode') && (agent.latest===item.before || isNewerStableVersion(item.before!,agent.latest!))){item.status='up_to_date';item.after=item.before;continue}
           item.status='installing';await this.persist()
           await this.deps.execute(agent,async info=>{item.process=info;await this.persist()})
           item.status='verifying';await this.persist()
           const after=await this.deps.verify(agent)
           item.after=agent.nativeUpdate?after?.nativeUpdate?.version:after?.version
-          if(!after || !agentUpdateRuntimeReady(after) || !item.after || item.before && isNewerStableVersion(item.before,item.after) || !agent.nativeUpdate && item.after!==agent.latest)throw new Error('Updated installation failed version/runtime verification')
+          if(!after || !agentUpdateRuntimeReady(after) || !item.after || item.before && isNewerStableVersion(item.before,item.after) || (!agent.nativeUpdate && item.after!==agent.latest || agent.nativeUpdate?.target==='wecode' && !!agent.latest && isNewerStableVersion(agent.latest,item.after)))throw new Error('Updated installation failed version/runtime verification')
           item.status=item.before===item.after?'up_to_date':'updated'
           item.process=undefined
         } catch(error) {
