@@ -72,6 +72,8 @@ export class BuddyCoreService {
   private coordinator?: QueueCoordinator
   private readonly acpModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
   private readonly acpModelInflight = new Map<string, Promise<AcpModelList>>()
+  private readonly cliModelCache = new Map<string, { list: AcpModelList; expiresAt: number }>()
+  private readonly cliModelInflight = new Map<string, Promise<AcpModelList>>()
 
   constructor(options: BuddyCoreServiceOptions | string = {}) {
     const normalized = typeof options === 'string' ? { dataRoot: options } : options
@@ -86,7 +88,48 @@ export class BuddyCoreService {
     }
   }
 
-  listCliModels(id:string) { return this.withAgentUse(()=>this.agents.models(id)) }
+  /**
+   * List models advertised by a CLI actor. Cached like ACP probes so switching
+   * handoff actors in the composer does not respawn slow CLIs (e.g. agy models).
+   */
+  listCliModels(id: string): Promise<AcpModelList> {
+    return this.withAgentUse(() => this.listCliModelsInner(id))
+  }
+
+  private async listCliModelsInner(id: string): Promise<AcpModelList> {
+    const inventory = await this.agents.getInventory()
+    const agent = inventory.agents.find(a => a.id === id)
+    const cli = agent?.cli
+    if (!cli) return { models: [] }
+
+    const cacheKey = JSON.stringify([id, cli.command, cli.args, cli.env])
+    const cached = this.cliModelCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.list
+
+    const inflight = this.cliModelInflight.get(cacheKey)
+    if (inflight) return inflight
+
+    const pending = (async (): Promise<AcpModelList> => {
+      try {
+        const list = await this.agents.models(id)
+        this.cliModelCache.set(cacheKey, {
+          list,
+          expiresAt: Date.now() + 5 * 60 * 1000
+        })
+        return list
+      } catch (error) {
+        const message = redactSensitiveText(String(error))
+        const stale = this.cliModelCache.get(cacheKey)
+        if (stale) return { ...stale.list, error: message }
+        return { models: [], error: message }
+      } finally {
+        this.cliModelInflight.delete(cacheKey)
+      }
+    })()
+
+    this.cliModelInflight.set(cacheKey, pending)
+    return pending
+  }
   async listLocalAgents(force=false) { return force ? this.refreshLocalAgents('scan').then(s=>s.agents) : (await this.agents.getInventory()).agents }
   getAgentInventory() { return this.agents.getInventory() }
   getAgentUpdateState() { return this.agents.updates.getState() }

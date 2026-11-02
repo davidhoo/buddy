@@ -27,6 +27,10 @@ function pickModelId(saved?: string): string {
   return saved?.trim() || ''
 }
 
+function modelCatalogKey(actor: string, protocol: string): string {
+  return `${actor}:${protocol}`
+}
+
 export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, taskId, workspaceKey, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
   const t = useT()
   const { shortcut } = useSendShortcut()
@@ -35,6 +39,9 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevStateNextRef = useRef<string | undefined>()
   const selectedModelByActorRef = useRef<Record<string, string>>({})
+  // Cross-actor stale-while-revalidate: switching handoff must not flash loading
+  // when this actor was already probed in the current composer session.
+  const modelCatalogByActorRef = useRef<Map<string, AcpModelInfo[]>>(new Map())
   const persistChainRef = useRef<Promise<unknown>>(Promise.resolve())
   const nextProtocol = settings?.launchers?.[nextActor]?.protocol === 'acp' ? 'acp' : 'cli'
   const [modelState, setModelState] = useState<{
@@ -76,60 +83,69 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
     const saved = remembered
       ? selectedModelByActorRef.current[nextActor]
       : (settings?.launchers?.[nextActor]?.model || '')
-    // Same actor+protocol: keep the last catalog visible while revalidating.
-    setModelState(prev => {
-      const keep = prev.actor === nextActor && prev.protocol === nextProtocol && prev.models.length > 0
-      return {
-        status: keep ? 'ready' : 'loading',
-        actor: nextActor,
-        protocol: nextProtocol,
-        models: keep ? prev.models : [],
-        selected: pickModelId(saved)
-      }
+    const catalogKey = modelCatalogKey(nextActor, nextProtocol)
+    const cached = modelCatalogByActorRef.current.get(catalogKey)
+    const hasCache = cached !== undefined
+    // Stale-while-revalidate across actors: show the last good catalog immediately.
+    setModelState({
+      status: hasCache ? 'ready' : 'loading',
+      actor: nextActor,
+      protocol: nextProtocol,
+      models: cached ?? [],
+      selected: pickModelId(saved)
     })
     const cwd = taskState?.repo_root?.trim() || undefined
     const pending = nextProtocol === 'acp'
       ? window.buddy?.listAcpModels?.(nextActor, cwd)
       : window.buddy?.listCliModels?.(nextActor)
     if (!pending) {
-      setModelState(prev => ({
-        status: 'ready',
-        actor: nextActor,
-        protocol: nextProtocol,
-        models: prev.actor === nextActor && prev.protocol === nextProtocol ? prev.models : [],
-        selected: pickModelId(saved)
-      }))
+      if (!hasCache) {
+        setModelState({
+          status: 'ready',
+          actor: nextActor,
+          protocol: nextProtocol,
+          models: [],
+          selected: pickModelId(saved)
+        })
+      }
       return
     }
     pending
       .then(list => {
         if (cancelled) return
         const models = list?.models ?? []
-        setModelState(prev => {
-          // Failed probes keep the last good catalog; a successful empty list
-          // is a real state and must replace it.
-          if (list?.error && models.length === 0 && prev.actor === nextActor && prev.protocol === nextProtocol && prev.models.length > 0) {
-            return { ...prev, status: 'ready', selected: pickModelId(saved) }
-          }
-          return {
+        const stale = modelCatalogByActorRef.current.get(catalogKey)
+        // Failed probes keep the last good catalog; a successful empty list
+        // is a real state and must replace it.
+        if (list?.error && models.length === 0 && stale && stale.length > 0) {
+          setModelState({
             status: 'ready',
             actor: nextActor,
             protocol: nextProtocol,
-            models,
+            models: stale,
             selected: pickModelId(saved)
-          }
+          })
+          return
+        }
+        modelCatalogByActorRef.current.set(catalogKey, models)
+        setModelState({
+          status: 'ready',
+          actor: nextActor,
+          protocol: nextProtocol,
+          models,
+          selected: pickModelId(saved)
         })
       })
       .catch(() => {
-        if (!cancelled) {
-          setModelState(prev => ({
-            status: 'ready',
-            actor: nextActor,
-            protocol: nextProtocol,
-            models: prev.actor === nextActor && prev.protocol === nextProtocol ? prev.models : [],
-            selected: pickModelId(saved)
-          }))
-        }
+        if (cancelled) return
+        const stale = modelCatalogByActorRef.current.get(catalogKey)
+        setModelState({
+          status: 'ready',
+          actor: nextActor,
+          protocol: nextProtocol,
+          models: stale ?? [],
+          selected: pickModelId(saved)
+        })
       })
     return () => { cancelled = true }
   }, [nextProtocol, nextActor, taskState?.repo_root])

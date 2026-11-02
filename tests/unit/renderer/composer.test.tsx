@@ -283,6 +283,82 @@ describe('Composer model picker', () => {
     })
   })
 
+  it('shows cached agy models immediately when switching back without a loading flash', async () => {
+    let resolveAgyRefresh!: (value: AcpModelList) => void
+    const settings: TaskSettings = {
+      protocol_version: '1',
+      flow_policy: 'claude_then_codex',
+      role_mode: 'claude_implements',
+      implementer_actor: 'claude',
+      reviewer_actor: 'agy',
+      launchers: {
+        claude: { command: 'claude', env: {}, timeout_seconds: 7200 },
+        agy: { command: 'agy', env: {}, timeout_seconds: 7200 }
+      }
+    }
+    const listCliModels = vi.fn()
+      .mockResolvedValueOnce({
+        models: [{ id: 'opus', name: 'Opus' }]
+      })
+      .mockResolvedValueOnce({
+        models: [
+          { id: 'gemini-flash', name: 'Gemini Flash' },
+          { id: 'claude-sonnet', name: 'Claude Sonnet' }
+        ]
+      })
+      .mockResolvedValueOnce({
+        models: [{ id: 'opus', name: 'Opus' }]
+      })
+      .mockImplementationOnce(
+        () => new Promise<AcpModelList>(resolve => { resolveAgyRefresh = resolve })
+      )
+
+    renderComposer({ settings }, { listCliModels })
+
+    const modelSelect = await screen.findByLabelText('modal.create.model')
+    await waitFor(() => {
+      expect(within(modelSelect).getByRole('option', { name: 'Opus' })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText('composer.nextHandoff'), {
+      target: { value: 'agy' }
+    })
+    await waitFor(() => {
+      expect(listCliModels).toHaveBeenCalledWith('agy')
+      expect(within(modelSelect).getByRole('option', { name: 'Claude Sonnet' })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText('composer.nextHandoff'), {
+      target: { value: 'claude' }
+    })
+    await waitFor(() => {
+      expect(within(modelSelect).getByRole('option', { name: 'Opus' })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText('composer.nextHandoff'), {
+      target: { value: 'agy' }
+    })
+
+    expect(within(modelSelect).getByRole('option', { name: 'Claude Sonnet' })).toBeInTheDocument()
+    expect(within(modelSelect).queryByRole('option', { name: 'common.loading' })).not.toBeInTheDocument()
+    expect(modelSelect).not.toBeDisabled()
+
+    await act(async () => {
+      resolveAgyRefresh({
+        models: [
+          { id: 'gemini-flash', name: 'Gemini Flash' },
+          { id: 'gemini-pro', name: 'Gemini Pro' }
+        ]
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(modelSelect).getByRole('option', { name: 'Gemini Pro' })).toBeInTheDocument()
+      expect(within(modelSelect).queryByRole('option', { name: 'Claude Sonnet' })).not.toBeInTheDocument()
+    })
+    expect(listCliModels.mock.calls.filter(call => call[0] === 'agy')).toHaveLength(2)
+  })
+
   it('shows agent default when the ACP actor advertises no models', async () => {
     renderComposer(
       {},
