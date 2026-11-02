@@ -199,7 +199,14 @@ function ModelControl({ agent: a, protocol, disabled, onSave }: { agent: LocalAg
   const t = useT(), [open, setOpen] = useState(false), [custom, setCustom] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const current = a[protocol]?.model || ''
-  const models = useQuery({ queryKey: modelCatalogKey(a, protocol), queryFn: () => protocol === 'acp' ? window.buddy.listAcpModels(a.id) : window.buddy.listCliModels(a.id), enabled: open, retry: false, staleTime: query => query.state.data?.models.length ? 300000 : 0 })
+  const models = useQuery({
+    queryKey: modelCatalogKey(a, protocol),
+    queryFn: () => protocol === 'acp' ? window.buddy.listAcpModels(a.id) : window.buddy.listCliModels(a.id),
+    enabled: open,
+    retry: false,
+    staleTime: query => query.state.data?.models.length ? 300000 : 0,
+    gcTime: 30 * 60 * 1000
+  })
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false) }
@@ -229,8 +236,8 @@ function ModelControl({ agent: a, protocol, disabled, onSave }: { agent: LocalAg
         <button role="option" aria-selected={!current} onClick={() => select('')}><AgentIcon id={a.id} size={14} /><span>{t('agents.native')}</span>{!current && <Check size={13} />}</button>
         {models.data?.models.map(model => <button role="option" key={model.id} aria-selected={current === model.id} onClick={() => select(model.id)}><span>{model.name}</span>{current === model.id && <Check size={13} />}</button>)}
       </div>
-      {models.isFetching && <p className="agent-picker-message"><Loader2 size={12} className="animate-spin" />{t('common.loading')}</p>}
-      {(models.error || models.data?.error) && <p role="alert" className="agent-picker-message">{String(models.error || models.data?.error)}</p>}
+      {models.isFetching && !(models.data?.models.length) && <p className="agent-picker-message"><Loader2 size={12} className="animate-spin" />{t('common.loading')}</p>}
+      {(models.error || models.data?.error) && !(models.data?.models.length) && <p role="alert" className="agent-picker-message">{String(models.error || models.data?.error)}</p>}
       <form className="agent-model-custom" onSubmit={e => { e.preventDefault(); if (custom.trim()) select(custom.trim()) }}><input aria-label={`${a.name} ${t('agents.customModel')}`} placeholder={t('agents.customModel')} value={custom} onChange={e => setCustom(e.target.value)} /><button type="submit" disabled={!custom.trim()} aria-label={t('common.save')}><Check size={14} /></button></form>
     </div>}
   </div>

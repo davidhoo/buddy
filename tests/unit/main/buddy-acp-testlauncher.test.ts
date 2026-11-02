@@ -443,6 +443,77 @@ rl.on('line', (line) => {
     }
   })
 
+  it('keeps the last ACP model catalog when a refresh fails after expiry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'buddy-acp-stale-models-'))
+    const fakeAcp = join(root, 'fake-acp-models.js')
+    const okScript = `#!/usr/bin/env node
+const readline = require('node:readline')
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+rl.on('line', (line) => {
+  try {
+    const req = JSON.parse(line)
+    if (req.method === 'initialize') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0', id: req.id,
+        result: { protocolVersion: 1, agentInfo: { name: 'ModelAgent', version: '1.0.0' } }
+      }) + '\\n')
+    } else if (req.method === 'session/new') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0', id: req.id,
+        result: {
+          sessionId: 'sess_models',
+          models: {
+            currentModelId: 'sonnet-4.5',
+            availableModels: [{ modelId: 'sonnet-4.5', name: 'Sonnet 4.5' }]
+          }
+        }
+      }) + '\\n')
+    }
+  } catch {}
+})
+`
+    const failScript = `#!/usr/bin/env node
+process.stderr.write('boom\\n')
+process.exit(2)
+`
+    await writeFile(fakeAcp, okScript)
+    await chmod(fakeAcp, 0o755)
+
+    try {
+      const service = new BuddyCoreService({ dataRoot: join(root, 'data') })
+      await service.updateGlobalSettings({
+        launchers: {
+          claude: {
+            protocol: 'acp',
+            command: process.execPath,
+            args: [fakeAcp],
+            env: {},
+            timeout_seconds: 10
+          }
+        }
+      })
+
+      const first = await service.listAcpModels('claude')
+      expect(first.models).toEqual([{ id: 'sonnet-4.5', name: 'Sonnet 4.5' }])
+
+      const cache = (service as unknown as {
+        acpModelCache: Map<string, { list: typeof first; expiresAt: number }>
+      }).acpModelCache
+      for (const [key, entry] of cache) {
+        cache.set(key, { ...entry, expiresAt: Date.now() - 1 })
+      }
+
+      await writeFile(fakeAcp, failScript)
+      await chmod(fakeAcp, 0o755)
+
+      const second = await service.listAcpModels('claude')
+      expect(second.models).toEqual([{ id: 'sonnet-4.5', name: 'Sonnet 4.5' }])
+      expect(second.error).toMatch(/boom/i)
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
   // Live probes hit real CLIs (cursor-agent / opencode / wecode) with a 120s ACP
   // ping timeout. Keep them out of the default unit suite so hung agents cannot
   // fail or stall `pnpm test`. Opt in with BUDDY_LIVE_ACP_TEST=1.

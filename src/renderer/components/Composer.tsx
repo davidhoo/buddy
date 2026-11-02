@@ -22,14 +22,9 @@ interface ComposerProps {
   onAttachmentsChange: (attachments: Attachment[]) => void
 }
 
-function pickAcpModelId(
-  models: AcpModelInfo[],
-  saved?: string,
-  currentModelId?: string
-): string {
-  if (saved && models.some(model => model.id === saved)) return saved
-  if (currentModelId && models.some(model => model.id === currentModelId)) return currentModelId
-  return models[0]?.id ?? ''
+/** Keep the task launcher model as-is. Never invent models[0]/currentModelId. */
+function pickModelId(saved?: string): string {
+  return saved?.trim() || ''
 }
 
 export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, isRunning, isReady, settings, taskState, taskId, workspaceKey, draft, onDraftChange, attachments, onAttachmentsChange }: ComposerProps) {
@@ -41,12 +36,14 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   const prevStateNextRef = useRef<string | undefined>()
   const selectedModelByActorRef = useRef<Record<string, string>>({})
   const persistChainRef = useRef<Promise<unknown>>(Promise.resolve())
-  const nextIsAcp = settings?.launchers?.[nextActor]?.protocol === 'acp'
-  const [acpModelState, setAcpModelState] = useState<{
+  const nextProtocol = settings?.launchers?.[nextActor]?.protocol === 'acp' ? 'acp' : 'cli'
+  const [modelState, setModelState] = useState<{
     status: 'idle' | 'loading' | 'ready'
+    actor: string
+    protocol: 'cli' | 'acp' | ''
     models: AcpModelInfo[]
     selected: string
-  }>({ status: 'idle', models: [], selected: '' })
+  }>({ status: 'loading', actor: '', protocol: '', models: [], selected: '' })
 
   const computedNext = (() => {
     if (isRunning && taskState?.active_run?.actor) {
@@ -65,7 +62,8 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   }, [computedNext, participants])
 
   const persistModel = useCallback((actor: string, model: string) => {
-    if (!taskId || !workspaceKey || !model || !window.buddy?.updateTaskLauncherModel) return
+    // Empty string clears launcher.model (agent default). Do not treat it as a no-op.
+    if (!taskId || !workspaceKey || !window.buddy?.updateTaskLauncherModel) return
     persistChainRef.current = persistChainRef.current
       .then(() => window.buddy.updateTaskLauncherModel(taskId, workspaceKey, actor, model))
       .then(() => undefined)
@@ -73,37 +71,71 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
   }, [taskId, workspaceKey])
 
   useEffect(() => {
-    if (!nextIsAcp) {
-      setAcpModelState({ status: 'idle', models: [], selected: '' })
-      return
-    }
     let cancelled = false
-    const saved = selectedModelByActorRef.current[nextActor]
-      || settings?.launchers?.[nextActor]?.model
-      || ''
-    setAcpModelState({ status: 'loading', models: [], selected: saved })
+    const remembered = Object.prototype.hasOwnProperty.call(selectedModelByActorRef.current, nextActor)
+    const saved = remembered
+      ? selectedModelByActorRef.current[nextActor]
+      : (settings?.launchers?.[nextActor]?.model || '')
+    // Same actor+protocol: keep the last catalog visible while revalidating.
+    setModelState(prev => {
+      const keep = prev.actor === nextActor && prev.protocol === nextProtocol && prev.models.length > 0
+      return {
+        status: keep ? 'ready' : 'loading',
+        actor: nextActor,
+        protocol: nextProtocol,
+        models: keep ? prev.models : [],
+        selected: pickModelId(saved)
+      }
+    })
     const cwd = taskState?.repo_root?.trim() || undefined
-    const pending = window.buddy?.listAcpModels?.(nextActor, cwd)
+    const pending = nextProtocol === 'acp'
+      ? window.buddy?.listAcpModels?.(nextActor, cwd)
+      : window.buddy?.listCliModels?.(nextActor)
     if (!pending) {
-      setAcpModelState({ status: 'ready', models: [], selected: saved })
+      setModelState(prev => ({
+        status: 'ready',
+        actor: nextActor,
+        protocol: nextProtocol,
+        models: prev.actor === nextActor && prev.protocol === nextProtocol ? prev.models : [],
+        selected: pickModelId(saved)
+      }))
       return
     }
     pending
       .then(list => {
         if (cancelled) return
         const models = list?.models ?? []
-        const selected = pickAcpModelId(models, saved, list?.currentModelId)
-        if (selected) selectedModelByActorRef.current[nextActor] = selected
-        setAcpModelState({ status: 'ready', models, selected })
+        setModelState(prev => {
+          // Failed probes keep the last good catalog; a successful empty list
+          // is a real state and must replace it.
+          if (list?.error && models.length === 0 && prev.actor === nextActor && prev.protocol === nextProtocol && prev.models.length > 0) {
+            return { ...prev, status: 'ready', selected: pickModelId(saved) }
+          }
+          return {
+            status: 'ready',
+            actor: nextActor,
+            protocol: nextProtocol,
+            models,
+            selected: pickModelId(saved)
+          }
+        })
       })
       .catch(() => {
-        if (!cancelled) setAcpModelState({ status: 'ready', models: [], selected: saved })
+        if (!cancelled) {
+          setModelState(prev => ({
+            status: 'ready',
+            actor: nextActor,
+            protocol: nextProtocol,
+            models: prev.actor === nextActor && prev.protocol === nextProtocol ? prev.models : [],
+            selected: pickModelId(saved)
+          }))
+        }
       })
     return () => { cancelled = true }
-  }, [nextIsAcp, nextActor, taskState?.repo_root])
+  }, [nextProtocol, nextActor, taskState?.repo_root])
 
   const handleModelChange = (model: string) => {
-    setAcpModelState(prev => ({ ...prev, selected: model }))
+    setModelState(prev => ({ ...prev, selected: model }))
     selectedModelByActorRef.current[nextActor] = model
     persistModel(nextActor, model)
   }
@@ -379,30 +411,42 @@ export function Composer({ onSend, onStart, onInterrupt, onEnqueueInstruction, i
               />
             </div>
 
-            {nextIsAcp && (
-              <div className="relative max-w-[160px]">
-                <select
-                  aria-label={t('modal.create.model')}
-                  value={acpModelState.status !== 'ready' || acpModelState.models.length === 0 ? '' : acpModelState.selected}
-                  disabled={acpModelState.status !== 'ready' || acpModelState.models.length === 0}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="appearance-none bg-transparent text-xs pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent disabled:opacity-60 disabled:cursor-not-allowed max-w-[160px] truncate"
-                >
-                  {acpModelState.status !== 'ready' && <option value="">{t('common.loading')}</option>}
-                  {acpModelState.status === 'ready' && acpModelState.models.length === 0 && (
-                    <option value="">{t('modal.create.modelUnavailable')}</option>
-                  )}
-                  {acpModelState.models.map(model => (
-                    <option key={model.id} value={model.id}>{model.name}</option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={10}
-                  strokeWidth={2}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
-                />
-              </div>
-            )}
+            <div className="relative max-w-[160px]">
+              <select
+                aria-label={t('modal.create.model')}
+                value={
+                  modelState.status !== 'ready' && modelState.models.length === 0
+                    ? ''
+                    : modelState.models.length === 0
+                      ? ''
+                      : modelState.selected
+                }
+                disabled={modelState.status !== 'ready' || modelState.models.length === 0}
+                aria-busy={modelState.status !== 'ready'}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="appearance-none bg-transparent text-xs pr-5 pl-1 py-1 outline-none cursor-pointer hover:text-accent disabled:opacity-60 disabled:cursor-not-allowed max-w-[160px] truncate"
+              >
+                {modelState.status !== 'ready' && modelState.models.length === 0 && (
+                  <option value="">{t('common.loading')}</option>
+                )}
+                {(modelState.status === 'ready' || modelState.models.length > 0) && (
+                  <option value="">{t('agents.native')}</option>
+                )}
+                {modelState.models.length > 0
+                  && modelState.selected
+                  && !modelState.models.some(model => model.id === modelState.selected) && (
+                  <option value={modelState.selected}>{modelState.selected}</option>
+                )}
+                {modelState.models.map(model => (
+                  <option key={model.id} value={model.id}>{model.name}</option>
+                ))}
+              </select>
+              <ChevronDown
+                size={10}
+                strokeWidth={2}
+                className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
+              />
+            </div>
 
             <button
               onClick={handlePrimary}

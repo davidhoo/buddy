@@ -410,7 +410,9 @@ export class BuddyCoreService {
   /**
    * Probe an ACP actor for the models it currently advertises. CLI actors
    * resolve to an empty list. Results are cached briefly so the create-task
-   * modal can reopen without spawning the agent again.
+   * modal can reopen without spawning the agent again. Callers keep showing
+   * the previous catalog while this refresh runs; a failed refresh falls back
+   * to the last good list instead of wiping it.
    */
   listAcpModels(actor:string,cwd?:string):Promise<AcpModelList> {
     return this.withAgentUse(()=>this.listAcpModelsInner(actor,cwd))
@@ -452,7 +454,9 @@ export class BuddyCoreService {
       } catch (error) {
         const message = redactSensitiveText(String(error))
         this.agents.recordAcpProbe(actor, { ok: false, error: message })
-        return {models:[],error:message}
+        const stale = this.acpModelCache.get(cacheKey)
+        if (stale) return { ...stale.list, error: message }
+        return { models: [], error: message }
       } finally {
         this.acpModelInflight.delete(cacheKey)
       }

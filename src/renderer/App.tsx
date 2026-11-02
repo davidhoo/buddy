@@ -950,7 +950,10 @@ export function CreateTaskModal({
         queryFn: () => listModels!(actor),
         enabled: !!listModels && availableActors.includes(actor),
         retry: false,
-        staleTime: 300000
+        staleTime: 300000,
+        // Keep expired catalogs around so remounts can show the last list
+        // while a background refetch replaces it.
+        gcTime: 30 * 60 * 1000
       }
     })
   })
@@ -1081,8 +1084,10 @@ export function CreateTaskModal({
 
   const modelSelect = (actor: Actor, value: string, onChange: (model: string) => void, roleLabel: string) => {
     const state = modelsFor(actor)
-    const loading = state.isLoading
     const models = state.data?.models ?? []
+    // Only flash loading when we have nothing to show yet; background
+    // revalidation keeps the previous catalog visible.
+    const loading = state.isLoading && models.length === 0
     const unavailable = !modelValid(actor, value)
     return (
       <div className="relative min-w-0 flex-1">
@@ -1090,7 +1095,7 @@ export function CreateTaskModal({
           aria-label={`${roleLabel} ${t('modal.create.model')}`}
           value={value || '__native__'}
           disabled={!availableActors.includes(actor)}
-          aria-busy={loading}
+          aria-busy={state.isFetching}
           aria-invalid={unavailable || undefined}
           onChange={(e) => onChange(e.target.value)}
           className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs disabled:opacity-60"
@@ -1105,7 +1110,7 @@ export function CreateTaskModal({
             <option key={model.id} value={model.id}>{model.name}</option>
           ))}
           {loading && <option disabled>{t('common.loading')}</option>}
-          {!loading && (state.error || state.data?.error) ? (
+          {!loading && models.length === 0 && (state.error || state.data?.error) ? (
             <option disabled>{t('modal.create.modelLoadFailed')}</option>
           ) : !loading && models.length === 0 ? (
             <option disabled>{t('modal.create.modelUnavailable')}</option>
