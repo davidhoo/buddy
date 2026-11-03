@@ -1,5 +1,6 @@
 import { acquireAgentUse } from './agents/locks'
 import { AgentManagementService } from './agents/service'
+import { LibraryService } from './library/service'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -74,6 +75,7 @@ export interface BuddyCoreServiceOptions {
 
 export class BuddyCoreService {
   readonly agents: AgentManagementService
+  readonly library: LibraryService
   private readonly store: BuddyStore
   private readonly runner: BuddyRunner
   private readonly events?: BuddyEventBus
@@ -90,6 +92,7 @@ export class BuddyCoreService {
     this.events = normalized.events
     this.store = new BuddyStore(normalized.dataRoot ?? defaultDataRoot())
     this.agents = new AgentManagementService(this.store)
+    this.library = new LibraryService(this.store.dataRoot, this.agents)
     this.modelDiskCache = new ModelCatalogDiskCache(this.store.dataRoot)
     const notifier = createTaskNotifier(this.store)
     this.runner = new BuddyRunner(this.store, { events: normalized.events, notifier })
@@ -98,6 +101,24 @@ export class BuddyCoreService {
       void this.coordinator?.onTaskTerminal(workspaceKey)
     }
   }
+
+  getLibrarySnapshot(force?: boolean) { return this.library.getSnapshot(!!force) }
+  refreshLibrary(force?: boolean) { return this.library.refresh(!!force) }
+  importLibrarySkills(discoveryIds: string[]) { return this.library.importSkills(discoveryIds) }
+  setLibrarySkillAssignment(skillId: string, targetId: string, enabled: boolean) {
+    return this.library.setSkillAssignment(skillId, targetId, enabled)
+  }
+  ejectLibrarySkill(skillId: string) { return this.library.ejectSkill(skillId) }
+  importLibraryServers(discoveryIds: string[]) { return this.library.importServers(discoveryIds) }
+  setLibraryServerAssignment(serverId: string, targetId: string, enabled: boolean) {
+    return this.library.setServerAssignment(serverId, targetId, enabled)
+  }
+  openLibraryAuthGuidance(targetId: string, serverName: string) {
+    return this.library.openAuthGuidance(targetId, serverName)
+  }
+  openLibraryDir() { return this.library.openLibraryDir() }
+  openLibraryBackupsDir() { return this.library.openBackupsDir() }
+  ensureLibraryAcpHome(agentId: string) { return this.library.ensureAcpHome(agentId) }
 
   /**
    * List models advertised by a CLI actor. Memory TTL avoids respawning slow

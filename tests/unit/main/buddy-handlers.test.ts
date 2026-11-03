@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerBuddyHandlers } from '../../../src/main/ipc/buddy-handlers'
 
+const libraryMethods = [
+  'getLibrarySnapshot','refreshLibrary','importLibrarySkills','setLibrarySkillAssignment','ejectLibrarySkill',
+  'importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
+  'openLibraryBackupsDir','ensureLibraryAcpHome'
+] as const
+
 describe('registerBuddyHandlers', () => {
   it('registers native buddy channels', () => {
     const handle = vi.fn()
@@ -48,7 +54,18 @@ describe('registerBuddyHandlers', () => {
       updateTaskText: vi.fn(),
       updateTaskLauncherModel: vi.fn(),
       checkAcpGlobalAdapters: vi.fn(),
-      onTaskEvent: vi.fn()
+      onTaskEvent: vi.fn(),
+      getLibrarySnapshot: vi.fn(),
+      refreshLibrary: vi.fn(),
+      importLibrarySkills: vi.fn(),
+      setLibrarySkillAssignment: vi.fn(),
+      ejectLibrarySkill: vi.fn(),
+      importLibraryServers: vi.fn(),
+      setLibraryServerAssignment: vi.fn(),
+      openLibraryAuthGuidance: vi.fn(),
+      openLibraryDir: vi.fn(),
+      openLibraryBackupsDir: vi.fn(),
+      ensureLibraryAcpHome: vi.fn()
     }
 
     registerBuddyHandlers({ handle }, service)
@@ -67,6 +84,9 @@ describe('registerBuddyHandlers', () => {
     expect(handle).toHaveBeenCalledWith('buddy:listAcpModels', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:updateTaskLauncherModel', expect.any(Function))
     expect(handle).toHaveBeenCalledWith('buddy:checkAcpGlobalAdapters', expect.any(Function))
+    for (const method of libraryMethods) {
+      expect(handle).toHaveBeenCalledWith(`buddy:${method}`, expect.any(Function))
+    }
     const cancelHandler = handle.mock.calls.find(([channel]) => channel === 'buddy:cancelTask')![1]
     cancelHandler({}, 'task', 'workspace')
     expect(service.cancelTask).toHaveBeenCalledWith('task', 'workspace')
@@ -86,6 +106,15 @@ describe('registerBuddyHandlers', () => {
     const startUpdates=handle.mock.calls.find(([channel])=>channel==='buddy:startAgentUpdates')![1]
     startUpdates({},['codex'],'request-id')
     expect(service.startAgentUpdates).toHaveBeenCalledWith(['codex'],'request-id')
-    expect(handle).toHaveBeenCalledTimes(51)
+
+    const importSkills = handle.mock.calls.find(([channel]) => channel === 'buddy:importLibrarySkills')![1]
+    importSkills({}, ['id-1'])
+    expect(service.importLibrarySkills).toHaveBeenCalledWith(['id-1'])
+
+    const assignServer = handle.mock.calls.find(([channel]) => channel === 'buddy:setLibraryServerAssignment')![1]
+    assignServer({}, 'server-1', 'codex:buddy-acp:user', true)
+    expect(service.setLibraryServerAssignment).toHaveBeenCalledWith('server-1', 'codex:buddy-acp:user', true)
+
+    expect(handle).toHaveBeenCalledTimes(62)
   })
 })

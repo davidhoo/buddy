@@ -1,0 +1,92 @@
+import { FolderOpen, RefreshCw, Archive, Download, Undo2 } from 'lucide-react'
+import { useT } from '../../hooks/useI18n'
+import { useLibraryActions, useLibrarySnapshot } from '../../hooks/useLibrary'
+import { AgentChips } from './AgentChips'
+import './library.css'
+
+export function SkillsPage() {
+  const t = useT()
+  const { data, isFetching } = useLibrarySnapshot()
+  const { refresh, importSkills, setSkill, eject } = useLibraryActions()
+  const busy = refresh.isPending || importSkills.isPending || setSkill.isPending || eject.isPending
+  const skills = data?.skills || []
+  const discovered = data?.discoveredSkills || []
+  const targets = (data?.targets || []).filter((x) => x.capabilities.readSkills || x.linkedSkillTargetIds?.length)
+
+  return (
+    <div className="library-page">
+      <div className="library-toolbar">
+        <span className="library-count">{t('library.skills.count', { n: skills.length })}</span>
+        <div className="library-toolbar-actions">
+          <button className="library-btn" disabled={busy} onClick={() => refresh.mutate()} title={t('library.refresh')}>
+            <RefreshCw size={13} className={isFetching || refresh.isPending ? 'animate-spin' : ''} />{t('library.refresh')}
+          </button>
+          <button className="library-btn" disabled={busy} onClick={async () => {
+            const path = await window.buddy.openLibraryDir()
+            await window.api.openInFinder(path)
+          }}><FolderOpen size={13} />{t('library.openDir')}</button>
+          <button className="library-btn" disabled={busy} onClick={async () => {
+            const path = await window.buddy.openLibraryBackupsDir()
+            await window.api.openInFinder(path)
+          }}><Archive size={13} />{t('library.backups')}</button>
+        </div>
+      </div>
+      {data?.scannedAt && <p className="library-banner">{t('library.lastScan', { time: new Date(data.scannedAt).toLocaleString() })}</p>}
+      {data?.error && <p className="library-banner" role="alert">{data.error}</p>}
+
+      <div className="library-section-title">{t('library.skills.managed')}</div>
+      <div className="library-list">
+        {skills.map((skill) => (
+          <div className="library-row" key={skill.id}>
+            <div className="library-row-main">
+              <div className="library-row-title">{skill.name}</div>
+              <div className="library-row-sub">{skill.description || skill.libraryPath} · {skill.importMode}</div>
+            </div>
+            <AgentChips
+              targets={targets}
+              assigned={skill.assignedTargetIds}
+              linkSkillPhysicalKeys
+              onToggle={(targetId, enabled) => setSkill.mutate({ skillId: skill.id, targetId, enabled })}
+            />
+            <div className="library-row-actions">
+              <button className="library-btn danger" disabled={busy} title={t('library.skills.eject')} onClick={() => {
+                if (confirm(t('library.skills.ejectConfirm', { name: skill.name }))) eject.mutate(skill.id)
+              }}><Undo2 size={13} />{t('library.skills.eject')}</button>
+            </div>
+          </div>
+        ))}
+        {!skills.length && <div className="library-empty">{t('library.skills.emptyManaged')}</div>}
+      </div>
+
+      <div className="library-section-title">
+        <span>{t('library.skills.discovered', { n: discovered.length })}</span>
+        <button
+          className="library-btn"
+          disabled={busy || !discovered.length}
+          onClick={() => importSkills.mutate(discovered.map((d) => d.discoveryId))}
+        ><Download size={13} />{t('library.importAll')}</button>
+      </div>
+      <div className="library-list">
+        {discovered.map((item) => (
+          <div className="library-row" key={item.discoveryId}>
+            <div className="library-row-main">
+              <div className="library-row-title">{item.name}</div>
+              <div className="library-row-sub">
+                {item.agentId} · {item.path}
+                {item.importBlockedReason === 'git-root' ? ` · ${t('library.skills.gitRoot')}` : ''}
+                {item.importBlockedReason === 'symlink' ? ` · ${t('library.skills.symlink')}` : ''}
+              </div>
+            </div>
+            <div />
+            <div className="library-row-actions">
+              <button className="library-btn" disabled={busy} onClick={() => importSkills.mutate([item.discoveryId])}>
+                <Download size={13} />{t('library.import')}
+              </button>
+            </div>
+          </div>
+        ))}
+        {!discovered.length && <div className="library-empty">{t('library.skills.emptyDiscovered')}</div>}
+      </div>
+    </div>
+  )
+}

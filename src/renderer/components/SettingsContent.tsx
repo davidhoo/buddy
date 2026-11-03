@@ -1,4 +1,6 @@
 import { AgentsSettings } from './settings/AgentsSettings'
+import { SkillsPage } from './library/SkillsPage'
+import { McpPage } from './library/McpPage'
 import { useEffect, useState, useMemo, useRef, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { HexColorPicker } from 'react-colorful'
@@ -31,7 +33,7 @@ import { actorColorVar } from '../lib/format'
 import { CheckCircle, XCircle, Loader2, Zap, AlertCircle, Info, Copy, Check } from 'lucide-react'
 import { Switch } from './Switch'
 
-export type SettingsTab = 'general' | 'agents' | 'appearance' | 'keyboard' | 'prompts'
+export type SettingsTab = 'general' | 'agents' | 'skills' | 'mcp' | 'appearance' | 'keyboard' | 'prompts'
 
 interface SettingsContentProps {
   tab: SettingsTab
@@ -127,18 +129,22 @@ function HintWithCode({ template }: { template: string }) {
 
 export function SettingsContent({ tab, globalSettings }: SettingsContentProps) {
   const t = useT()
-  const pageTitle = tab === 'agents' ? t('settings.tab.agents') : tab === 'general'
-    ? t('settings.tab.general')
-    : tab === 'appearance'
-      ? t('settings.tab.appearance')
-      : tab === 'keyboard'
-        ? t('settings.tab.keyboard')
-        : t('settings.tab.prompts')
+  const pageTitle = tab === 'agents' ? t('settings.tab.agents')
+    : tab === 'skills' ? t('settings.tab.skills')
+    : tab === 'mcp' ? t('settings.tab.mcp')
+    : tab === 'general' ? t('settings.tab.general')
+    : tab === 'appearance' ? t('settings.tab.appearance')
+    : tab === 'keyboard' ? t('settings.tab.keyboard')
+    : t('settings.tab.prompts')
   return (
     <div className="flex-1 overflow-y-auto bg-bg-elevated">
       <div className="max-w-4xl mx-auto px-10 py-10">
         <h1 className="text-2xl font-semibold mb-8">{pageTitle}</h1>
-        {tab === 'agents' ? <AgentsSettings /> : tab === 'general' ? (
+        {tab === 'agents' ? <AgentsSettings /> : tab === 'skills' ? (
+          <SkillsPage />
+        ) : tab === 'mcp' ? (
+          <McpPage />
+        ) : tab === 'general' ? (
           <GeneralSettings globalSettings={globalSettings} />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />

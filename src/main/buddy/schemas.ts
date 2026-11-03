@@ -290,3 +290,45 @@ export const agentModelCacheSchema = z.object({
     })
   )
 })
+
+export const librarySkillSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  libraryPath: z.string(),
+  sourceKind: z.enum(['migrated', 'external', 'shared', 'copy']),
+  originPath: z.string().optional(),
+  contentHash: z.string().optional(),
+  assignedTargetIds: z.array(z.string()),
+  importMode: z.enum(['migrate-link', 'external-ref', 'copy', 'shared-ref']),
+  managed: z.boolean()
+})
+
+export const libraryServerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  transport: z.enum(['stdio', 'http', 'sse', 'unknown']),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  summary: z.string(),
+  raw: z.record(z.string(), z.unknown()),
+  sourceTargetId: z.string().optional(),
+  scope: z.enum(['user', 'project']),
+  assignedTargetIds: z.array(z.string()),
+  managed: z.boolean()
+})
+
+export const libraryAppliedEntrySchema = z.object({
+  kind: z.enum(['skill', 'mcp']),
+  fingerprint: z.string(),
+  path: z.string(),
+  at: z.string()
+})
+
+export const libraryMetaSchema = z.object({
+  schemaVersion: z.literal(1),
+  skills: z.array(librarySkillSchema),
+  servers: z.array(libraryServerSchema),
+  applied: z.record(z.string(), libraryAppliedEntrySchema).default({})
+})

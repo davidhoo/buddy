@@ -1,0 +1,45 @@
+.library-page { display: flex; flex-direction: column; gap: 1.25rem; }
+.library-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: space-between; }
+.library-toolbar-actions { display: flex; gap: .4rem; align-items: center; }
+.library-count { font-size: .8rem; color: var(--muted); }
+.library-section-title { font-size: .85rem; font-weight: 600; margin: .5rem 0 .35rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.library-list { display: flex; flex-direction: column; gap: .35rem; }
+.library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: .75rem;
+  align-items: center;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  background: var(--bg);
+}
+.library-row-main { min-width: 0; }
+.library-row-title { font-size: .9rem; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-row-sub { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-chips { display: flex; flex-wrap: wrap; gap: .25rem; justify-content: flex-end; }
+.library-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.55rem; height: 1.55rem; border-radius: .4rem;
+  border: 1px solid var(--border); background: transparent; padding: 0; cursor: pointer;
+  opacity: .45;
+}
+.library-chip.on { opacity: 1; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.library-chip.locked { cursor: default; }
+.library-chip:disabled { cursor: not-allowed; opacity: .25; }
+.library-row-actions { display: flex; gap: .3rem; }
+.library-empty { font-size: .85rem; color: var(--muted); padding: .75rem 0; }
+.library-btn {
+  display: inline-flex; align-items: center; gap: .3rem;
+  border: 1px solid var(--border); background: var(--bg); color: var(--ink);
+  border-radius: .45rem; padding: .3rem .55rem; font-size: .78rem; cursor: pointer;
+}
+.library-btn:hover { border-color: var(--accent); }
+.library-btn:disabled { opacity: .5; cursor: not-allowed; }
+.library-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+.library-banner { font-size: .78rem; color: var(--muted); padding: .4rem .55rem; border-left: 2px solid var(--border); }
+
+@media (max-width: 720px) {
+  .library-row { grid-template-columns: 1fr; gap: .45rem; }
+  .library-chips { justify-content: flex-start; }
+}

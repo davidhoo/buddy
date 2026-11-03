@@ -55,6 +55,27 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
     getAgentUpdateJobs: () => ipc.invoke('buddy:getAgentUpdateJobs') as Promise<import('../shared/agents').AgentUpdateJob[]>,
     cancelAgentUpdates: () => ipc.invoke('buddy:cancelAgentUpdates') as Promise<void>,
 
+    getLibrarySnapshot: (force=false) =>
+      ipc.invoke('buddy:getLibrarySnapshot', force) as Promise<import('../shared/library').LibrarySnapshot>,
+    refreshLibrary: (force=false) =>
+      ipc.invoke('buddy:refreshLibrary', force) as Promise<import('../shared/library').LibrarySnapshot>,
+    importLibrarySkills: (discoveryIds: string[]) =>
+      ipc.invoke('buddy:importLibrarySkills', discoveryIds) as Promise<import('../shared/library').LibraryBatchResult>,
+    setLibrarySkillAssignment: (skillId: string, targetId: string, enabled: boolean) =>
+      ipc.invoke('buddy:setLibrarySkillAssignment', skillId, targetId, enabled) as Promise<import('../shared/library').LibraryOpResult>,
+    ejectLibrarySkill: (skillId: string) =>
+      ipc.invoke('buddy:ejectLibrarySkill', skillId) as Promise<import('../shared/library').LibraryOpResult>,
+    importLibraryServers: (discoveryIds: string[]) =>
+      ipc.invoke('buddy:importLibraryServers', discoveryIds) as Promise<import('../shared/library').LibraryBatchResult>,
+    setLibraryServerAssignment: (serverId: string, targetId: string, enabled: boolean) =>
+      ipc.invoke('buddy:setLibraryServerAssignment', serverId, targetId, enabled) as Promise<import('../shared/library').LibraryOpResult>,
+    openLibraryAuthGuidance: (targetId: string, serverName: string) =>
+      ipc.invoke('buddy:openLibraryAuthGuidance', targetId, serverName) as Promise<{ title: string; steps: string[] }>,
+    openLibraryDir: () => ipc.invoke('buddy:openLibraryDir') as Promise<string>,
+    openLibraryBackupsDir: () => ipc.invoke('buddy:openLibraryBackupsDir') as Promise<string>,
+    ensureLibraryAcpHome: (agentId: string) =>
+      ipc.invoke('buddy:ensureLibraryAcpHome', agentId) as Promise<{ home: string; notes: string[] }>,
+
     checkHealth: (): Promise<boolean> =>
       ipc.invoke('buddy:checkHealth') as Promise<boolean>,
     bootstrap: (): Promise<BootstrapResponse> =>

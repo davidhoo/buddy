@@ -68,6 +68,18 @@ export interface BuddyHandlerService {
   updateTaskText(taskId: string, workspaceKey: string, taskText: string): Promise<void>
   updateTaskLauncherModel(taskId: string, workspaceKey: string, actor: string, model: string): Promise<TaskSettings>
   checkAcpGlobalAdapters(): Promise<GlobalAcpAdaptersStatus> | GlobalAcpAdaptersStatus
+
+  getLibrarySnapshot?(force?: boolean): Promise<import('../../shared/library').LibrarySnapshot>
+  refreshLibrary?(force?: boolean): Promise<import('../../shared/library').LibrarySnapshot>
+  importLibrarySkills?(discoveryIds: string[]): Promise<import('../../shared/library').LibraryBatchResult>
+  setLibrarySkillAssignment?(skillId: string, targetId: string, enabled: boolean): Promise<import('../../shared/library').LibraryOpResult>
+  ejectLibrarySkill?(skillId: string): Promise<import('../../shared/library').LibraryOpResult>
+  importLibraryServers?(discoveryIds: string[]): Promise<import('../../shared/library').LibraryBatchResult>
+  setLibraryServerAssignment?(serverId: string, targetId: string, enabled: boolean): Promise<import('../../shared/library').LibraryOpResult>
+  openLibraryAuthGuidance?(targetId: string, serverName: string): Promise<{ title: string; steps: string[] }>
+  openLibraryDir?(): Promise<string>
+  openLibraryBackupsDir?(): Promise<string>
+  ensureLibraryAcpHome?(agentId: string): Promise<{ home: string; notes: string[] }>
 }
 
 type IpcHandle = Pick<IpcMain, 'handle'>
@@ -77,6 +89,17 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
     ipcMain.handle('buddy:'+method, (_event, ...args: unknown[]) => {
       const fn = service[method] as ((...input: unknown[])=>unknown) | undefined
       if(!fn) throw new Error('Agent service unavailable')
+      return fn.apply(service,args)
+    })
+  }
+  for (const method of [
+    'getLibrarySnapshot','refreshLibrary','importLibrarySkills','setLibrarySkillAssignment','ejectLibrarySkill',
+    'importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
+    'openLibraryBackupsDir','ensureLibraryAcpHome'
+  ] as const) {
+    ipcMain.handle('buddy:'+method, (_event, ...args: unknown[]) => {
+      const fn = service[method] as ((...input: unknown[])=>unknown) | undefined
+      if(!fn) throw new Error('Library service unavailable')
       return fn.apply(service,args)
     })
   }

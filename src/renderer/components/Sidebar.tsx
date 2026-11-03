@@ -11,13 +11,15 @@ import {
   PanelLeft,
   Pin,
   Settings as SettingsIcon,
+  Sparkles,
   SquarePen,
   SquarePlus,
   Sun,
   Terminal,
   Trash2,
   Upload,
-  RotateCw
+  RotateCw,
+  Server
 } from 'lucide-react'
 import { Task } from '../../shared/types'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -185,6 +187,10 @@ function SettingsSidebar({
         />
 
         <SettingsMenuItem label={t('settings.tab.agents')} icon={<Terminal size={15} strokeWidth={1.6} />} active={settingsTab === 'agents'} onClick={() => onSelectSettingsTab('agents')} />
+
+        <SettingsMenuItem label={t('settings.tab.skills')} icon={<Sparkles size={15} strokeWidth={1.6} />} active={settingsTab === 'skills'} onClick={() => onSelectSettingsTab('skills')} />
+
+        <SettingsMenuItem label={t('settings.tab.mcp')} icon={<Server size={15} strokeWidth={1.6} />} active={settingsTab === 'mcp'} onClick={() => onSelectSettingsTab('mcp')} />
 
         <SettingsMenuItem
           label={t('settings.tab.appearance')}
