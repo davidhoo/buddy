@@ -67,3 +67,41 @@ it('discovers only user skills and counts a shared skill once', async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+it('exposes CodeBuddy and dsh skill roots and merges only physically shared wrapper roots', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buddy-skill-targets-'))
+  vi.stubEnv('HOME', root)
+  vi.stubEnv('DSH_HOME', join(root, 'custom-dsh'))
+  vi.stubEnv('CODEBUDDY_CONFIG_DIR', join(root, 'custom-codebuddy'))
+  try {
+    const { groupSkillTargets } = await import('../../../../src/shared/library')
+    const native = join(root, '.codex', 'skills')
+    await mkdir(native, { recursive: true })
+    for (const actor of ['codex', 'wecode_codex']) {
+      const home = join(root, 'buddy', 'acp', actor, 'codex-home')
+      await mkdir(home, { recursive: true })
+      await symlink(native, join(home, 'skills'))
+    }
+    const agents = [
+      { id: 'wecode_codex', enabled: true },
+      { id: 'wecode_claude', enabled: true },
+      { id: 'wecode_opencode', enabled: true, cli: { env: { OPENCODE_CONFIG_DIR: join(root, 'separate-opencode') } } }
+    ] as import('../../../../src/shared/agents').LocalAgent[]
+    const targets = await resolveLibraryTargets(agents, join(root, 'buddy'))
+    expect(targets.find((t) => t.agentId === 'codebuddy')?.skillsDir).toBe(join(root, 'custom-codebuddy', 'skills'))
+    expect(targets.find((t) => t.agentId === 'dsh')?.skillsDir).toBe(join(root, 'custom-dsh', 'skills'))
+    const groups = groupSkillTargets(targets)
+    const codex = groups.filter((t) => t.agentId === 'codex')
+    expect(codex).toHaveLength(1)
+    expect(codex[0].linkedSkillTargetIds).toEqual(expect.arrayContaining(['codex:buddy-acp:user', 'wecode_codex:wecode:user']))
+    expect(codex[0].displayName).toContain('WeCode Codex ACP')
+    expect(groups.find((t) => t.agentId === 'claude')?.linkedSkillTargetIds).toContain('wecode_claude:wecode:user')
+    expect(groups.find((t) => t.agentId === 'wecode_opencode')?.skillsDir).toBe(join(root, 'separate-opencode', 'skills'))
+    // Grouping is a view operation: independent MCP contexts are preserved.
+    expect(targets.filter((t) => t.mcpFormat === 'toml-mcp_servers')).toHaveLength(3)
+    expect(targets.find((t) => t.displayName === 'Codex')?.displayName).toBe('Codex')
+  } finally {
+    vi.unstubAllEnvs()
+    await rm(root, { recursive: true, force: true })
+  }
+})

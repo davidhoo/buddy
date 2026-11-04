@@ -21,11 +21,11 @@ interface TargetSpec {
 const HOME = () => process.env.HOME || homedir()
 
 function claudeHome(env: Record<string, string> = {}): string {
-  return env.CLAUDE_CONFIG_DIR || join(HOME(), '.claude')
+  return env.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || join(HOME(), '.claude')
 }
 
 function codexHome(env: Record<string, string> = {}): string {
-  return env.CODEX_HOME || join(HOME(), '.codex')
+  return env.CODEX_HOME || process.env.CODEX_HOME || join(HOME(), '.codex')
 }
 
 function cursorHome(): string {
@@ -97,8 +97,9 @@ export async function resolveLibraryTargets(
     displayName: '~/.agents',
     configContext: 'native',
     skillsDir: join(HOME(), '.agents', 'skills'),
-    mcpFormat: 'unsupported',
-    capabilities: caps({ readSkills: true, readMcp: false })
+    mcpPath: join(HOME(), '.agents', 'mcp.json'),
+    mcpFormat: 'jsonc-mcpServers',
+    capabilities: caps({ readSkills: true, readMcp: true })
   })
 
   const addNative = (agentId: string, displayName: string, make: (agent?: LocalAgent) => Omit<TargetSpec, 'agentId' | 'displayName' | 'configContext'>) => {
@@ -166,11 +167,41 @@ export async function resolveLibraryTargets(
     capabilities: caps({ readSkills: true, readMcp: true })
   }))
 
+  // These native skill roots are independent of their MCP configuration formats.
+  for (const [agentId, displayName, envKey, defaultDir] of [
+    ['codebuddy', 'CodeBuddy', 'CODEBUDDY_CONFIG_DIR', '.codebuddy'],
+    ['dsh', 'DeepSeek Harness', 'DSH_HOME', '.dsh']
+  ]) {
+    addNative(agentId, displayName, (agent) => ({
+      skillsDir: join(envOf(agent || ({} as LocalAgent))[envKey] || process.env[envKey] || join(HOME(), defaultDir), 'skills'),
+      mcpFormat: 'unsupported',
+      capabilities: caps({ readSkills: true, readMcp: false })
+    }))
+  }
+
+  // WeCode wrappers use the underlying tool's skill root unless overridden.
+  for (const [agentId, displayName, nativeId] of [
+    ['wecode_claude', 'WeCode Claude', 'claude'],
+    ['wecode_opencode', 'WeCode OpenCode', 'opencode']
+  ]) {
+    const agent = byId.get(agentId)
+    if (!agent) continue
+    const env = envOf(agent)
+    const skillsDir = nativeId === 'claude'
+      ? join(claudeHome(env), 'skills')
+      : join(env.OPENCODE_CONFIG_DIR || opencodeHome(), 'skills')
+    specs.push({
+      agentId, displayName, configContext: 'wecode', skillsDir,
+      mcpFormat: 'unsupported', usedByTasks: !!agent.enabled,
+      capabilities: caps({ readSkills: true, readMcp: false })
+    })
+  }
+
   // Codex ACP / WeCode Codex — MCP independent; skills usually share native dir via symlink.
   for (const actor of ['codex', 'wecode_codex'] as const) {
     const agent = byId.get(actor)
     if (!agent && actor === 'wecode_codex') continue
-    const home = buddyAcpCodexHome(dataRoot, actor)
+    const home = (agent && envOf(agent).CODEX_HOME) || buddyAcpCodexHome(dataRoot, actor)
     const ready = await exists(home)
     specs.push({
       agentId: actor,

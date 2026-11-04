@@ -135,3 +135,25 @@ export interface LibraryMetaFile {
   servers: LibraryMcpServer[]
   applied: Record<string, { kind: 'skill' | 'mcp'; fingerprint: string; path: string; at: string }>
 }
+
+/** One Skills control per physical directory; MCP keeps its original targets. */
+export function groupSkillTargets(targets: LibraryTarget[]): LibraryTarget[] {
+  const groups = new Map<string, LibraryTarget[]>()
+  for (const target of targets) {
+    if (!target.capabilities.readSkills || !target.skillsDir) continue
+    const key = target.skillsPhysicalKey || target.skillsDir
+    const group = groups.get(key) || []
+    group.push(target)
+    groups.set(key, group)
+  }
+  return [...groups.values()].map((group) => {
+    const representative = group.find((target) => target.configContext === 'native') || group[0]
+    return {
+      ...representative,
+      displayName: [...new Set(group.map((target) => target.displayName))].join(' / '),
+      linkedSkillTargetIds: [...new Set(group.flatMap((target) => [
+        target.targetId, ...(target.linkedSkillTargetIds || [])
+      ]))].filter((id) => id !== representative.targetId)
+    }
+  })
+}

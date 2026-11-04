@@ -3,6 +3,7 @@ import { FolderOpen, RefreshCw, Archive, FileText, Download, Undo2 } from 'lucid
 import { useT } from '../../hooks/useI18n'
 import { useLibraryActions, useLibrarySnapshot } from '../../hooks/useLibrary'
 import { AgentChips } from './AgentChips'
+import { groupSkillTargets } from '../../../shared/library'
 import './library.css'
 
 export function SkillsPage() {
@@ -13,7 +14,7 @@ export function SkillsPage() {
   const busy = refresh.isPending || importSkills.isPending || setSkill.isPending || eject.isPending
   const skills = data?.skills || []
   const discovered = data?.discoveredSkills || []
-  const targets = (data?.targets || []).filter((x) => x.capabilities.readSkills || x.linkedSkillTargetIds?.length)
+  const targets = groupSkillTargets(data?.targets || [])
 
   const visibleSkills = [...skills]
     .sort((a, b) => order === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name))

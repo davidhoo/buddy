@@ -33,6 +33,7 @@ export function AgentChips({
             type="button"
             className={`library-chip${on ? ' on' : ''}${linked.length ? ' locked' : ''}`}
             title={title}
+            aria-label={target.displayName}
             aria-pressed={on}
             disabled={disabled || (!target.capabilities.writeSkills && !target.capabilities.writeMcp && !target.pendingInit)}
             onClick={() => onToggle(target.targetId, !on)}
