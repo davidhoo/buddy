@@ -2,14 +2,15 @@
 
 > Let's Go, Every Buddy! 让我们一起出发，每一位 Buddy！
 
-双 AI Agent 协作编码的 macOS 桌面应用。两个 AI Actor（执行方 + 审查方）轮流工作，逐步收敛至正确结果，支持人工校准窗口与双确认结束机制。
+双 AI Agent 协作编码的 macOS 桌面应用。两个 AI Actor（执行方 + 审查方）轮流工作，实现、审查并修正代码。你可以随时追加指令，任务在双方确认完成后结束。
 
 官网：[https://davidhoo.github.io/buddy/](https://davidhoo.github.io/buddy/) · [下载](../../releases)
 
 ## 特性
 
 - **双 Actor 协作**：执行方实现代码，审查方检查修正，循环推进直到双方确认完成
-- **6 种 AI Actor**：Claude Code、Codex、Cursor CLI、OpenCode、Kimi Code、DeepSeek Harness（dsh）
+- **本机 Agent 管理**：发现 Claude Code、Codex、Cursor CLI、Antigravity CLI、OpenCode、Kimi Code、DeepSeek Harness（dsh）、WeCode 等本机工具。按 Agent 选择可用的 CLI 或 ACP 入口，查询模型，并为支持的安装方式执行后台更新
+- **Skills 与 MCP**：发现并导入本机 Agent 的技能和 MCP 配置，按 Agent 分配。支持手动添加 MCP 和检测同名配置冲突
 - **双确认结束**：双方均发出 `type=break` 才结束任务，单方 break 不终止
 - **指令队列**：在 Actor 运行期间排队发送指令，轮次结束后自动执行
 - **Git 集成**：本地化 conventional commit 消息生成、变更查看、提交与推送
@@ -28,14 +29,17 @@ Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包
 
 ## 系统要求
 
-- macOS 12+ (Monterey)
-- 至少一个已安装的 AI CLI 工具：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、[Cursor CLI](https://docs.cursor.com/en/cli/overview)、[OpenCode](https://github.com/opencode-ai/opencode)、[Kimi Code](https://github.com/MoonshotAI/kimi-cli)、DeepSeek Harness（`dsh`）
+- **GitHub 最新发行版 v2.0.13**：macOS 12（Monterey）或更高版本，提供 Apple Silicon 和 Intel 安装包。
+- **当前源码**：Electron 45.2.2，运行需要 macOS 13（Ventura）或更高版本。
+- 安装并登录所需的本机 Agent，例如 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、[Cursor CLI](https://docs.cursor.com/en/cli/overview)、[OpenCode](https://github.com/opencode-ai/opencode)、[Kimi Code](https://github.com/MoonshotAI/kimi-cli)、DeepSeek Harness（`dsh`）
 
 ## 安装
 
 ### GitHub Releases（推荐）
 
-从 [Releases](../../releases) 页面下载最新版本 DMG，打开后将 Buddy 拖入 Applications 文件夹即可。
+从 [Releases](../../releases) 页面按芯片下载 DMG（Apple Silicon 选带 arm64 后缀的文件，Intel 选无架构后缀的 DMG），打开后将 Buddy 拖入 Applications 文件夹。
+
+首次使用时，在 Buddy 的 Agent 设置中确认已发现的工具和可用入口。新建任务时选择 Git 仓库，分别为执行方和审查方选择 Agent 及可用模型，再填写任务目标和验收标准。
 
 或从源码构建：
 
@@ -55,9 +59,11 @@ pnpm build            # 编译 main/preload/renderer
 pnpm test             # 单元测试 (vitest)
 pnpm test:e2e         # E2E 测试 (Playwright)
 pnpm typecheck        # 类型检查
-pnpm dist             # 构建 + 无签名 DMG
-pnpm release:signed   # 构建 + 签名 + 公证（需 CSC_NAME 环境变量）
+pnpm dist             # 构建本地 ad hoc DMG / ZIP
+pnpm release:signed   # 构建并验证 Apple Development 签名（需 CSC_NAME）
 ```
+
+官方发行包使用 Apple Development 签名，发布流程见 [发布指南](docs/RELEASE.md)。
 
 ## 架构
 
@@ -147,7 +153,7 @@ buddy/
 
 | 层面 | 选型 |
 |------|------|
-| 运行时 | Electron 33 |
+| 运行时 | Electron 45.2.2（当前源码） |
 | 语言 | TypeScript 5 |
 | UI | React 18 + Tailwind CSS 3 |
 | 构建 | electron-vite |

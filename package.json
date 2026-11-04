@@ -43,7 +43,7 @@
     "@vitest/utils": "^4.1.8",
     "autoprefixer": "^10.5.0",
     "dompurify": "^3.4.5",
-    "electron": "^33.4.11",
+    "electron": "45.2.2",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "jiti": "^2.7.0",

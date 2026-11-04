@@ -150,9 +150,17 @@ app.whenReady().then(async () => {
   ipcMain.handle('clipboard:readFilePaths', async () => {
     if (process.platform !== 'darwin') return []
     try {
+      const items = await clipboard.read()
+      const readFormat = async (format: string, entries = items) => {
+        const type = `electron application/osclipboard;format="${format}"` as const
+        const item = entries.find((entry) => entry.types.includes(type))
+        return item ? Buffer.from(await (await item.getType(type)).arrayBuffer()) : null
+      }
+
       // Prefer NSFilenamesPboardType which contains real POSIX paths
-      if (clipboard.has('NSFilenamesPboardType')) {
-        const buffer = clipboard.readBuffer('NSFilenamesPboardType')
+      const filenames = await readFormat('NSFilenamesPboardType')
+      if (filenames) {
+        const buffer = filenames
         const text = buffer.toString('utf8')
         const paths: string[] = []
 
@@ -194,10 +202,8 @@ app.whenReady().then(async () => {
       }
 
       // Fallback to public.file-url
-      if (!clipboard.has('public.file-url')) return []
-      const buffer = clipboard.readBuffer('public.file-url')
-      const text = buffer.toString('utf8')
-      const paths = text.split('\0')
+      const buffers = await Promise.all(items.map((item) => readFormat('public.file-url', [item])))
+      const paths = buffers.flatMap((buffer) => buffer?.toString('utf8').split('\0') ?? [])
         .map((s: string) => s.trim())
         .filter((s: string) => s.length > 0)
         .map((url: string) => {
