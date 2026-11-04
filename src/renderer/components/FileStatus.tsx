@@ -701,46 +701,52 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
 
           {/* 提交信息 */}
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <label className="text-xs font-medium text-fg-secondary">{t('git.commitMessage')}</label>
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedActor}
-                  onChange={(e) => handleActorChange(e.target.value)}
-                  disabled={!commitActors.length}
-                  title={t('git.commitMessageActor')}
-                  className="appearance-none px-2 py-0.5 text-xs border border-border rounded focus:outline-none focus:border-accent bg-bg max-w-[220px]"
-                >
-                  {!actorAvailable && <option value={selectedActor}>{t(!inventory && !inventoryError ? 'git.agentsLoading' : !commitActors.length ? 'git.noAvailableAgents' : 'git.agentUnavailable')}</option>}
-                  {commitActors.map((actor) => (
-                    <option key={actor} value={actor}>{actorOptionLabel(actor)}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label={t('modal.create.model')}
-                  value={selectedModel}
-                  disabled={!actorAvailable}
-                  aria-busy={modelCatalog.isFetching}
-                  aria-invalid={modelUnavailable || undefined}
-                  className="appearance-none px-2 py-0.5 text-xs border border-border rounded bg-bg max-w-[220px]"
-                  onChange={event => {
-                    autoGenerationStarted.current = true
-                    setModelChoices(current => ({ ...current, [modelKey]: event.target.value }))
-                    if (isGenerating) {
-                      generateSeq.current++
-                      api.cancelGenerateCommitMessage()
-                      setIsGenerating(false)
-                    }
-                  }}
-                >
-                  <option value="__native__">{t('agents.native')}</option>
-                  {selectedModel !== '__native__' && !models.some(model => model.id === selectedModel) && (
-                    <option value={selectedModel} disabled={modelUnavailable}>{modelOptionLabel(selectedModel, models)}{modelUnavailable ? ` (${t('modal.create.modelUnavailable')})` : ''}</option>
-                  )}
-                  {models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-                  {modelCatalog.isLoading && !models.length && <option disabled>{t('common.loading')}</option>}
-                  {!modelCatalog.isLoading && !models.length && <option disabled>{t(modelCatalog.error || modelCatalog.data?.error ? 'modal.create.modelLoadFailed' : 'modal.create.modelUnavailable')}</option>}
-                </select>
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <div className="relative min-w-0 w-40 max-w-full">
+                  <select
+                    value={selectedActor}
+                    onChange={(e) => handleActorChange(e.target.value)}
+                    disabled={!commitActors.length}
+                    title={t('git.commitMessageActor')}
+                    className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs disabled:opacity-60"
+                  >
+                    {!actorAvailable && <option value={selectedActor}>{t(!inventory && !inventoryError ? 'git.agentsLoading' : !commitActors.length ? 'git.noAvailableAgents' : 'git.agentUnavailable')}</option>}
+                    {commitActors.map((actor) => (
+                      <option key={actor} value={actor}>{actorOptionLabel(actor)}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted" />
+                </div>
+                <div className="relative min-w-0 w-48 max-w-full">
+                  <select
+                    aria-label={t('modal.create.model')}
+                    value={selectedModel}
+                    disabled={!actorAvailable}
+                    aria-busy={modelCatalog.isFetching}
+                    aria-invalid={modelUnavailable || undefined}
+                    className="w-full appearance-none pl-3 pr-7 py-1.5 border border-border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-bg text-xs disabled:opacity-60"
+                    onChange={event => {
+                      autoGenerationStarted.current = true
+                      setModelChoices(current => ({ ...current, [modelKey]: event.target.value }))
+                      if (isGenerating) {
+                        generateSeq.current++
+                        api.cancelGenerateCommitMessage()
+                        setIsGenerating(false)
+                      }
+                    }}
+                  >
+                    <option value="__native__">{t('agents.native')}</option>
+                    {selectedModel !== '__native__' && !models.some(model => model.id === selectedModel) && (
+                      <option value={selectedModel} disabled={modelUnavailable}>{modelOptionLabel(selectedModel, models)}{modelUnavailable ? ` (${t('modal.create.modelUnavailable')})` : ''}</option>
+                    )}
+                    {models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+                    {modelCatalog.isLoading && !models.length && <option disabled>{t('common.loading')}</option>}
+                    {!modelCatalog.isLoading && !models.length && <option disabled>{t(modelCatalog.error || modelCatalog.data?.error ? 'modal.create.modelLoadFailed' : 'modal.create.modelUnavailable')}</option>}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted" />
+                </div>
                 <button
                   onClick={isGenerating ? handleCancelGenerate : () => void handleGenerate([...selectedPaths])}
                   disabled={isStaging || isCommitting || selectedPaths.size === 0 || ((!actorAvailable || modelUnavailable) && !isGenerating)}
