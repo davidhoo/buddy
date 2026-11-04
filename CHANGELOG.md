@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.17] - 2026-11-04
+
+### Added
+- MCP 发现支持共享配置 `~/.agents/mcp.json`（含 JSONC）；Skills 发现扩展 CodeBuddy、dsh、WeCode 变体根目录，并支持自定义 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
+- Skills 目标按物理目录聚合展示，合并关联标识，避免界面重复
+
+### Fixed
+- 提交信息生成改用已发现 Agent 与可选模型列表；修复 React StrictMode 重挂载导致自动生成中断
+- 提交选择器样式与新任务界面对齐
+
+---
+
 ## [2.0.16] - 2026-11-04
 
 ### Added
