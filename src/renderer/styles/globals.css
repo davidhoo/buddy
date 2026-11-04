@@ -511,6 +511,13 @@ body {
   padding-top: 8px;
   overflow-x: auto;
 }
+.task-done-stats-note {
+  margin-top: 6px;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
 .task-done-stats-loading {
   padding: 4px 0;
   color: var(--fg-muted);

@@ -91,6 +91,16 @@ export async function resolveLibraryTargets(
   const byId = new Map(agents.map((a) => [a.id, a]))
   const specs: TargetSpec[] = []
 
+  // Shared user skills exist independently of any installed agent.
+  specs.push({
+    agentId: 'shared',
+    displayName: '~/.agents',
+    configContext: 'native',
+    skillsDir: join(HOME(), '.agents', 'skills'),
+    mcpFormat: 'unsupported',
+    capabilities: caps({ readSkills: true, readMcp: false })
+  })
+
   const addNative = (agentId: string, displayName: string, make: (agent?: LocalAgent) => Omit<TargetSpec, 'agentId' | 'displayName' | 'configContext'>) => {
     const agent = byId.get(agentId)
     // Resource management does not require task-enabled; inventory presence or known path is enough.

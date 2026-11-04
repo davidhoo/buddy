@@ -387,9 +387,6 @@ function TaskDoneStats({ stats }: { stats: TaskStats }) {
 
   return (
     <div className="task-done-stats">
-      {stats.tokenAvailability && Object.values(stats.tokenAvailability).some(v => !v) && (
-        <div>{t('taskStats.incomplete')}</div>
-      )}
       <table className="task-done-stats-table">
         <thead>
           <tr>
@@ -425,6 +422,9 @@ function TaskDoneStats({ stats }: { stats: TaskStats }) {
           </tr>
         </tbody>
       </table>
+      {stats.tokenAvailability && Object.values(stats.tokenAvailability).some(v => !v) && (
+        <div className="task-done-stats-note">{t('taskStats.incomplete')}</div>
+      )}
     </div>
   )
 }
