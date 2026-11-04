@@ -79,12 +79,20 @@ echo "   Version set to ${PACKAGE_VERSION} ✓"
 echo ">> Building with forced code signing..."
 pnpm build
 pnpm clean:release
+# Apple's TSA flakes under bulk codesign; wrap codesign with retries for this build only.
+CODESIGN_SHIM_DIR="$(mktemp -d "${TMPDIR:-/tmp}/buddy-codesign-shim.XXXXXX")"
+cleanup_codesign_shim() { rm -rf "$CODESIGN_SHIM_DIR"; }
+trap cleanup_codesign_shim EXIT
+install -m 755 "$PROJECT_ROOT/scripts/codesign-with-tsa-retry.sh" "$CODESIGN_SHIM_DIR/codesign"
 CUSTOM_DMGBUILD_PATH="$(sh scripts/prepare-dmgbuild.sh)" \
+  PATH="${CODESIGN_SHIM_DIR}:${PATH}" \
   CSC_IDENTITY_AUTO_DISCOVERY=false \
   CSC_NAME="$CSC_NAME" \
   pnpm exec electron-builder --mac --publish never \
     -c.mac.forceCodeSigning=true \
     -c.mac.notarize=false
+cleanup_codesign_shim
+trap - EXIT
 echo "   Build complete ✓"
 
 # --- 3. Verify release signing ---

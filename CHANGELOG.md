@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - 修复 OpenCode `step_finish` 轮次中 Token 与费用的累加逻辑
+- 正式发布构建对 Apple 时间戳服务瞬时失败自动重试，避免 bulk codesign 中途失败
 
 ---
 
