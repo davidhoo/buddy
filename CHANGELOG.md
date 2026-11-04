@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.18] - 2026-11-04
+
+### Fixed
+- Skills 目标聚合排除 `~/.agents` 共享源：该路径仅作发现来源，不再出现在 Agent 分配选项中
+
+---
+
 ## [2.0.17] - 2026-11-04
 
 ### Added
