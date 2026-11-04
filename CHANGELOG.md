@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.15] - 2026-11-04
+
+### Added
+- 引入 token-usage 归一化工具，统一解析各协议 Token 字段并过滤非计费指标（如上下文窗口 used/size、累计费用）
+- 支持 ACP 协议的用量捕获与持久化，记录流式更新与最终轮次用量
+- 新增 TokenAvailability 状态跟踪，记录轮次、Actor 与总计统计的完整性；任务统计表与系统通知对不完整或缺失用量显示星号及文案提示
+
+### Fixed
+- 修复 OpenCode `step_finish` 轮次中 Token 与费用的累加逻辑
+
+---
+
 ## [2.0.14] - 2026-11-04
 
 ### Changed
