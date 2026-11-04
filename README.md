@@ -29,8 +29,7 @@ Buddy 官网使用 GitHub Pages 部署，源码在 [`docs/`](docs/) 目录，包
 
 ## 系统要求
 
-- **GitHub 最新发行版 v2.0.13**：macOS 12（Monterey）或更高版本，提供 Apple Silicon 和 Intel 安装包。
-- **当前源码**：Electron 45.2.2，运行需要 macOS 13（Ventura）或更高版本。
+- **GitHub 最新发行版 v2.0.14**：macOS 13（Ventura）或更高版本，提供 Apple Silicon 和 Intel 安装包（Electron 45.2.2）。
 - 安装并登录所需的本机 Agent，例如 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、[Cursor CLI](https://docs.cursor.com/en/cli/overview)、[OpenCode](https://github.com/opencode-ai/opencode)、[Kimi Code](https://github.com/MoonshotAI/kimi-cli)、DeepSeek Harness（`dsh`）
 
 ## 安装
@@ -153,7 +152,7 @@ buddy/
 
 | 层面 | 选型 |
 |------|------|
-| 运行时 | Electron 45.2.2（当前源码） |
+| 运行时 | Electron 45.2.2 |
 | 语言 | TypeScript 5 |
 | UI | React 18 + Tailwind CSS 3 |
 | 构建 | electron-vite |

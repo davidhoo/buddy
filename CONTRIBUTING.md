@@ -6,7 +6,7 @@
 
 ### 前置要求
 
-- macOS 12+ (Monterey)
+- macOS 13+ (Ventura)
 - Node.js >= 18
 - pnpm 11 (`corepack enable && corepack prepare pnpm@11 --activate`)
 - 至少一个已安装的 AI CLI 工具（用于 E2E 测试）：Claude Code / Codex / OpenCode / Kimi Code

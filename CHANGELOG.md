@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.14] - 2026-11-04
+
 ### Changed
 - 升级至 Electron 45.2.2，最低系统要求提高至 macOS 13（Ventura）
+- 适配 Electron 45 剪贴板 API，主进程通过异步 `clipboard.read()` 读取系统文件路径与 URL
+
+---
 
 ## [2.0.13] - 2026-11-04
 
