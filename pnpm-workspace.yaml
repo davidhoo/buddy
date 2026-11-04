@@ -5,5 +5,8 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   node-pty: true
+overrides:
+  node-abi: 4.40.0
 minimumReleaseAgeExclude:
   - electron@45.2.2
+  - node-abi@4.40.0

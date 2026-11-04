@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  node-abi: 4.40.0
+
 importers:
 
   .:
@@ -1963,8 +1966,8 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  node-abi@4.31.0:
-    resolution: {integrity: sha512-Erq5w/t3syw3s4sDsUaX4QttIdBPsGKTT1DTRsCkTonGggczhlDKm/wDX3o+HPJpQ41EjXCbcmXf0tgr5YZJXw==}
+  node-abi@4.40.0:
+    resolution: {integrity: sha512-GuvqvtrOk+AC27RidBxBsMzVNkwNl7PjHgc4NXbmdvSVLgIUjpaqcG1FjNRYnt2Yn9Ytq+Ln37XsBaglUcte/w==}
     engines: {node: '>=22.12.0'}
 
   node-addon-api@1.6.3:
@@ -2944,7 +2947,7 @@ snapshots:
     dependencies:
       '@malept/cross-spawn-promise': 2.0.0
       debug: 4.4.3
-      node-abi: 4.31.0
+      node-abi: 4.40.0
       node-api-version: 0.2.1
       node-gyp: 12.3.0
       read-binary-file-arch: 1.0.6
@@ -4570,7 +4573,7 @@ snapshots:
 
   nanoid@3.3.12: {}
 
-  node-abi@4.31.0:
+  node-abi@4.40.0:
     dependencies:
       semver: 7.8.1
 
