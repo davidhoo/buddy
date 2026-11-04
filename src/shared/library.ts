@@ -140,7 +140,8 @@ export interface LibraryMetaFile {
 export function groupSkillTargets(targets: LibraryTarget[]): LibraryTarget[] {
   const groups = new Map<string, LibraryTarget[]>()
   for (const target of targets) {
-    if (!target.capabilities.readSkills || !target.skillsDir) continue
+    // ~/.agents is a discovery source, not an agent assignment option.
+    if (target.agentId === 'shared' || !target.capabilities.readSkills || !target.skillsDir) continue
     const key = target.skillsPhysicalKey || target.skillsDir
     const group = groups.get(key) || []
     group.push(target)

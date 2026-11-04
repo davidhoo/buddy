@@ -19,6 +19,9 @@ it('scans shared home skills without installed agents and deduplicates agent lin
 
     const targets = await resolveLibraryTargets([], join(root, 'buddy'))
     const skills = await discoverSkills(targets, [])
+    const { groupSkillTargets } = await import('../../../../src/shared/library')
+    expect(targets.some((target) => target.agentId === 'shared')).toBe(true)
+    expect(groupSkillTargets(targets).some((target) => target.agentId === 'shared')).toBe(false)
     expect(skills).toHaveLength(1)
     expect(skills[0]).toMatchObject({
       name: 'shared-skill', description: 'Shared user skill', path: shared,
