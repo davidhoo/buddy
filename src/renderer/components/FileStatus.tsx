@@ -326,7 +326,7 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   const actorAvailable = commitActors.includes(selectedActor)
   const selectionInitialized = useRef(false)
   useEffect(() => {
-    if (!inventory) return
+    if (!inventory || !commitActors.length) return
     if (!selectionInitialized.current) {
       selectionInitialized.current = true
       if (!actorAvailable) setSelectedActor(
@@ -493,10 +493,15 @@ export function CommitModal({ gitStatus, repoRoot, globalSettings, taskSettings,
   const autoGenerationStarted = useRef(false)
   useEffect(() => {
     if (!autoGenerate || (inventoryError && !inventory) || (inventory && !commitActors.length)) return
-    if (!inventory || !actorAvailable || autoGenerationStarted.current) return
-    autoGenerationStarted.current = true
-    void handleGenerate(allFiles.map(file => file.path))
-  }, [autoGenerate, inventory, inventoryError, commitActors.length, actorAvailable, handleGenerate])
+    if (!inventory || !actorAvailable || modelUnavailable || !allFiles.length || autoGenerationStarted.current) return
+    // StrictMode replays mount effects: defer starting the process until after
+    // that cleanup, otherwise it cancels the request and consumes this guard.
+    const timer = setTimeout(() => {
+      autoGenerationStarted.current = true
+      void handleGenerate([...selectedPaths])
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [autoGenerate, inventory, inventoryError, commitActors.length, actorAvailable, modelUnavailable, allFiles.length, selectedPaths, handleGenerate])
 
   useEffect(() => {
     if (!isGenerating) {

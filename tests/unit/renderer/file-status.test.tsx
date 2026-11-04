@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
+import { StrictMode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitStatusResult, GlobalSettings } from '../../../src/shared/types'
@@ -254,6 +255,31 @@ describe('CommitModal actor selection', () => {
     rerender(<CommitModal {...props} />)
     expect(screen.getByTitle('git.commitMessageActor')).toBeDisabled()
     expect(generate).toHaveBeenCalledOnce()
+  })
+
+  it('automatically generates once under the app StrictMode lifecycle', async () => {
+    localStorage.setItem('buddy.lastCommitMessageActor', 'claude')
+    const generate = vi.mocked(api.generateCommitMessage).mockClear().mockResolvedValue({ message: 'feat: automatic' })
+    const cancel = vi.mocked(api.cancelGenerateCommitMessage).mockClear()
+    render(<StrictMode><CommitModal gitStatus={makeGitStatus()} repoRoot="/tmp/repo"
+      globalSettings={makeSettings(true)} taskSettings={null}
+      onClose={vi.fn()} onSuccess={vi.fn()} onError={vi.fn()} /></StrictMode>)
+    await waitFor(() => expect(generate).toHaveBeenCalledOnce())
+    expect(screen.getByDisplayValue('feat: automatic')).toBeInTheDocument()
+    // StrictMode cleanup runs before the deferred process starts.
+    expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(generate.mock.invocationCallOrder[0])
+  })
+
+  it('waits for a populated inventory before choosing the initial agent', async () => {
+    inventory = { revision: 1, refreshing: true, agents: [] }
+    const generate = vi.mocked(api.generateCommitMessage).mockClear().mockResolvedValue({ message: 'feat: discovered' })
+    const props = { gitStatus: makeGitStatus(), repoRoot: '/tmp/repo', globalSettings: makeSettings(true),
+      taskSettings: null, onClose: vi.fn(), onSuccess: vi.fn(), onError: vi.fn() }
+    const { rerender } = render(<CommitModal {...props} />)
+    expect(generate).not.toHaveBeenCalled()
+    inventory = makeInventory()
+    rerender(<CommitModal {...props} />)
+    await waitFor(() => expect(generate).toHaveBeenCalledOnce())
   })
 
   it('defaults to task implementer when no stored actor', () => {
