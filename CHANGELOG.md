@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.16] - 2026-11-04
+
+### Added
+- Skills 发现增加共享目标 `~/.agents/skills`：无本机 Agent 时也能扫描用户共享技能，并与 Agent 侧同路径软链去重
+
+### Changed
+- 任务完成统计的用量不完整提示移到表格下方，并使用次要文案样式
+
+---
+
 ## [2.0.15] - 2026-11-04
 
 ### Added
