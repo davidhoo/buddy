@@ -30,6 +30,7 @@ import type {
 import { normalizeGlobalSettings, normalizeLauncher, normalizeLaunchers } from '../../shared/defaults'
 import { validateTaskId } from '../../shared/task-id'
 import { canonicalRepoRoot, createBuddyPaths, taskDir, workspaceKeyForRepo } from './paths'
+import { normalizeTokenUsage } from './token-usage'
 import { redactJsonValue } from './redact'
 import { detectModelFromConfig } from './model-detect'
 import { readKimiSessionInsight, readOpencodeSessionModel } from './session-insight'
@@ -377,10 +378,27 @@ export class BuddyStore {
     let durationMs: number | undefined
     let costUsd: number | undefined
     let model: string | undefined
+    const tokenAvailability = { input: false, output: false, cache: false }
     let firstTs: number | undefined
     let lastTs: number | undefined
 
     for (const event of parseJsonlBuffer(raw)) {
+      const usageSources = [event.usage, objectValue(event.response)?.usage,
+        objectValue(event.result)?.usage, objectValue(event.step_update)?.usage,
+        event.type === 'step_finish' ? objectValue(event.part)?.tokens : undefined]
+      for (const source of usageSources) {
+        const normalized = normalizeTokenUsage(source)
+        for (const key of ['input', 'output', 'cache'] as const) {
+          if (normalized[key] != null) tokenAvailability[key] = true
+        }
+      }
+      if (event.type === 'acp.result' || event.type === 'acp.usage' || event.type === 'turn.completed') {
+        // Final turn counters supersede streamed snapshots; do not add both.
+        const usage = normalizeTokenUsage(event.usage)
+        if (usage.input != null) inputTokens = usage.input
+        if (usage.output != null) outputTokens = usage.output
+        if (usage.cache != null) cacheReadTokens = usage.cache
+      }
       // Track timestamps for duration calculation
       const ts = event.timestamp ?? event.ts
       if (typeof ts === 'number') {
@@ -509,6 +527,7 @@ export class BuddyStore {
         if (resp.usage) {
           inputTokens = (resp.usage as Record<string, unknown>).input_tokens as number ?? inputTokens
           outputTokens = (resp.usage as Record<string, unknown>).output_tokens as number ?? outputTokens
+          cacheReadTokens = normalizeTokenUsage(resp.usage).cache ?? cacheReadTokens
         }
         if (resp.model) model = resp.model as string
       }
@@ -530,6 +549,8 @@ export class BuddyStore {
         if (u.prompt_tokens != null) inputTokens = (u.prompt_tokens as number) ?? inputTokens
         if (u.output_tokens != null) outputTokens = (u.output_tokens as number) ?? outputTokens
         if (u.completion_tokens != null) outputTokens = (u.completion_tokens as number) ?? outputTokens
+        const cache = normalizeTokenUsage(u).cache
+        if (cache != null && !(event.type === 'status' && event.phase === 'step_end')) cacheReadTokens = cache
       }
       if (event.model && typeof event.model === 'string' && !model) {
         model = event.model as string
@@ -564,11 +585,11 @@ export class BuddyStore {
         const tokens = objectValue(part?.tokens)
         if (tokens) {
           const cacheRead = (objectValue(tokens.cache)?.read as number) ?? 0
-          inputTokens = (tokens.input as number) ?? 0
-          cacheReadTokens = cacheRead
-          outputTokens = (tokens.output as number) ?? outputTokens
+          inputTokens += numberValue(tokens.input) ?? 0
+          cacheReadTokens += cacheRead
+          outputTokens += numberValue(tokens.output) ?? 0
         }
-        if (part?.cost != null) costUsd = part.cost as number
+        if (typeof part?.cost === 'number') costUsd = (costUsd ?? 0) + part.cost
         if (part?.respondedModelID) model = part.respondedModelID as string
         else if (part?.requestedModelID) model = part.requestedModelID as string
       }
@@ -655,7 +676,7 @@ export class BuddyStore {
       }
     }
 
-    return { runId, events, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
+    return { runId, events, tokenAvailability, inputTokens, outputTokens, cacheReadTokens, durationMs, costUsd, model }
   }
 
   /** Session id an actor used for this task, from persisted task state. */
@@ -718,9 +739,13 @@ export class BuddyStore {
       let costUsd: number | undefined
       let model: string | undefined
 
+      const tokenAvailability = { input: true, output: true, cache: true }
       for (const run of runs) {
         durationMs += run.elapsedMs
         const summary = await this.getRoundEvents(taskId, run.runId, workspaceKey, actor)
+        for (const key of ['input', 'output', 'cache'] as const) {
+          tokenAvailability[key] &&= summary?.tokenAvailability?.[key] ?? false
+        }
         if (summary) {
           inputTokens += summary.inputTokens
           outputTokens += summary.outputTokens
@@ -751,6 +776,7 @@ export class BuddyStore {
         const insight = sessionId ? await readKimiSessionInsight(sessionId) : undefined
         if (insight) {
           const WINDOW_SLACK_MS = 5_000
+          const matchedRuns = new Set<string>()
           for (const record of insight.records) {
             const run = runs.find((r) =>
               r.endTs != null &&
@@ -758,15 +784,18 @@ export class BuddyStore {
               record.timeMs <= r.endTs + WINDOW_SLACK_MS
             )
             if (!run) continue
+            matchedRuns.add(run.runId)
             inputTokens += record.inputTokens
             outputTokens += record.outputTokens
             cacheReadTokens += record.cacheReadTokens
           }
+          tokenAvailability.input = tokenAvailability.output = tokenAvailability.cache = matchedRuns.size === runs.length
           if (!model && insight.model) model = insight.model
         }
       }
 
       actors.push({
+        tokenAvailability,
         actor,
         model,
         inputTokens,
@@ -788,6 +817,11 @@ export class BuddyStore {
 
     return {
       actors,
+      tokenAvailability: {
+        input: actors.every(a => a.tokenAvailability?.input),
+        output: actors.every(a => a.tokenAvailability?.output),
+        cache: actors.every(a => a.tokenAvailability?.cache)
+      },
       totalInputTokens,
       totalOutputTokens,
       totalCacheReadTokens,

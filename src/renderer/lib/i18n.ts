@@ -480,6 +480,8 @@ const en = {
   'taskStats.cost': 'Cost',
   'taskStats.rounds': 'Rounds',
   'taskStats.total': 'Total',
+  'taskStats.unavailable': 'Not provided',
+  'taskStats.incomplete': '* Partial usage; some agents or rounds did not report token counts.',
 
   // StatusBar
   'statusBar.runStatus': 'Run status',
@@ -1111,6 +1113,8 @@ const zhCN: typeof en = {
   'taskStats.cost': '费用',
   'taskStats.rounds': '轮次',
   'taskStats.total': '合计',
+  'taskStats.unavailable': '未提供',
+  'taskStats.incomplete': '* 统计不完整：部分 Agent 或轮次未提供用量。',
 
   'statusBar.runStatus': '运行状态',
   'statusBar.taskSettings': '任务设置',
@@ -1738,6 +1742,8 @@ const zhTW: typeof en = {
   'taskStats.cost': '費用',
   'taskStats.rounds': '輪次',
   'taskStats.total': '合計',
+  'taskStats.unavailable': '未提供',
+  'taskStats.incomplete': '* 統計不完整：部分 Agent 或輪次未提供用量。',
 
   'statusBar.runStatus': '執行狀態',
   'statusBar.taskSettings': '任務設定',

@@ -69,6 +69,21 @@ describe('TaskNotifier', () => {
       )
     })
 
+    it('labels missing and partial token statistics instead of reporting zero totals', async () => {
+      const stats: TaskStats = {
+        actors: [], totalInputTokens: 100, totalOutputTokens: 0, totalCacheReadTokens: 0,
+        totalDurationMs: 1000, totalRounds: 2,
+        tokenAvailability: { input: false, output: false, cache: true }
+      }
+      const { createTaskNotifier } = await import('../../../src/main/buddy/notifications')
+      await createTaskNotifier(createMockStore({ stats })).notifyTaskDone('demo', 'ws', 'dual_break_confirmed')
+      const Notification = await getNotificationMock()
+      const body = Notification.mock.calls[0][0].body
+      expect(body).toContain('输入 100（统计不完整）')
+      expect(body).toContain('输出 未提供')
+      expect(body).toContain('Cache 0')
+    })
+
     it('sends a completion notification without stats', async () => {
       const store = createMockStore()
       const { createTaskNotifier } = await import('../../../src/main/buddy/notifications')

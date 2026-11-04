@@ -1,3 +1,4 @@
+import { normalizeTokenUsage } from './token-usage'
 import { acquireAgentUse } from './agents/locks'
 import { access, appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -1165,6 +1166,13 @@ export class BuddyRunner {
 
       let outputText = ''
       let breakReason: string | undefined
+      let usageWrites = Promise.resolve()
+      const persistUsage = (type: string, raw: unknown): Promise<void> => {
+        const usage = normalizeTokenUsage(raw)
+        return appendFile(eventFile, JSON.stringify({ type, usage: {
+          inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cache
+        } }) + '\n')
+      }
 
       const promptResult = await client.prompt(
         { sessionId, prompt },
@@ -1183,6 +1191,9 @@ export class BuddyRunner {
                 payload: { text, stream: 'delta' }
               }
             })
+          },
+          onUsage: (usage) => {
+            usageWrites = usageWrites.then(() => persistUsage('acp.usage', usage))
           },
           onThinkingDelta: (thinking) => {
             void appendFile(eventFile, JSON.stringify({ type: 'acp.thinking', thinking }) + '\n').catch(() => {})
@@ -1220,6 +1231,11 @@ export class BuddyRunner {
           }
         }
       )
+
+      // Persist the completed turn even when the agent omits usage. Never
+      // persist the whole response: extensions may contain sensitive data.
+      await usageWrites
+      await persistUsage('acp.result', promptResult.usage)
 
       if (isAcpPromptContextOverflow(promptResult)) {
         throw new Error(describeAcpPromptOverflow(promptResult))

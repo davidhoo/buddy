@@ -56,7 +56,7 @@ export function createTaskNotifier(store: BuddyStore): TaskNotifier {
       } else {
         const stats = await getTaskStats(taskId, workspaceKey)
         if (stats) {
-          body = `任务：${taskId}\n状态：已完成\n合计：${stats.totalRounds} 轮 · ${formatDuration(stats.totalDurationMs)} · 输入 ${formatNumber(stats.totalInputTokens)} · 输出 ${formatNumber(stats.totalOutputTokens)} · Cache ${formatNumber(stats.totalCacheReadTokens)}`
+          body = `任务：${taskId}\n状态：已完成\n合计：${stats.totalRounds} 轮 · ${formatDuration(stats.totalDurationMs)} · 输入 ${formatTokenCount(stats.totalInputTokens, stats.tokenAvailability?.input)} · 输出 ${formatTokenCount(stats.totalOutputTokens, stats.tokenAvailability?.output)} · Cache ${formatTokenCount(stats.totalCacheReadTokens, stats.tokenAvailability?.cache)}`
         } else {
           body = `任务：${taskId}\n状态：已完成\n双方均已确认任务结束。`
         }
@@ -106,6 +106,6 @@ function formatDuration(ms: number): string {
 }
 
 /** Format a number with locale-appropriate thousands separators */
-function formatNumber(n: number): string {
-  return n.toLocaleString()
+function formatTokenCount(n: number, available?: boolean): string {
+  return available === false ? (n > 0 ? `${n.toLocaleString()}（统计不完整）` : '未提供') : n.toLocaleString()
 }

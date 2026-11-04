@@ -60,6 +60,26 @@ class MockAcpTransport implements AcpTransport {
 }
 
 describe('AcpClient', () => {
+  it('forwards explicit turn usage without treating context occupancy as token consumption', async () => {
+    const transport = new MockAcpTransport()
+    const client = new AcpClient(transport)
+    const onUsage = vi.fn()
+    const pending = client.prompt({ sessionId: 'session', prompt: 'hello' }, { onUsage })
+    const req = transport.sentMessages[0] as JsonRpcRequest
+    transport.simulateMessage({ jsonrpc: '2.0', method: 'session/update', params: {
+      update: { sessionUpdate: 'usage_update', used: 12000, size: 200000, cost: { amount: 1, currency: 'USD' } }
+    } })
+    expect(onUsage).not.toHaveBeenCalled()
+    const usage = { inputTokens: 100, outputTokens: 20, cachedReadTokens: 80 }
+    transport.simulateMessage({ jsonrpc: '2.0', method: 'session/update', params: {
+      update: { sessionUpdate: 'state_update', state: 'idle', usage }
+    } })
+    expect(onUsage).toHaveBeenCalledWith(usage)
+    transport.simulateMessage({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn', usage } })
+    expect(await pending).toMatchObject({ usage })
+    await client.close()
+  })
+
   it('performs initialize handshake with capabilities', async () => {
     const transport = new MockAcpTransport()
     const client = new AcpClient(transport)

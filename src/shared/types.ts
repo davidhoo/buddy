@@ -366,7 +366,16 @@ export interface RoundEventEntry {
   model?: string
 }
 
+/** True only when every contributing round reported this counter. Numeric
+ * totals retain the known subtotal when availability is false. */
+export interface TokenAvailability {
+  input: boolean
+  output: boolean
+  cache: boolean
+}
+
 export interface RoundEventSummary {
+  tokenAvailability?: TokenAvailability
   runId: string
   events: RoundEventEntry[]
   inputTokens: number
@@ -378,6 +387,7 @@ export interface RoundEventSummary {
 }
 
 export interface TaskActorStats {
+  tokenAvailability?: TokenAvailability
   actor: string
   model?: string
   inputTokens: number
@@ -389,6 +399,7 @@ export interface TaskActorStats {
 }
 
 export interface TaskStats {
+  tokenAvailability?: TokenAvailability
   actors: TaskActorStats[]
   totalInputTokens: number
   totalOutputTokens: number

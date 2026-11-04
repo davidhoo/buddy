@@ -380,8 +380,16 @@ function TaskDoneStats({ stats }: { stats: TaskStats }) {
 
   if (!stats || stats.actors.length === 0) return null
 
+  const formatTokens = (value: number, available?: boolean): string => {
+    if (available !== false) return value.toLocaleString()
+    return value > 0 ? `${value.toLocaleString()}*` : t('taskStats.unavailable')
+  }
+
   return (
     <div className="task-done-stats">
+      {stats.tokenAvailability && Object.values(stats.tokenAvailability).some(v => !v) && (
+        <div>{t('taskStats.incomplete')}</div>
+      )}
       <table className="task-done-stats-table">
         <thead>
           <tr>
@@ -399,9 +407,9 @@ function TaskDoneStats({ stats }: { stats: TaskStats }) {
             <tr key={a.actor}>
               <td className="task-done-stats-actor">{actorText(a.actor, lang)}</td>
               <td className="task-done-stats-model">{a.model ?? '-'}</td>
-              <td className="task-done-stats-num">{a.inputTokens.toLocaleString()}</td>
-              <td className="task-done-stats-num">{a.outputTokens.toLocaleString()}</td>
-              <td className="task-done-stats-num">{a.cacheReadTokens.toLocaleString()}</td>
+              <td className="task-done-stats-num">{formatTokens(a.inputTokens, a.tokenAvailability?.input)}</td>
+              <td className="task-done-stats-num">{formatTokens(a.outputTokens, a.tokenAvailability?.output)}</td>
+              <td className="task-done-stats-num">{formatTokens(a.cacheReadTokens, a.tokenAvailability?.cache)}</td>
               <td>{formatDuration(a.durationMs)}</td>
               <td className="task-done-stats-num">{a.rounds}</td>
             </tr>
@@ -409,9 +417,9 @@ function TaskDoneStats({ stats }: { stats: TaskStats }) {
           <tr className="task-done-stats-total">
             <td>{t('taskStats.total')}</td>
             <td />
-            <td className="task-done-stats-num">{stats.totalInputTokens.toLocaleString()}</td>
-            <td className="task-done-stats-num">{stats.totalOutputTokens.toLocaleString()}</td>
-            <td className="task-done-stats-num">{stats.totalCacheReadTokens.toLocaleString()}</td>
+            <td className="task-done-stats-num">{formatTokens(stats.totalInputTokens, stats.tokenAvailability?.input)}</td>
+            <td className="task-done-stats-num">{formatTokens(stats.totalOutputTokens, stats.tokenAvailability?.output)}</td>
+            <td className="task-done-stats-num">{formatTokens(stats.totalCacheReadTokens, stats.tokenAvailability?.cache)}</td>
             <td>{formatDuration(stats.totalDurationMs)}</td>
             <td className="task-done-stats-num">{stats.totalRounds}</td>
           </tr>

@@ -404,11 +404,16 @@ describe('BuddyRunner with ACP protocol', () => {
             params: { text: 'Done running tests.' }
           }) + '\\n');
 
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0', method: 'session/update',
+            params: { update: { sessionUpdate: 'state_update', state: 'idle',
+              usage: { inputTokens: 100, outputTokens: 20, cachedReadTokens: 80 } } }
+          }) + '\\n');
           // Complete
           process.stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,
-            result: { status: 'completed' }
+            result: { status: 'completed', usage: { inputTokens: 100, outputTokens: 20, cachedReadTokens: 80 } }
           }) + '\\n');
         }
       });
@@ -446,6 +451,9 @@ describe('BuddyRunner with ACP protocol', () => {
 
     // Query round events
     const summary = await store.getRoundEvents('art-demo', runId, created.workspace_key, 'opencode')
+    expect(summary).toMatchObject({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 80,
+      tokenAvailability: { input: true, output: true, cache: true } })
+    expect(await store.getTaskStats('art-demo', created.workspace_key)).toMatchObject({ totalInputTokens: 100, totalOutputTokens: 20, totalCacheReadTokens: 80 })
     expect(summary).not.toBeNull()
     expect(summary?.events.some((e) => e.type === 'thinking' && e.thinkingLength! > 0)).toBe(true)
     expect(summary?.events.some((e) => e.type === 'tool_use' && e.toolName === 'bash')).toBe(true)

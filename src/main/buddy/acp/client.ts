@@ -24,6 +24,7 @@ export interface AcpPromptHandlers {
   onThinkingDelta?: (thinking: string) => void
   onToolCall?: (id: string, name: string, input: Record<string, unknown>) => void
   onToolResult?: (id: string, result: unknown, isError?: boolean) => void
+  onUsage?: (usage: Record<string, unknown>) => void
   onBreak?: (reason?: string) => void
   /**
    * Optional custom tool executor for host-provided tools
@@ -157,6 +158,10 @@ export class AcpClient {
         if (!update) break
 
         const sessionUpdate = update.sessionUpdate
+        // usage_update.used/size describe context occupancy, not billed tokens.
+        if (update.usage && typeof update.usage === 'object') {
+          handlers.onUsage?.(update.usage as Record<string, unknown>)
+        }
 
         if (sessionUpdate === 'agent_message_chunk' || sessionUpdate === 'content_chunk') {
           const content = update.content as Record<string, unknown> | undefined

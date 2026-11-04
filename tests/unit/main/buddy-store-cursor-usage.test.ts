@@ -49,6 +49,64 @@ afterEach(async () => {
 })
 
 describe('BuddyStore Cursor usage', () => {
+  it.each([
+    ['acp.result', { inputTokens: 100, outputTokens: 20, cachedReadTokens: 80 }],
+    ['turn.completed', { input_tokens: 100, output_tokens: 20, cached_input_tokens: 80 }],
+    ['response.completed', { input_tokens: 100, output_tokens: 20, input_tokens_details: { cached_tokens: 80 } }],
+  ])('reads %s token counters', async (type, usage) => {
+    const { root, taskDir } = await createTaskDir()
+    const event = type === 'response.completed' ? { type, response: { usage } } : { type, usage }
+    await writeFile(join(taskDir, 'artifacts', 'run-events.jsonl'), JSON.stringify(event))
+    const { BuddyStore } = await import('../../../src/main/buddy/store')
+    expect(await new BuddyStore(root).getRoundEvents('demo', 'run', WORKSPACE_KEY)).toMatchObject({
+      inputTokens: 100, outputTokens: 20, cacheReadTokens: 80,
+      tokenAvailability: { input: true, output: true, cache: true }
+    })
+  })
+
+  it('distinguishes absent counters and context occupancy from explicit zero', async () => {
+    const { root, taskDir } = await createTaskDir()
+    await writeFile(join(taskDir, 'artifacts', 'run-events.jsonl'), [
+      { type: 'acp.usage', usage: { used: 12000, size: 200000 } },
+      { type: 'acp.result', usage: { inputTokens: 0, outputTokens: null, cachedReadTokens: -1 } }
+    ].map(x => JSON.stringify(x)).join('\n'))
+    const { BuddyStore } = await import('../../../src/main/buddy/store')
+    expect(await new BuddyStore(root).getRoundEvents('demo', 'run', WORKSPACE_KEY)).toMatchObject({
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
+      tokenAvailability: { input: true, output: false, cache: false }
+    })
+  })
+
+  it('marks totals incomplete when another actor has no usage artifacts', async () => {
+    const { root, taskDir } = await createTaskDir()
+    await writeCursorRun(taskDir, 'known', { inputTokens: 100, outputTokens: 20, cacheReadTokens: 80, cacheWriteTokens: 0 }, 1000)
+    await writeFile(join(taskDir, 'transcript.jsonl'), [
+      { role: 'cursor', content: 'done', meta: { run_id: 'known', elapsed_ms: 1000 } },
+      { role: 'codex', content: 'done', meta: { run_id: 'missing', elapsed_ms: 1000 } }
+    ].map(x => JSON.stringify(x)).join('\n'))
+    const { BuddyStore } = await import('../../../src/main/buddy/store')
+    expect(await new BuddyStore(root).getTaskStats('demo', WORKSPACE_KEY)).toMatchObject({
+      totalInputTokens: 100, totalOutputTokens: 20, totalCacheReadTokens: 80,
+      tokenAvailability: { input: false, output: false, cache: false },
+      actors: [
+        { actor: 'cursor', tokenAvailability: { input: true, output: true, cache: true } },
+        { actor: 'codex', tokenAvailability: { input: false, output: false, cache: false } }
+      ]
+    })
+  })
+
+  it('sums OpenCode step usage and cost', async () => {
+    const { root, taskDir } = await createTaskDir()
+    await writeFile(join(taskDir, 'artifacts', 'run-events.jsonl'), [
+      { type: 'step_finish', part: { tokens: { input: 100, output: 20, cache: { read: 80 } }, cost: 0.1 } },
+      { type: 'step_finish', part: { tokens: { input: 200, output: 40, cache: { read: 160 } }, cost: 0.2 } }
+    ].map(x => JSON.stringify(x)).join('\n'))
+    const { BuddyStore } = await import('../../../src/main/buddy/store')
+    const summary = await new BuddyStore(root).getRoundEvents('demo', 'run', WORKSPACE_KEY)
+    expect(summary).toMatchObject({ inputTokens: 300, outputTokens: 60, cacheReadTokens: 240 })
+    expect(summary?.costUsd).toBeCloseTo(0.3)
+  })
+
   it('parses camelCase token usage from the Cursor result event', async () => {
     const { root, taskDir } = await createTaskDir()
     const runId = 'run_cursor_1'
