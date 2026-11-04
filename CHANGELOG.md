@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.19] - 2026-11-04
+
+### Added
+- MCP 支持 DeepSeek Harness（dsh）`cordis.patch.yml` 读写（`dsh-patch` 格式），并纳入发现与分配
+- MCP 发现按规范化配置去重聚合多 Agent 来源；目录页可批量/单项导入，并支持解除管理（保留 Agent 侧配置）
+- WeCode Claude / OpenCode 目标开放 MCP 读写；MCP 分配芯片按 Agent 聚合展示
+
+### Changed
+- Codex TOML MCP 发现改用完整解析（`smol-toml`），正确读取 env/数组等复杂字段
+- 库快照中的 MCP 分配状态跟随各 Agent 当前文件刷新（含外部编辑与导入前已有副本）
+- 同名冲突仅在配置实质不同且非同一本地启动器时拦截；分配时保留 `cwd` / `enabled` / 超时等原生字段
+
+### Fixed
+- MCP 导入按名称去重入库，并一次关联所有已发现来源目标
+
+---
+
 ## [2.0.18] - 2026-11-04
 
 ### Fixed
