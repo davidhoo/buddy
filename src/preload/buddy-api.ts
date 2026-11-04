@@ -140,7 +140,7 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:gitPushAvailability', repoRoot, remote) as Promise<import('../shared/types').GitPushAvailability>,
     gitPush: (repoRoot: string, remote: string): Promise<import('../shared/types').GitPushResult> =>
       ipc.invoke('buddy:gitPush', repoRoot, remote) as Promise<import('../shared/types').GitPushResult>,
-    generateCommitMessage: (input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: import('../shared/types').TaskSettings | null }): Promise<{ message: string }> =>
+    generateCommitMessage: (input: { repoRoot: string; actor: string; model?: string; lang?: string; paths: string[]; taskSettings?: import('../shared/types').TaskSettings | null }): Promise<{ message: string }> =>
       ipc.invoke('buddy:generateCommitMessage', input) as Promise<{ message: string }>,
     cancelGenerateCommitMessage: (): Promise<void> =>
       ipc.invoke('buddy:cancelGenerateCommitMessage') as Promise<void>,

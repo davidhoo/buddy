@@ -30,7 +30,7 @@ import { readStringArraySetting, visibleTasksForShortcuts, markTaskAsRead, readL
 import type { GlobalSettings, InstructionQueueItem, Attachment, AttachmentMeta, Launcher } from '../shared/types'
 import { IMAGE_EXTS, MIME_MAP, EXT_ICON_MAP, isImageAttachment, generateAttachmentId, ensureMimeType } from './lib/attachments'
 import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, normalizeLauncher } from '../shared/defaults'
-import { agentTaskSelectable, resolveEffectiveAgentLaunch } from '../shared/agents'
+import { selectableAgentIds, resolveEffectiveAgentLaunch } from '../shared/agents'
 import { TASK_ID_MAX_CODE_POINTS, validateTaskId } from '../shared/task-id'
 
 export default function App() {
@@ -933,7 +933,7 @@ export function CreateTaskModal({
   const {data:agentInventory} = useAgentInventory()
   const localAgents=agentInventory?.agents
   const normalizedGlobalSettings = normalizeGlobalSettings(globalSettings)
-  const availableActors = localAgents ? localAgents.filter(agentTaskSelectable).map(a=>a.id) : typeof window.buddy?.listLocalAgents === 'function' ? [] : [...DEFAULT_LAUNCHER_ORDER]
+  const availableActors = localAgents ? selectableAgentIds(localAgents) : typeof window.buddy?.listLocalAgents === 'function' ? [] : [...DEFAULT_LAUNCHER_ORDER]
   const actorName = (id:string) => ACTOR_LABEL_KEY[id] ? t(ACTOR_LABEL_KEY[id]) : localAgents?.find(a=>a.id===id)?.name || id
 
   const effectiveLaunchFor = (a: Actor) => resolveEffectiveAgentLaunch(

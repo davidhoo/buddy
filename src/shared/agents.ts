@@ -1,4 +1,4 @@
-import type { Launcher } from './types'
+import type { GlobalSettings, TaskSettings, Launcher } from './types'
 export interface AgentRecipe {
   id: string; name: string; command: string; aliases?: string[]; npm?: string; brew?: string; app?: string
   /** Known relative CLI paths inside the macOS .app bundle (not recursive guesses). */
@@ -277,4 +277,31 @@ export function agentUpdateGroupKey(agent: LocalAgent): string {
 export function hasAgentUpdate(agent: LocalAgent): boolean {
   const version = agent.nativeUpdate?.version || agent.version
   return !!(agent.latest && version && (agent.manager || agent.nativeUpdate) && isNewerStableVersion(agent.latest, version))
+}
+
+/** Shared picker order follows the inventory, with readiness scoped to its active protocol. */
+export function selectableAgentIds(agents: LocalAgent[]): string[] {
+  return agents.filter(agentTaskSelectable).map(agent => agent.id)
+}
+
+/** Commit generation uses today's executable configuration, inheriting only a compatible task model. */
+export function resolveCommitAgentLaunch(agent: LocalAgent, settings: GlobalSettings | null, task?: TaskSettings | null): Launcher | undefined {
+  const { protocol, launcher } = resolveEffectiveAgentLaunch(agent, {
+    agentConfig: settings?.agent_management?.[agent.id],
+    savedLauncher: settings?.launchers?.[agent.id]
+  })
+  if (!launcher?.command || !agent.enabled || !agentProtocolReady(agent, protocol)) return undefined
+  const previous = task?.launchers?.[agent.id]
+  const compatible = previous && (previous.protocol ?? 'cli') === protocol
+    && previous.command === launcher.command
+    && JSON.stringify(previous.args ?? []) === JSON.stringify(launcher.args ?? [])
+    && JSON.stringify(previous.env ?? {}) === JSON.stringify(launcher.env ?? {})
+  return {
+    ...launcher,
+    protocol,
+    command: launcher.command,
+    env: launcher.env ?? {},
+    timeout_seconds: launcher.timeout_seconds ?? 7200,
+    model: (compatible ? previous.model : undefined) || launcher.model
+  }
 }

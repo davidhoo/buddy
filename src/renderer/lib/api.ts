@@ -82,7 +82,7 @@ export const api = {
     buddy().gitPushAvailability(repoRoot, remote),
   gitPush: (repoRoot: string, remote: string): Promise<import('../../shared/types').GitPushResult> =>
     buddy().gitPush(repoRoot, remote),
-  generateCommitMessage: (input: { repoRoot: string; actor: string; lang?: string; paths: string[]; taskSettings?: import('../../shared/types').TaskSettings | null }) =>
+  generateCommitMessage: (input: { repoRoot: string; actor: string; model?: string; lang?: string; paths: string[]; taskSettings?: import('../../shared/types').TaskSettings | null }) =>
     buddy().generateCommitMessage(input),
   cancelGenerateCommitMessage: () =>
     buddy().cancelGenerateCommitMessage(),

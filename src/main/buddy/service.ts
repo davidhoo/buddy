@@ -39,9 +39,7 @@ import {
 import type { GitStatusResult, GitCommitPushResult, GitPushAvailability, GitPushResult, TaskSettings } from '../../shared/types'
 import {
   generateCommitMessageWithActor,
-  cancelGenerateCommitMessage as cancelCommitMessage,
-  resolveLauncher,
-  isSupportedActor
+  cancelGenerateCommitMessage as cancelCommitMessage
 } from './commit-message' 
 import { BuddyRunner } from './runner'
 import { BuddyStore } from './store'
@@ -54,7 +52,7 @@ import { buildLauncherCommand, commandKindFor, kindNeedsPty, LauncherTimeoutErro
 import { AcpClient, AcpStdioTransport, defaultAcpArgs, prepareAcpEnvironment, probeAcpModels, resolveAcpBinary, checkGlobalAcpAdapters, type GlobalAcpAdaptersStatus } from './acp'
 import { detectModelFromConfig } from './model-detect'
 import { DEFAULT_LAUNCHER_ORDER, normalizeGlobalSettings, defaultLauncherFor, normalizeLauncher } from '../../shared/defaults'
-import { resolveProtocolLauncher } from '../../shared/agents'
+import { resolveProtocolLauncher, resolveCommitAgentLaunch } from '../../shared/agents'
 import { buildPingPrompt, actorDisplayName } from './prompts'
 import { parseActorEvents, parseBuddyMessage } from './parsers'
 import { collectRawEvents, collectOutputText, lastValue, isCliWarningOnly } from './runner'
@@ -517,14 +515,17 @@ export class BuddyCoreService {
   async generateCommitMessage(input: {
     repoRoot: string
     actor: string
+    model?: string
     lang?: string
     paths: string[]
     taskSettings?: TaskSettings | null
   }): Promise<{ message: string }> {
     const globalSettings = await this.store.readGlobalSettings()
-    if(!isSupportedActor(input.actor) && !input.taskSettings?.launchers?.[input.actor] && !globalSettings.launchers?.[input.actor]) throw new Error('Agent unavailable')
     const actor = input.actor
-    const launcher = resolveLauncher(actor, input.taskSettings, globalSettings)
+    const agent = (await this.agents.getInventory()).agents.find(item => item.id === actor)
+    const launcher = agent && resolveCommitAgentLaunch(agent, globalSettings, input.taskSettings)
+    if (!launcher) throw new Error('Agent unavailable: ' + actor)
+    if (input.model !== undefined) launcher.model = input.model === '__native__' ? undefined : input.model.trim() || undefined
     const result = await generateCommitMessageWithActor({
       repoRoot: input.repoRoot,
       actor,
