@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-11-04
+
+### Added
+- 设置新增 Skills / MCP 一级页：发现本机 Agent 已有技能与 MCP，导入 Buddy 库后按 Agent 分配；技能支持 eject，MCP 支持手动新增（stdio / HTTP / SSE 与 JSON），并对 JSONC / TOML 做无损局部写回与格式转换
+- MCP 分配前检测目标侧同名冲突；提供认证指引、打开库目录 / 备份目录，以及按需初始化 Codex ACP 隔离 home
+
+### Changed
+- Skills 发现收紧：仅合法目录名、跳过 `.system` 与 plugins cache/marketplaces、按真实路径去重；缺少 `SKILL.md` 的目录不再当作技能
+- Skills / MCP 列表改为紧凑目录布局，支持 A–Z / Z–A 排序；MCP 以手动新增为主入口
+
+---
+
 ## [2.0.12] - 2026-11-02
 
 ### Changed
