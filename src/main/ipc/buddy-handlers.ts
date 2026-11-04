@@ -74,6 +74,7 @@ export interface BuddyHandlerService {
   importLibrarySkills?(discoveryIds: string[]): Promise<import('../../shared/library').LibraryBatchResult>
   setLibrarySkillAssignment?(skillId: string, targetId: string, enabled: boolean): Promise<import('../../shared/library').LibraryOpResult>
   ejectLibrarySkill?(skillId: string): Promise<import('../../shared/library').LibraryOpResult>
+  addLibraryServer?(name: string, raw: Record<string, unknown>): Promise<import('../../shared/library').LibraryOpResult>
   importLibraryServers?(discoveryIds: string[]): Promise<import('../../shared/library').LibraryBatchResult>
   setLibraryServerAssignment?(serverId: string, targetId: string, enabled: boolean): Promise<import('../../shared/library').LibraryOpResult>
   openLibraryAuthGuidance?(targetId: string, serverName: string): Promise<{ title: string; steps: string[] }>
@@ -94,7 +95,7 @@ export function registerBuddyHandlers(ipcMain: IpcHandle, service: BuddyHandlerS
   }
   for (const method of [
     'getLibrarySnapshot','refreshLibrary','importLibrarySkills','setLibrarySkillAssignment','ejectLibrarySkill',
-    'importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
+    'addLibraryServer','importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
     'openLibraryBackupsDir','ensureLibraryAcpHome'
   ] as const) {
     ipcMain.handle('buddy:'+method, (_event, ...args: unknown[]) => {

@@ -5,7 +5,7 @@ import type {
   LibrarySnapshot
 } from '../../../shared/library'
 import { discoverMcpServers, discoverSkills } from './discovery'
-import { assignServerToTarget, importDiscoveredServer } from './mcp'
+import { addServer, assignServerToTarget, importDiscoveredServer } from './mcp'
 import { authGuidance, openTerminalGuidance, probeAuth } from './native-auth'
 import { assignSkillToTarget, ejectSkill, importDiscoveredSkill } from './skills'
 import { LibraryStore } from './store'
@@ -96,7 +96,6 @@ export class LibraryService {
       const results: LibraryOpResult[] = []
       for (const id of discoveryIds) {
         const discovered = (await discoverSkills(snap.targets, snap.skills)).find((d) => d.discoveryId === id)
-          || snap.discoveredSkills.find((d) => d.discoveryId === id)
         if (!discovered) {
           results.push({ status: 'failed', message: `not found: ${id}` })
           continue
@@ -123,6 +122,14 @@ export class LibraryService {
     return this.enqueue(async () => {
       const result = await ejectSkill(this.store, skillId)
       await this.refresh(true)
+      return result
+    })
+  }
+
+  addServer(name: string, raw: Record<string, unknown>): Promise<LibraryOpResult> {
+    return this.enqueue(async () => {
+      const result = await addServer(this.store, name, raw)
+      if (result.status === 'ok') await this.refresh(true)
       return result
     })
   }

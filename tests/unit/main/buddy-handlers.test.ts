@@ -3,7 +3,7 @@ import { registerBuddyHandlers } from '../../../src/main/ipc/buddy-handlers'
 
 const libraryMethods = [
   'getLibrarySnapshot','refreshLibrary','importLibrarySkills','setLibrarySkillAssignment','ejectLibrarySkill',
-  'importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
+  'addLibraryServer','importLibraryServers','setLibraryServerAssignment','openLibraryAuthGuidance','openLibraryDir',
   'openLibraryBackupsDir','ensureLibraryAcpHome'
 ] as const
 
@@ -60,6 +60,7 @@ describe('registerBuddyHandlers', () => {
       importLibrarySkills: vi.fn(),
       setLibrarySkillAssignment: vi.fn(),
       ejectLibrarySkill: vi.fn(),
+      addLibraryServer: vi.fn(),
       importLibraryServers: vi.fn(),
       setLibraryServerAssignment: vi.fn(),
       openLibraryAuthGuidance: vi.fn(),
@@ -111,10 +112,15 @@ describe('registerBuddyHandlers', () => {
     importSkills({}, ['id-1'])
     expect(service.importLibrarySkills).toHaveBeenCalledWith(['id-1'])
 
+    const addServer = handle.mock.calls.find(([channel]) => channel === 'buddy:addLibraryServer')![1]
+    const config = { type: 'http', url: 'https://example.com/mcp' }
+    addServer({}, 'docs', config)
+    expect(service.addLibraryServer).toHaveBeenCalledWith('docs', config)
+
     const assignServer = handle.mock.calls.find(([channel]) => channel === 'buddy:setLibraryServerAssignment')![1]
     assignServer({}, 'server-1', 'codex:buddy-acp:user', true)
     expect(service.setLibraryServerAssignment).toHaveBeenCalledWith('server-1', 'codex:buddy-acp:user', true)
 
-    expect(handle).toHaveBeenCalledTimes(62)
+    expect(handle).toHaveBeenCalledTimes(63)
   })
 })

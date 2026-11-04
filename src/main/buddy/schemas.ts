@@ -311,6 +311,7 @@ export const libraryServerSchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   url: z.string().optional(),
+  note: z.string().optional(),
   summary: z.string(),
   raw: z.record(z.string(), z.unknown()),
   sourceTargetId: z.string().optional(),

@@ -109,6 +109,7 @@ export class BuddyCoreService {
     return this.library.setSkillAssignment(skillId, targetId, enabled)
   }
   ejectLibrarySkill(skillId: string) { return this.library.ejectSkill(skillId) }
+  addLibraryServer(name: string, raw: Record<string, unknown>) { return this.library.addServer(name, raw) }
   importLibraryServers(discoveryIds: string[]) { return this.library.importServers(discoveryIds) }
   setLibraryServerAssignment(serverId: string, targetId: string, enabled: boolean) {
     return this.library.setServerAssignment(serverId, targetId, enabled)

@@ -30,7 +30,7 @@ function summaryOf(raw: Record<string, unknown>): string {
   return transportOf(raw)
 }
 
-async function readSkillMeta(dir: string): Promise<{ name: string; description?: string }> {
+async function readSkillMeta(dir: string): Promise<{ name: string; description?: string } | undefined> {
   try {
     const text = await readFile(join(dir, 'SKILL.md'), 'utf8')
     const name = /^name:\s*(.+)$/m.exec(text)?.[1]?.trim()
@@ -41,7 +41,7 @@ async function readSkillMeta(dir: string): Promise<{ name: string; description?:
       || undefined
     return { name, description }
   } catch {
-    return { name: dir.split(/[/\\]/).filter(Boolean).pop() || 'skill' }
+    return undefined
   }
 }
 
@@ -65,21 +65,21 @@ export async function discoverSkills(
       continue
     }
     for (const entry of entries) {
+      // Match Magpie's user skill directory names; skip hidden and namespaced entries.
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(entry.name)) continue
       if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
       const path = join(target.skillsDir, entry.name)
-      let physicalKey = path
-      try {
-        physicalKey = await realpath(path)
-      } catch { /* keep path */ }
-      const dedupe = `${target.targetId}:${physicalKey}`
-      if (seen.has(dedupe)) continue
-      seen.add(dedupe)
+      const physicalKey = await realpath(path).catch(() => undefined)
+      if (!physicalKey || seen.has(physicalKey)) continue
+      if (physicalKey.split('/').includes('.system') || /\/plugins\/(cache|marketplaces)\//.test(physicalKey)) continue
+      const meta = await readSkillMeta(path)
+      if (!meta) continue
+      seen.add(physicalKey)
       const link = await lstat(path).then((s) => s.isSymbolicLink()).catch(() => false)
       const git = await isGitRoot(path)
-      const meta = await readSkillMeta(path)
       const alreadyImported = importedKeys.has(physicalKey) || librarySkills.some((s) => s.name === meta.name && s.managed)
       out.push({
-        discoveryId: dedupe,
+        discoveryId: physicalKey,
         name: meta.name,
         description: meta.description,
         path,

@@ -73,6 +73,7 @@ export interface LibraryMcpServer {
   command?: string
   args?: string[]
   url?: string
+  note?: string
   /** Non-secret summary fields only. */
   summary: string
   raw: Record<string, unknown>

@@ -10,7 +10,8 @@ import { convertMcpRawForTarget } from './convert'
 import { removeMcpServerJsonc, writeMcpServerJsonc } from './edit/jsonc'
 import { deleteMcpServerToml, setMcpServerToml } from './edit/toml'
 import { LibraryStore, upsertServer } from './store'
-import { summaryOf, transportOf } from './discovery'
+import { discoverMcpServers, summaryOf, transportOf } from './discovery'
+import { splitCommand } from '../launchers'
 import { ensureCodexAcpHome } from './ensure-codex-acp-home'
 
 function toStoredRaw(raw: Record<string, unknown>): Record<string, unknown> {
@@ -34,12 +35,66 @@ function serverRecord(input: {
     args: Array.isArray(input.raw.args) ? input.raw.args.map(String) : undefined,
     url: typeof input.raw.url === 'string' ? input.raw.url : undefined,
     summary: summaryOf(input.raw),
+    note: typeof input.raw.note === 'string' ? input.raw.note : undefined,
     raw: toStoredRaw(input.raw),
     sourceTargetId: input.sourceTargetId,
     scope: 'user',
     assignedTargetIds: input.assignedTargetIds,
     managed: true
   }
+}
+
+export async function addServer(
+  store: LibraryStore,
+  name: string,
+  raw: Record<string, unknown>
+): Promise<LibraryOpResult> {
+  if (typeof name !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+    return { status: 'rejected', message: 'Use 1–64 letters, digits, hyphens or underscores for the name.' }
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { status: 'rejected', message: 'Expected an MCP configuration object.' }
+  }
+  const { type, env, url, headers, note, startup_timeout_sec } = raw
+  const [command, ...args] = typeof raw.commandLine === 'string'
+    ? splitCommand(raw.commandLine.trim())
+    : [raw.command, ...(Array.isArray(raw.args) ? raw.args : [])]
+  if ((raw.args !== undefined && !Array.isArray(raw.args)) ||
+      (startup_timeout_sec !== undefined && (typeof startup_timeout_sec !== 'number' ||
+        !Number.isSafeInteger(startup_timeout_sec) || startup_timeout_sec < 1))) {
+    return { status: 'rejected', message: 'Enter valid arguments and a positive startup timeout in seconds.' }
+  }
+  const isStringMap = (value: unknown) => value === undefined ||
+    (!!value && typeof value === 'object' && !Array.isArray(value) &&
+      Object.values(value).every((entry) => typeof entry === 'string'))
+
+  let config: Record<string, unknown>
+  if (type === 'stdio') {
+    if (typeof command !== 'string' || !command.trim() ||
+        (args !== undefined && (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string'))) ||
+        !isStringMap(env)) {
+      return { status: 'rejected', message: 'Enter a command, an array of string arguments, and string environment values.' }
+    }
+    config = { type, command: command.trim(), args, env }
+  } else if (type === 'http' || type === 'sse') {
+    const address = typeof url === 'string' && URL.canParse(url.trim()) ? new URL(url.trim()) : null
+    if (!address || !['http:', 'https:'].includes(address.protocol) || !isStringMap(headers)) {
+      return { status: 'rejected', message: 'Enter an HTTP(S) URL and string header values.' }
+    }
+    config = { type, url: address.href, headers }
+  } else {
+    return { status: 'rejected', message: 'Choose Command, HTTP or SSE.' }
+  }
+
+  const meta = await store.readMeta()
+  if (meta.servers.some((server) => server.name === name)) {
+    return { status: 'exists', message: 'A server with this name already exists in the library.' }
+  }
+  if (typeof note === 'string' && note.trim()) config.note = note.trim().slice(0, 500)
+  if (startup_timeout_sec !== undefined) config.startup_timeout_sec = startup_timeout_sec
+  const record = serverRecord({ name, raw: config, assignedTargetIds: [] })
+  await store.writeMeta(upsertServer(meta, record))
+  return { status: 'ok', id: record.id, name }
 }
 
 export async function importDiscoveredServer(
@@ -64,6 +119,9 @@ async function writeServerToTarget(target: LibraryTarget, name: string, raw: Rec
   if (!target.mcpPath) throw new Error('target has no MCP path')
   if (target.mcpFormat === 'unsupported') throw new Error(target.capabilities.reason || 'unsupported MCP format')
   const encoded = convertMcpRawForTarget(raw, target.mcpFormat)
+  if (target.mcpFormat === 'toml-mcp_servers' && typeof raw.startup_timeout_sec === 'number') {
+    encoded.startup_timeout_sec = raw.startup_timeout_sec
+  }
   if (target.mcpFormat === 'jsonc-mcpServers') {
     await writeMcpServerJsonc(target.mcpPath, name, encoded)
     return
@@ -115,6 +173,11 @@ export async function assignServerToTarget(
 
   try {
     if (enabled) {
+      const existing = await discoverMcpServers([resolved], [])
+      if (!server.assignedTargetIds.includes(resolved.targetId) &&
+          existing.some((entry) => entry.name === server.name)) {
+        return { status: 'conflict', message: 'This Agent already has a server with the same name.' }
+      }
       await writeServerToTarget(resolved, server.name, server.raw)
       server.assignedTargetIds = [...new Set([...server.assignedTargetIds, resolved.targetId])]
     } else {
