@@ -4,7 +4,7 @@ import type {
   LibraryOpResult,
   LibrarySnapshot
 } from '../../../shared/library'
-import { discoverMcpServers, discoverSkills } from './discovery'
+import { discoverMcpServers, discoverSkills, mcpConfigKey, unimportedMcpServers } from './discovery'
 import { addServer, assignServerToTarget, importDiscoveredServer } from './mcp'
 import { authGuidance, openTerminalGuidance, probeAuth } from './native-auth'
 import { assignSkillToTarget, ejectSkill, importDiscoveredSkill } from './skills'
@@ -50,9 +50,25 @@ export class LibraryService {
         discoverSkills(targets, meta.skills),
         discoverMcpServers(targets, meta.servers)
       ])
+      // Assignment indicators reflect the current files, including external edits
+      // and pre-existing copies that were imported before source grouping.
+      const servers = meta.servers.map((server) => ({
+        ...server,
+        assignedTargetIds: [...new Set(discoveredServers
+          .filter((entry) => entry.name === server.name)
+          .flatMap((entry) => (entry.sources || [{ targetId: entry.targetId, path: entry.path }])
+            .filter((source) => {
+              if ('enabled' in source && source.enabled === false) return false
+              if (mcpConfigKey(entry.name, entry.raw) === mcpConfigKey(server.name, server.raw)) return true
+              const binding = meta.applied[`${source.targetId}:mcp:${server.name}`]
+              if (!binding || binding.path !== source.path) return false
+              try { return mcpConfigKey(entry.name, JSON.parse(binding.fingerprint)) === mcpConfigKey(entry.name, entry.raw) }
+              catch { return false }
+            }).map((source) => source.targetId)))]
+      }))
       // Auth probes only for already-assigned Claude servers (static, no network).
       const auth = []
-      for (const server of meta.servers) {
+      for (const server of servers) {
         for (const targetId of server.assignedTargetIds) {
           const target = targets.find((t) => t.targetId === targetId)
           if (!target?.capabilities.authProbe) continue
@@ -66,8 +82,8 @@ export class LibraryService {
         targets,
         skills: meta.skills,
         discoveredSkills: discoveredSkills.filter((d) => !d.alreadyImported),
-        servers: meta.servers,
-        discoveredServers: discoveredServers.filter((d) => !d.alreadyImported),
+        servers,
+        discoveredServers: unimportedMcpServers(discoveredServers, meta.servers),
         auth
       }
       return this.cache
@@ -131,6 +147,21 @@ export class LibraryService {
       const result = await addServer(this.store, name, raw)
       if (result.status === 'ok') await this.refresh(true)
       return result
+    })
+  }
+
+  ejectServer(serverId: string): Promise<LibraryOpResult> {
+    return this.enqueue(async () => {
+      const meta = await this.store.readMeta()
+      const server = meta.servers.find((entry) => entry.id === serverId)
+      if (!server) return { status: 'failed', message: 'server not found' }
+      meta.servers = meta.servers.filter((entry) => entry.id !== serverId)
+      for (const key of Object.keys(meta.applied)) {
+        if (key.endsWith(`:mcp:${server.name}`)) delete meta.applied[key]
+      }
+      await this.store.writeMeta(meta)
+      await this.refresh(true)
+      return { status: 'ok', id: serverId, name: server.name }
     })
   }
 

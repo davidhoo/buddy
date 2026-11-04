@@ -11,6 +11,8 @@ import type {
 import { listMcpServersFromJsonc, readJsoncObject } from './edit/jsonc'
 import { getMcpServerTable, listMcpServerTables, readTomlText } from './edit/toml'
 import { isGitRoot } from './store'
+import { readDshServers } from './edit/dsh'
+import { toCanonical } from './convert'
 
 function transportOf(raw: Record<string, unknown>): McpTransport {
   const t = String(raw.type || raw.transport || '').toLowerCase()
@@ -99,6 +101,10 @@ export async function discoverSkills(
 
 async function readServersFromTarget(target: LibraryTarget): Promise<Array<{ name: string; raw: Record<string, unknown>; path: string; physicalKey: string }>> {
   if (!target.mcpPath || target.pendingInit || !target.capabilities.readMcp) return []
+  if (target.mcpFormat === 'dsh-patch') {
+    const entries = await readDshServers(target.mcpPath).catch(() => [])
+    return entries.map((entry) => ({ ...entry, path: target.mcpPath!, physicalKey: target.mcpPhysicalKey || target.mcpPath! }))
+  }
   if (target.mcpFormat === 'jsonc-mcpServers') {
     try {
       const { value } = await readJsoncObject(target.mcpPath)
@@ -139,18 +145,65 @@ async function readServersFromTarget(target: LibraryTarget): Promise<Array<{ nam
   return []
 }
 
+function stableConfig(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableConfig).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value).filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableConfig(v)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+export function mcpConfigKey(name: string, raw: Record<string, unknown>): string {
+  const { __buddy, ...config } = raw
+  try {
+    const canonical = toCanonical(config)
+    // Native formats omit defaults and spell the same connection fields differently.
+    const aliases = new Set(['type', 'transport', 'command', 'args', 'env', 'environment',
+      'url', 'serverUrl', 'httpUrl', 'headers', 'http_headers', 'httpHeaders',
+      'note', 'startup_timeout_sec', 'tool_timeout_sec', 'enabled', 'env_vars'])
+    const extra = Object.fromEntries(Object.entries(config).filter(([key, value]) =>
+      !aliases.has(key) && !(key === 'cwd' && (value === '.' || value === ''))))
+    return stableConfig({ name, ...canonical,
+      args: canonical.args?.length ? canonical.args : undefined, ...extra })
+  } catch {
+    return stableConfig({ name, config })
+  }
+}
+
+/** Explicitly adopting an existing local launcher keeps its agent-specific environment. */
+export function sameLocalMcpLauncher(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  try {
+    const left = toCanonical(a)
+    const right = toCanonical(b)
+    return left.transport === 'stdio' && right.transport === 'stdio' &&
+      left.command === right.command && stableConfig(left.args || []) === stableConfig(right.args || []) &&
+      (a.cwd || '.') === (b.cwd || '.')
+  } catch { return false }
+}
+
 export async function discoverMcpServers(
   targets: LibraryTarget[],
   libraryServers: LibraryMcpServer[]
 ): Promise<DiscoveredMcpServer[]> {
   const out: DiscoveredMcpServer[] = []
+  const grouped = new Map<string, DiscoveredMcpServer>()
   for (const target of targets) {
     const entries = await readServersFromTarget(target)
     for (const entry of entries) {
       const alreadyImported = libraryServers.some(
-        (s) => s.name === entry.name && (s.sourceTargetId === target.targetId || s.assignedTargetIds.includes(target.targetId))
+        (s) => mcpConfigKey(s.name, s.raw) === mcpConfigKey(entry.name, entry.raw)
       )
-      out.push({
+      const key = mcpConfigKey(entry.name, entry.raw)
+      const source = { targetId: target.targetId, agentId: target.agentId, path: entry.path, enabled: entry.raw.enabled !== false }
+      const existing = grouped.get(key)
+      if (existing) {
+        if (!existing.sources!.some((s) => s.targetId === source.targetId && s.path === source.path)) existing.sources!.push(source)
+        continue
+      }
+      const discovered: DiscoveredMcpServer = {
+        sources: [source],
         discoveryId: `${target.targetId}:${entry.name}:${entry.physicalKey}`,
         name: entry.name,
         transport: transportOf(entry.raw),
@@ -162,10 +215,28 @@ export async function discoverMcpServers(
         physicalKey: entry.physicalKey,
         alreadyImported,
         raw: entry.raw
-      })
+      }
+      out.push(discovered)
+      grouped.set(key, discovered)
     }
   }
   return out
 }
 
 export { transportOf, summaryOf }
+
+/** The catalog has one entry per server name; configuration variants remain in agent files. */
+export function unimportedMcpServers(entries: DiscoveredMcpServer[], library: LibraryMcpServer[]): DiscoveredMcpServer[] {
+  const imported = new Set(library.map((server) => server.name))
+  const groups = new Map<string, DiscoveredMcpServer>()
+  for (const entry of entries) {
+    if (imported.has(entry.name)) continue
+    const sources = entry.sources || [{ targetId: entry.targetId, agentId: entry.agentId, path: entry.path }]
+    const existing = groups.get(entry.name)
+    if (!existing) groups.set(entry.name, { ...entry, sources: [...sources] })
+    else for (const source of sources) {
+      if (!existing.sources!.some((s) => s.targetId === source.targetId && s.path === source.path)) existing.sources!.push(source)
+    }
+  }
+  return [...groups.values()]
+}

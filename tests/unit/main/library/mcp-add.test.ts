@@ -35,7 +35,7 @@ it('saves a server unassigned, then writes it only to a compatible Agent without
 
     await writeFile(path, '{}')
     expect((await assignServerToTarget(store, root, result.id!, target, true)).status).toBe('ok')
-    expect(JSON.parse(await readFile(path, 'utf8')).mcpServers.docs).toEqual(config)
+    expect(JSON.parse(await readFile(path, 'utf8')).mcpServers.docs).toEqual({ ...config, enabled: true })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

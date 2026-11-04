@@ -31,6 +31,10 @@ export function useLibraryActions() {
     mutationFn: (skillId: string) => window.buddy.ejectLibrarySkill(skillId),
     onSuccess: async () => setSnap(await window.buddy.getLibrarySnapshot(true))
   })
+  const ejectServer = useMutation({
+    mutationFn: (serverId: string) => window.buddy.ejectLibraryServer(serverId),
+    onSuccess: async () => setSnap(await window.buddy.getLibrarySnapshot(true))
+  })
   const importServers = useMutation({
     mutationFn: (ids: string[]) => window.buddy.importLibraryServers(ids),
     onSuccess: async () => setSnap(await window.buddy.getLibrarySnapshot(true))
@@ -47,5 +51,5 @@ export function useLibraryActions() {
       window.buddy.setLibraryServerAssignment(input.serverId, input.targetId, input.enabled),
     onSuccess: async () => setSnap(await window.buddy.getLibrarySnapshot(true))
   })
-  return { refresh, importSkills, setSkill, eject, importServers, addServer, setServer }
+  return { ejectServer, refresh, importSkills, setSkill, eject, importServers, addServer, setServer }
 }

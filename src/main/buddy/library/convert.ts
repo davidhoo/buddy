@@ -112,5 +112,11 @@ export function convertMcpRawForTarget(
 ): Record<string, unknown> {
   const cleaned = { ...raw }
   delete cleaned.__buddy
-  return encodeForFormat(toCanonical(cleaned), format)
+  const encoded = encodeForFormat(toCanonical(cleaned), format)
+  // Keep launch context and native controls when assigning a discovered server.
+  for (const key of ['cwd', 'enabled', 'startup_timeout_sec', 'tool_timeout_sec']) {
+    if (cleaned[key] !== undefined) encoded[key] = cleaned[key]
+  }
+  if (format === 'toml-mcp_servers' && cleaned.env_vars !== undefined) encoded.env_vars = cleaned.env_vars
+  return encoded
 }

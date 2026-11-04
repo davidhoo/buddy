@@ -63,6 +63,8 @@ export function createBuddyPreloadApi(ipc: IpcLike) {
       ipc.invoke('buddy:importLibrarySkills', discoveryIds) as Promise<import('../shared/library').LibraryBatchResult>,
     setLibrarySkillAssignment: (skillId: string, targetId: string, enabled: boolean) =>
       ipc.invoke('buddy:setLibrarySkillAssignment', skillId, targetId, enabled) as Promise<import('../shared/library').LibraryOpResult>,
+    ejectLibraryServer: (serverId: string) =>
+      ipc.invoke('buddy:ejectLibraryServer', serverId) as Promise<import('../shared/library').LibraryOpResult>,
     ejectLibrarySkill: (skillId: string) =>
       ipc.invoke('buddy:ejectLibrarySkill', skillId) as Promise<import('../shared/library').LibraryOpResult>,
     addLibraryServer: (name: string, raw: Record<string, unknown>) =>

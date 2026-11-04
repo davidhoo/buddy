@@ -5,13 +5,15 @@ export function AgentChips({
   targets,
   assigned,
   onToggle,
-  linkSkillPhysicalKeys = false
+  linkSkillPhysicalKeys = false,
+  resource = 'skills'
 }: {
   targets: LibraryTarget[]
   assigned: string[]
   onToggle: (targetId: string, enabled: boolean) => void
   /** When true, toggling one target also represents its linkedSkillTargetIds. */
   linkSkillPhysicalKeys?: boolean
+  resource?: 'skills' | 'mcp'
 }) {
   const assignedSet = new Set(assigned)
   return (
@@ -35,7 +37,9 @@ export function AgentChips({
             title={title}
             aria-label={target.displayName}
             aria-pressed={on}
-            disabled={disabled || (!target.capabilities.writeSkills && !target.capabilities.writeMcp && !target.pendingInit)}
+            disabled={resource === 'mcp'
+              ? !target.capabilities.writeMcp && !target.pendingInit
+              : disabled || (!target.capabilities.writeSkills && !target.capabilities.writeMcp && !target.pendingInit)}
             onClick={() => onToggle(target.targetId, !on)}
           >
             <AgentIcon id={target.agentId} size={14} />

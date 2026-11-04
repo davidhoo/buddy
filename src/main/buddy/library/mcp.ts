@@ -1,3 +1,4 @@
+import { writeDshServer } from './edit/dsh'
 import { randomUUID } from 'node:crypto'
 import type {
   DiscoveredMcpServer,
@@ -10,7 +11,7 @@ import { convertMcpRawForTarget } from './convert'
 import { removeMcpServerJsonc, writeMcpServerJsonc } from './edit/jsonc'
 import { deleteMcpServerToml, setMcpServerToml } from './edit/toml'
 import { LibraryStore, upsertServer } from './store'
-import { discoverMcpServers, summaryOf, transportOf } from './discovery'
+import { discoverMcpServers, mcpConfigKey, sameLocalMcpLauncher, summaryOf, transportOf } from './discovery'
 import { splitCommand } from '../launchers'
 import { ensureCodexAcpHome } from './ensure-codex-acp-home'
 
@@ -102,14 +103,14 @@ export async function importDiscoveredServer(
   discovered: DiscoveredMcpServer
 ): Promise<LibraryOpResult> {
   const meta = await store.readMeta()
-  if (meta.servers.some((s) => s.name === discovered.name && s.sourceTargetId === discovered.targetId)) {
+  if (meta.servers.some((s) => s.name === discovered.name)) {
     return { status: 'exists', name: discovered.name }
   }
   const record = serverRecord({
     name: discovered.name,
     raw: discovered.raw,
     sourceTargetId: discovered.targetId,
-    assignedTargetIds: [discovered.targetId]
+    assignedTargetIds: [...new Set(discovered.sources?.map((s) => s.targetId) || [discovered.targetId])]
   })
   await store.writeMeta(upsertServer(meta, record))
   return { status: 'ok', id: record.id, name: record.name }
@@ -118,6 +119,7 @@ export async function importDiscoveredServer(
 async function writeServerToTarget(target: LibraryTarget, name: string, raw: Record<string, unknown>): Promise<void> {
   if (!target.mcpPath) throw new Error('target has no MCP path')
   if (target.mcpFormat === 'unsupported') throw new Error(target.capabilities.reason || 'unsupported MCP format')
+  if (target.mcpFormat === 'dsh-patch') return writeDshServer(target.mcpPath, name, raw)
   const encoded = convertMcpRawForTarget(raw, target.mcpFormat)
   if (target.mcpFormat === 'toml-mcp_servers' && typeof raw.startup_timeout_sec === 'number') {
     encoded.startup_timeout_sec = raw.startup_timeout_sec
@@ -135,6 +137,7 @@ async function writeServerToTarget(target: LibraryTarget, name: string, raw: Rec
 
 async function removeServerFromTarget(target: LibraryTarget, name: string): Promise<void> {
   if (!target.mcpPath) return
+  if (target.mcpFormat === 'dsh-patch') return writeDshServer(target.mcpPath, name)
   if (target.mcpFormat === 'jsonc-mcpServers') {
     await removeMcpServerJsonc(target.mcpPath, name)
     return
@@ -172,13 +175,20 @@ export async function assignServerToTarget(
   if (!server) return { status: 'failed', message: 'server not found' }
 
   try {
+    let appliedRaw = server.raw
     if (enabled) {
       const existing = await discoverMcpServers([resolved], [])
-      if (!server.assignedTargetIds.includes(resolved.targetId) &&
-          existing.some((entry) => entry.name === server.name)) {
+      const current = existing.find((entry) => entry.name === server.name)
+      if (current && mcpConfigKey(current.name, current.raw) !== mcpConfigKey(server.name, server.raw) &&
+          !sameLocalMcpLauncher(current.raw, server.raw)) {
         return { status: 'conflict', message: 'This Agent already has a server with the same name.' }
       }
-      await writeServerToTarget(resolved, server.name, server.raw)
+      appliedRaw = { ...(current?.raw || server.raw), enabled: true }
+      if (current && resolved.mcpFormat === 'toml-mcp_servers') {
+        await setMcpServerToml(resolved.mcpPath!, server.name, appliedRaw)
+      } else if (current && resolved.mcpFormat === 'jsonc-mcpServers') {
+        await writeMcpServerJsonc(resolved.mcpPath!, server.name, appliedRaw)
+      } else await writeServerToTarget(resolved, server.name, appliedRaw)
       server.assignedTargetIds = [...new Set([...server.assignedTargetIds, resolved.targetId])]
     } else {
       await removeServerFromTarget(resolved, server.name)
@@ -186,7 +196,7 @@ export async function assignServerToTarget(
     }
     meta.applied[`${resolved.targetId}:mcp:${server.name}`] = {
       kind: 'mcp',
-      fingerprint: JSON.stringify(server.raw),
+      fingerprint: JSON.stringify(appliedRaw),
       path: resolved.mcpPath,
       at: new Date().toISOString()
     }

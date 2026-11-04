@@ -48,6 +48,15 @@ function envOf(agent: LocalAgent): Record<string, string> {
   return { ...(agent.cli?.env || {}), ...(agent.acp?.env || {}) }
 }
 
+function dshProfile(agent?: LocalAgent): string {
+  const args = (agent?.selectedProtocol === 'acp' ? agent.acp?.args : agent?.cli?.args) || []
+  const index = args.indexOf('--profile')
+  const explicit = index >= 0 ? args[index + 1] : args.find((arg) => arg.startsWith('--profile='))?.slice(10)
+  const name = explicit || args.find((arg) => ['headless', 'acp', 'desktop', 'web'].includes(arg))
+    || (agent?.selectedProtocol === 'acp' ? 'acp' : 'headless')
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : 'headless'
+}
+
 async function exists(path?: string): Promise<boolean> {
   if (!path) return false
   try {
@@ -174,8 +183,9 @@ export async function resolveLibraryTargets(
   ]) {
     addNative(agentId, displayName, (agent) => ({
       skillsDir: join(envOf(agent || ({} as LocalAgent))[envKey] || process.env[envKey] || join(HOME(), defaultDir), 'skills'),
-      mcpFormat: 'unsupported',
-      capabilities: caps({ readSkills: true, readMcp: false })
+      mcpPath: agentId === 'codebuddy' ? join(HOME(), '.codebuddy.json') : join(envOf(agent || ({} as LocalAgent)).DSH_HOME || process.env.DSH_HOME || join(HOME(), '.dsh'), 'profiles', dshProfile(agent), 'cordis.patch.yml'),
+      mcpFormat: agentId === 'codebuddy' ? 'jsonc-mcpServers' : 'dsh-patch',
+      capabilities: caps({ readSkills: true, readMcp: true })
     }))
   }
 
@@ -192,8 +202,11 @@ export async function resolveLibraryTargets(
       : join(env.OPENCODE_CONFIG_DIR || opencodeHome(), 'skills')
     specs.push({
       agentId, displayName, configContext: 'wecode', skillsDir,
-      mcpFormat: 'unsupported', usedByTasks: !!agent.enabled,
-      capabilities: caps({ readSkills: true, readMcp: false })
+      mcpPath: nativeId === 'claude'
+        ? join(HOME(), '.claude.json')
+        : join(env.OPENCODE_CONFIG_DIR || opencodeHome(), 'opencode.json'),
+      mcpFormat: 'jsonc-mcpServers', usedByTasks: !!agent.enabled,
+      capabilities: caps({ readSkills: true, readMcp: true })
     })
   }
 

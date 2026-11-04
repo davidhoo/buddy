@@ -6,6 +6,7 @@
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { parse } from 'smol-toml'
 
 export type TomlScalar = string | number | boolean
 
@@ -126,44 +127,22 @@ export async function readTomlText(path: string): Promise<string> {
   }
 }
 
-/** List `[mcp_servers.<name>]` ordinary tables. */
-export function listMcpServerTables(text: string): string[] {
-  const lines = splitLines(text)
-  return findTables(lines)
-    .map((t) => t.name)
-    .filter((name) => name.startsWith('mcp_servers.') && !name.slice('mcp_servers.'.length).includes('.'))
-    .map((name) => name.slice('mcp_servers.'.length))
+/** Parse connection values fully; editing below still preserves unrelated text. */
+function readMcpTables(text: string): Record<string, unknown> {
+  const parsed = parse(text)
+  const servers = parsed.mcp_servers
+  return servers && typeof servers === 'object' && !Array.isArray(servers)
+    ? servers as Record<string, unknown> : {}
 }
 
-/** Best-effort scalar extraction for discovery (ignores inline tables/arrays depth). */
+export function listMcpServerTables(text: string): string[] {
+  return Object.keys(readMcpTables(text))
+}
+
 export function getMcpServerTable(text: string, name: string): Record<string, unknown> | undefined {
-  const lines = splitLines(text)
-  const table = findTable(lines, `mcp_servers.${name}`)
-  if (!table) return undefined
-  const out: Record<string, unknown> = {}
-  for (let i = table.from + 1; i < table.to; i++) {
-    const line = lines[i].trim()
-    if (!line || line.startsWith('#')) continue
-    const m = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/.exec(line)
-    if (!m) continue
-    const raw = m[2].trim()
-    if (raw.startsWith('"') || raw.startsWith("'")) {
-      try {
-        out[m[1]] = JSON.parse(raw.startsWith("'") ? `"${raw.slice(1, -1)}"` : raw)
-      } catch {
-        out[m[1]] = raw.slice(1, -1)
-      }
-    } else if (raw === 'true' || raw === 'false') out[m[1]] = raw === 'true'
-    else if (/^-?\d+(\.\d+)?$/.test(raw)) out[m[1]] = Number(raw)
-    else if (raw.startsWith('[')) {
-      try {
-        out[m[1]] = JSON.parse(raw.replace(/'/g, '"'))
-      } catch {
-        out[m[1]] = raw
-      }
-    } else out[m[1]] = raw
-  }
-  return out
+  const value = readMcpTables(text)[name]
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined
 }
 
 export async function setMcpServerToml(path: string, name: string, kvs: Record<string, unknown>): Promise<void> {

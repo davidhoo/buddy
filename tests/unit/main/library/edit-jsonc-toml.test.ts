@@ -58,3 +58,10 @@ describe('library edit toml', () => {
     expect(after).toContain('[features]')
   })
 })
+
+it('reads inline and nested TOML authentication headers as equivalent objects', () => {
+  const inline = '[mcp_servers.remote]\nurl = "https://example.com"\nhttp_headers = { Authorization = "Bearer test-only" }\n'
+  const nested = '[mcp_servers.remote]\nurl = "https://example.com"\n[mcp_servers.remote.http_headers]\nAuthorization = "Bearer test-only"\n'
+  expect(getMcpServerTable(inline, 'remote')).toEqual(getMcpServerTable(nested, 'remote'))
+  expect(getMcpServerTable(inline, 'remote')?.http_headers).toEqual({ Authorization: 'Bearer test-only' })
+})

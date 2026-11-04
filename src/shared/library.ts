@@ -28,7 +28,7 @@ export interface LibraryTarget {
   skillsPhysicalKey?: string
   mcpPath?: string
   mcpPhysicalKey?: string
-  mcpFormat: 'jsonc-mcpServers' | 'toml-mcp_servers' | 'unsupported'
+  mcpFormat: 'jsonc-mcpServers' | 'toml-mcp_servers' | 'dsh-patch' | 'unsupported'
   capabilities: LibraryCapabilities
   /** True when ACP home is not on disk yet (scan must not create it). */
   pendingInit?: boolean
@@ -84,6 +84,7 @@ export interface LibraryMcpServer {
 }
 
 export interface DiscoveredMcpServer {
+  sources?: Array<{ targetId: string; agentId: string; path: string; enabled?: boolean }>
   discoveryId: string
   name: string
   transport: McpTransport
@@ -156,5 +157,24 @@ export function groupSkillTargets(targets: LibraryTarget[]): LibraryTarget[] {
         target.targetId, ...(target.linkedSkillTargetIds || [])
       ]))].filter((id) => id !== representative.targetId)
     }
+  })
+}
+
+/** Present agents rather than internal ACP homes; route controls to the active context. */
+export function groupMcpTargets(targets: LibraryTarget[]): LibraryTarget[] {
+  const groups = new Map<string, LibraryTarget[]>()
+  for (const target of targets) {
+    if (target.agentId === 'shared') continue
+    const key = target.agentId.replace(/^wecode_/, '')
+    const group = groups.get(key) || []
+    group.push(target)
+    groups.set(key, group)
+  }
+  return [...groups.entries()].map(([agentId, group]) => {
+    const representative = group.find((target) => target.usedByTasks && target.configContext !== 'native')
+      || group.find((target) => target.usedByTasks)
+      || group.find((target) => target.configContext === 'native') || group[0]
+    const native = group.find((target) => target.configContext === 'native')
+    return { ...representative, agentId, displayName: native?.displayName || representative.displayName.replace(/ ACP$/, '') }
   })
 }

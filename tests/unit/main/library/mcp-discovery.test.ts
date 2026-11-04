@@ -38,3 +38,52 @@ it('discovers shared home MCP servers without installed agents and tolerates a m
     await rm(root, { recursive: true, force: true })
   }
 })
+
+it('groups identical configurations across agents but keeps differing credentials separate', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buddy-mcp-dedupe-'))
+  vi.stubEnv('HOME', root)
+  try {
+    const targets = (await resolveLibraryTargets([], join(root, 'buddy')))
+      .filter((target) => ['shared', 'cursor', 'kimi'].includes(target.agentId))
+    for (const target of targets) {
+      await mkdir(join(target.mcpPath!, '..'), { recursive: true })
+      const raw = target.agentId === 'kimi'
+        ? { command: 'example', env: { TOKEN: 'different' } }
+        : { env: { TOKEN: 'same' }, command: 'example' }
+      await writeFile(target.mcpPath!, JSON.stringify({ mcpServers: { example: raw } }))
+    }
+    const discovered = await discoverMcpServers(targets, [])
+    expect(discovered).toHaveLength(2)
+    expect(discovered[0].sources?.map((s) => s.agentId)).toEqual(['shared', 'cursor'])
+    const imported = { id: 'one', name: 'example', transport: 'stdio' as const,
+      summary: 'example', raw: discovered[0].raw, scope: 'user' as const,
+      assignedTargetIds: ['shared:native:user'], managed: true }
+    const rescanned = await discoverMcpServers(targets, [imported])
+    expect(rescanned.filter((s) => !s.alreadyImported)).toHaveLength(1)
+    expect(rescanned.find((s) => !s.alreadyImported)?.agentId).toBe('kimi')
+  } finally {
+    vi.unstubAllEnvs()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('shows native agents once and routes Codex to its active ACP context', async () => {
+  const { groupMcpTargets } = await import('../../../../src/shared/library')
+  const root = await mkdtemp(join(tmpdir(), 'buddy-mcp-targets-'))
+  vi.stubEnv('HOME', root)
+  try {
+    const targets = await resolveLibraryTargets([], join(root, 'buddy'))
+    const acp = targets.find((target) => target.configContext === 'buddy-acp')!
+    acp.usedByTasks = true
+    targets.push({ ...acp, targetId: 'wecode_codex:wecode:user', agentId: 'wecode_codex', configContext: 'wecode', displayName: 'WeCode Codex ACP' })
+    const grouped = groupMcpTargets(targets)
+    expect(grouped.some((target) => target.agentId === 'shared')).toBe(false)
+    expect(grouped.filter((target) => target.agentId === 'codex')).toHaveLength(1)
+    expect(grouped.find((target) => target.agentId === 'codex')).toMatchObject({ targetId: acp.targetId, displayName: 'Codex' })
+    expect(grouped.find((target) => target.agentId === 'codebuddy')).toMatchObject({ mcpFormat: 'jsonc-mcpServers', mcpPath: join(root, '.codebuddy.json') })
+    expect(grouped.find((target) => target.agentId === 'dsh')).toBeDefined()
+  } finally {
+    vi.unstubAllEnvs()
+    await rm(root, { recursive: true, force: true })
+  }
+})

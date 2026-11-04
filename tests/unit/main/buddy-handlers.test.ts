@@ -60,6 +60,7 @@ describe('registerBuddyHandlers', () => {
       importLibrarySkills: vi.fn(),
       setLibrarySkillAssignment: vi.fn(),
       ejectLibrarySkill: vi.fn(),
+      ejectLibraryServer: vi.fn(),
       addLibraryServer: vi.fn(),
       importLibraryServers: vi.fn(),
       setLibraryServerAssignment: vi.fn(),
@@ -121,6 +122,9 @@ describe('registerBuddyHandlers', () => {
     assignServer({}, 'server-1', 'codex:buddy-acp:user', true)
     expect(service.setLibraryServerAssignment).toHaveBeenCalledWith('server-1', 'codex:buddy-acp:user', true)
 
-    expect(handle).toHaveBeenCalledTimes(63)
+    const ejectServer = handle.mock.calls.find(([channel]) => channel === 'buddy:ejectLibraryServer')![1]
+    ejectServer({}, 'server-1')
+    expect(service.ejectLibraryServer).toHaveBeenCalledWith('server-1')
+    expect(handle).toHaveBeenCalledTimes(64)
   })
 })

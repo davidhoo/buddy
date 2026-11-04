@@ -1,24 +1,26 @@
-import { FolderOpen, RefreshCw, Archive, Globe, KeyRound, Plus, Terminal } from 'lucide-react'
+import { FolderOpen, RefreshCw, Archive, Globe, KeyRound, Plus, Terminal, Download, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { useT } from '../../hooks/useI18n'
 import { useLibraryActions, useLibrarySnapshot } from '../../hooks/useLibrary'
 import { McpServerEditor } from './McpServerEditor'
 import { AgentChips } from './AgentChips'
+import { groupMcpTargets } from '../../../shared/library'
 import './library.css'
 
 export function McpPage() {
   const t = useT()
   const { data, isFetching } = useLibrarySnapshot()
-  const { refresh, setServer } = useLibraryActions()
+  const { refresh, setServer, importServers, ejectServer } = useLibraryActions()
   const [adding, setAdding] = useState(false)
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const [guide, setGuide] = useState<{ title: string; steps: string[] } | null>(null)
-  const busy = refresh.isPending || setServer.isPending
+  const busy = refresh.isPending || setServer.isPending || importServers.isPending || ejectServer.isPending
   const servers = data?.servers || []
+  const discovered = data?.discoveredServers || []
   const visibleServers = [...servers].sort((a, b) =>
     order === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
   )
-  const targets = (data?.targets || []).filter((x) => x.capabilities.readMcp || x.capabilities.writeMcp || x.pendingInit)
+  const targets = groupMcpTargets(data?.targets || [])
 
   return (
     <div className="library-page">
@@ -71,11 +73,12 @@ export function McpPage() {
                     <div className="library-row-title">{server.name}</div>
                     {server.note && <div className="library-row-sub" title={server.note}>{server.note}</div>}
                     <div className="library-row-sub" title={server.summary}>{server.transport} · {server.summary}</div>
-                    {!!server.assignedTargetIds.length && (
+                    {server.transport !== 'stdio' && !!server.assignedTargetIds.length && (
                       <div className="mcp-auth-actions">
-                        {server.assignedTargetIds.map((targetId) => {
-                          const auth = data?.auth.find((a) => a.targetId === targetId && a.serverName === server.name)
+                        {server.assignedTargetIds.filter((id) => targets.some((target) => target.targetId === id)).map((targetId) => {
+                          const auth = data?.auth?.find((a) => a.targetId === targetId && a.serverName === server.name)
                           const target = targets.find((x) => x.targetId === targetId)
+                          if (!auth || auth.status === 'unknown') return null
                           return (
                             <button
                               key={targetId}
@@ -92,11 +95,18 @@ export function McpPage() {
                     )}
                   </div>
                   <AgentChips
+                    resource="mcp"
                     targets={targets}
                     assigned={server.assignedTargetIds}
                     onToggle={(targetId, enabled) => setServer.mutate({ serverId: server.id, targetId, enabled })}
                   />
-
+                  <div className="library-row-actions">
+                    <button className="library-btn danger" disabled={busy}
+                      aria-label={t('library.mcp.eject')} title={t('library.mcp.eject')}
+                      onClick={() => {
+                        if (confirm(t('library.mcp.ejectConfirm', { name: server.name }))) ejectServer.mutate(server.id)
+                      }}><Undo2 size={13} /></button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -106,6 +116,37 @@ export function McpPage() {
           </>
         )}
       </section>
+
+      <div className="library-section-title">
+        <span>{t('library.mcp.discovered', { n: discovered.length })}</span>
+        <button
+          className="library-btn"
+          disabled={busy || !discovered.length}
+          onClick={() => importServers.mutate(discovered.map((server) => server.discoveryId))}
+        ><Download size={13} />{t('library.importAll')}</button>
+      </div>
+      <div className="library-list">
+        {discovered.map((server) => (
+          <div className="library-row" key={server.discoveryId}>
+            <div className="library-row-main">
+              <div className="library-row-title">{server.name}</div>
+              {(server.sources || [{ targetId: server.targetId, agentId: server.agentId, path: server.path }]).map((source) => (
+                <div className="library-row-sub" key={`${source.targetId}:${source.path}`}>
+                  {targets.find((target) => target.targetId === source.targetId)?.displayName || source.agentId} · {source.path}
+                </div>
+              ))}
+              <div className="library-row-sub">{server.transport} · {server.summary}</div>
+            </div>
+            <div />
+            <div className="library-row-actions">
+              <button className="library-btn" disabled={busy} onClick={() => importServers.mutate([server.discoveryId])}>
+                <Download size={13} />{t('library.import')}
+              </button>
+            </div>
+          </div>
+        ))}
+        {!discovered.length && <div className="library-empty">{t('library.mcp.emptyDiscovered')}</div>}
+      </div>
 
       {adding && <McpServerEditor targets={targets} onClose={() => setAdding(false)} />}
       {setServer.data && setServer.data.status !== 'ok' && (
