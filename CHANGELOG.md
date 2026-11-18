@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.20] - 2026-11-18
+
+### Added
+- 新增 `buddy` 命令行：支持创建/运行、进度与结果查询、列表，以及暂停/继续、发送指令、取消与删除等任务操作
+- CLI 通过 App IPC 与正在运行的 Buddy 桌面应用通信，无应用时回退本地后端
+- 设置页支持将 `buddy` 安装到 PATH（安装/重装/卸载），并写入 shell profile
+- 终端友好的格式化输出（进度、结果、任务列表），便于在终端或 Coding Agent 中使用
+
+---
+
 ## [2.0.19] - 2026-11-04
 
 ### Added
