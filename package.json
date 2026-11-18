@@ -1,6 +1,6 @@
 {
   "name": "buddy",
-  "version": "2.0.19",
+  "version": "2.0.20",
   "description": "macOS native desktop app with built-in Buddy Core",
   "main": "./out/main/index.js",
   "bin": {
