@@ -575,6 +575,19 @@ export default function App() {
         setIsStatusBarOpen(prev => !prev)
       } else if (action === 'checkForUpdates') {
         updater.checkForUpdates()
+      } else if (action === 'installCli') {
+        void window.api.installCli().then((status) => {
+          window.dispatchEvent(new CustomEvent('buddy:cli-status-changed', { detail: status }))
+          const base = t('settings.general.cli.installSuccess', { path: status.commandPath ?? status.wrapperPath })
+          const extra = status.shellProfileUpdated && status.shellProfilePath
+            ? `\n\n${t('settings.general.cli.shellUpdatedHint', { profile: status.shellProfilePath })}`
+            : ''
+          window.alert(base + extra)
+        }).catch((error: unknown) => {
+          window.alert(t('settings.general.cli.installFailed', {
+            message: error instanceof Error ? error.message : String(error)
+          }))
+        })
       } else if (action === 'openDocumentation') {
         window.open('https://github.com/davidhoo/buddy#readme', '_blank')
       } else if (action === 'openWhatsNew') {
@@ -587,7 +600,7 @@ export default function App() {
       }
     })
     return cleanup
-  }, [handleOpenCreateModal, selectVisibleTaskByOffset, updater])
+  }, [handleOpenCreateModal, selectVisibleTaskByOffset, t, updater])
 
   const selectVisibleTaskBySlot = useCallback((slot: number) => {
     const visibleTasks = visibleTasksForShortcuts(

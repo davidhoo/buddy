@@ -42,7 +42,13 @@ const api = {
     const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
     ipcRenderer.on('updater:event', handler)
     return () => { ipcRenderer.removeListener('updater:event', handler) }
-  }
+  },
+  getCliInstallStatus: (): Promise<import('../shared/types').CliInstallStatus> =>
+    ipcRenderer.invoke('cli:getStatus'),
+  installCli: (): Promise<import('../shared/types').CliInstallStatus> =>
+    ipcRenderer.invoke('cli:install'),
+  uninstallCli: (): Promise<import('../shared/types').CliInstallStatus> =>
+    ipcRenderer.invoke('cli:uninstall')
 }
 
 const buddy = createBuddyPreloadApi(ipcRenderer)

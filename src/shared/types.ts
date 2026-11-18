@@ -507,3 +507,12 @@ export interface GitPushResult {
   upstreamCreated: boolean
   pushError: string | null
 }
+
+export interface CliInstallStatus {
+  installed: boolean
+  commandPath: string | null
+  wrapperPath: string
+  inPath: boolean
+  shellProfileUpdated?: boolean
+  shellProfilePath?: string | null
+}

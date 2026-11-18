@@ -7,6 +7,7 @@ const menuLabels = {
     about: 'About Buddy',
     preferences: 'Preferences...',
     checkForUpdates: 'Check for Updates...',
+    installCli: "Install 'buddy' Command in PATH...",
     services: 'Services',
     hide: 'Hide Buddy',
     hideOthers: 'Hide Others',
@@ -49,6 +50,7 @@ const menuLabels = {
     about: '关于 Buddy',
     preferences: '偏好设置...',
     checkForUpdates: '检查更新...',
+    installCli: "安装 'buddy' 命令行工具...",
     services: '服务',
     hide: '隐藏 Buddy',
     hideOthers: '隐藏其他',
@@ -91,6 +93,7 @@ const menuLabels = {
     about: '關於 Buddy',
     preferences: '偏好設定...',
     checkForUpdates: '檢查更新…',
+    installCli: "安裝 'buddy' 命令列工具…",
     services: '服務',
     hide: '隱藏 Buddy',
     hideOthers: '隱藏其他',
@@ -155,6 +158,10 @@ function buildMenu(): Menu {
         {
           label: t.checkForUpdates,
           click: () => sendMenuAction('checkForUpdates')
+        },
+        {
+          label: t.installCli,
+          click: () => sendMenuAction('installCli')
         },
         { type: 'separator' },
         { role: 'services', label: t.services },

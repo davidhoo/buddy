@@ -26,6 +26,17 @@ export function useBootstrap() {
 }
 
 export function useTasks() {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (typeof api.onTaskEvent !== 'function') return
+    return api.onTaskEvent((envelope: TaskEventEnvelope) => {
+      if (envelope.event.type === 'actor.stdout') return
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      void queryClient.invalidateQueries({ queryKey: ['task', envelope.task_id] })
+    })
+  }, [queryClient])
+
   return useQuery({
     queryKey: ['tasks'],
     queryFn: api.getTasks,
