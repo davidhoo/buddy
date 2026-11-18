@@ -1,0 +1,42 @@
+#!/usr/bin/env sh
+set -eu
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET="$(readlink "$SELF")"
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$(dirname "$SELF")/$TARGET" ;;
+  esac
+done
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd -P)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd -P)"
+LOCAL_CLI="$REPO_ROOT/out/main/cli.js"
+
+APP_PATH="${BUDDY_APP_PATH:-/Applications/Buddy.app}"
+if [ ! -d "$APP_PATH" ] && [ -d "$HOME/Applications/Buddy.app" ]; then
+  APP_PATH="$HOME/Applications/Buddy.app"
+fi
+APP_EXEC="$APP_PATH/Contents/MacOS/Buddy"
+APP_ASAR_CLI="$APP_PATH/Contents/Resources/app.asar/out/main/cli.js"
+APP_UNPACKED_CLI="$APP_PATH/Contents/Resources/app/out/main/cli.js"
+
+if [ -f "$LOCAL_CLI" ]; then
+  if command -v node >/dev/null 2>&1; then
+    exec node "$LOCAL_CLI" "$@"
+  elif [ -x "$APP_EXEC" ]; then
+    ELECTRON_RUN_AS_NODE=1 exec "$APP_EXEC" "$LOCAL_CLI" "$@"
+  fi
+fi
+
+if [ -x "$APP_EXEC" ] && [ -f "$APP_PATH/Contents/Resources/app.asar" ]; then
+  ELECTRON_RUN_AS_NODE=1 exec "$APP_EXEC" "$APP_ASAR_CLI" "$@"
+fi
+
+if [ -x "$APP_EXEC" ] && [ -f "$APP_UNPACKED_CLI" ]; then
+  ELECTRON_RUN_AS_NODE=1 exec "$APP_EXEC" "$APP_UNPACKED_CLI" "$@"
+fi
+
+echo "Buddy CLI not found. Run 'pnpm build' in $REPO_ROOT or install Buddy.app." >&2
+exit 1

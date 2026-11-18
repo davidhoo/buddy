@@ -360,6 +360,17 @@ export class BuddyCoreService {
 
   async createTask(input: CreateTaskInput): Promise<CreateTaskResult> {
     const result = await this.store.createTask(input)
+    this.events?.publish({
+      workspace_key: result.workspace_key,
+      task_id: result.task,
+      event: {
+        seq: 1,
+        task_id: result.task,
+        type: 'task.created',
+        ts: new Date().toISOString(),
+        payload: { task_id: result.task, execution_mode: input.execution_mode ?? 'immediate' }
+      }
+    })
     // A newly created queued task may be the next to run; an immediate task may now block the
     // queue. Either way the workspace scheduling conditions changed, so re-evaluate once.
     void this.coordinator?.reconcile(result.workspace_key)

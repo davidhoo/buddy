@@ -8,7 +8,7 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, CircleArrowOutU
 import { useTheme, ThemeMode } from '../hooks/useTheme'
 import { getThemesByType, getThemeById, BuddyTheme } from '../themes'
 import { useUpdateGlobalSettings, useTestLauncher, useAcpGlobalAdapters } from '../hooks/useBuddy'
-import type { TestLauncherResult, GlobalAcpAdaptersStatus } from '../../shared/types'
+import type { CliInstallStatus, TestLauncherResult, GlobalAcpAdaptersStatus } from '../../shared/types'
 import { useLanguagePref, useSendShortcut, useT, TFunction } from '../hooks/useI18n'
 import { LANGUAGE_OPTIONS, LanguagePref, SendShortcut } from '../lib/i18n'
 import {
@@ -30,7 +30,7 @@ import {
 import type { GlobalSettings, Launcher } from '../../shared/types'
 import { DEFAULT_LAUNCHER_ORDER, KNOWN_ACP_PRESETS, defaultLauncherFor, globalLauncherTimeout, normalizeGlobalSettings } from '../../shared/defaults'
 import { actorColorVar } from '../lib/format'
-import { CheckCircle, XCircle, Loader2, Zap, AlertCircle, Info, Copy, Check } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Zap, AlertCircle, Info, Copy, Check, Terminal } from 'lucide-react'
 import { Switch } from './Switch'
 
 export type SettingsTab = 'general' | 'agents' | 'skills' | 'mcp' | 'appearance' | 'keyboard' | 'prompts'
@@ -246,6 +246,60 @@ function GeneralSection() {
   const t = useT()
   const { pref, setPref, detected } = useLanguagePref()
   const { shortcut, setShortcut } = useSendShortcut()
+  const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null)
+  const [cliBusy, setCliBusy] = useState(false)
+  const [cliError, setCliError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    const refreshStatus = () => {
+      if (typeof window.api?.getCliInstallStatus !== 'function') return
+      window.api.getCliInstallStatus()
+        .then((status) => { if (active) setCliStatus(status) })
+        .catch(() => {})
+    }
+    refreshStatus()
+    const onStatusChanged = (event: Event) => {
+      const detail = (event as CustomEvent<CliInstallStatus>).detail
+      if (detail) setCliStatus(detail)
+      else refreshStatus()
+    }
+    window.addEventListener('buddy:cli-status-changed', onStatusChanged)
+    return () => {
+      active = false
+      window.removeEventListener('buddy:cli-status-changed', onStatusChanged)
+    }
+  }, [])
+
+  const handleInstallCli = async () => {
+    if (typeof window.api?.installCli !== 'function') return
+    setCliBusy(true)
+    setCliError(null)
+    try {
+      const next = await window.api.installCli()
+      setCliStatus(next)
+    } catch (error) {
+      setCliError(t('settings.general.cli.installFailed', {
+        message: error instanceof Error ? error.message : String(error)
+      }))
+    } finally {
+      setCliBusy(false)
+    }
+  }
+
+  const handleUninstallCli = async () => {
+    if (typeof window.api?.uninstallCli !== 'function') return
+    setCliBusy(true)
+    setCliError(null)
+    try {
+      const next = await window.api.uninstallCli()
+      setCliStatus(next)
+    } catch (error) {
+      setCliError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCliBusy(false)
+    }
+  }
 
   const detectedLabel = detected === 'zh-CN' ? '简体中文' : detected === 'zh-TW' ? '繁體中文' : 'English'
 
@@ -298,6 +352,67 @@ function GeneralSection() {
             />
           }
         />
+
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-fg">{t('settings.general.cli.title')}</span>
+              {cliStatus?.installed && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <CheckCircle size={11} />
+                  {t('settings.general.cli.installedBadge')}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-fg-muted mt-0.5">{t('settings.general.cli.desc')}</div>
+            {cliStatus?.installed && cliStatus.commandPath && (
+              <div className="text-xs font-mono text-fg-secondary mt-1 select-all">
+                {t('settings.general.cli.installedAt', { path: cliStatus.commandPath })}
+              </div>
+            )}
+            {cliStatus?.shellProfileUpdated && cliStatus.shellProfilePath && (
+              <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                {t('settings.general.cli.shellUpdatedHint', { profile: cliStatus.shellProfilePath })}
+              </div>
+            )}
+            {cliError && (
+              <div className="text-xs text-red-500 mt-1">{cliError}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {cliStatus?.installed ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleInstallCli}
+                  disabled={cliBusy}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-bg-subtle disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  {cliBusy ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
+                  {t('settings.general.cli.reinstall')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUninstallCli}
+                  disabled={cliBusy}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-fg-secondary hover:text-red-500 hover:border-red-500/40 hover:bg-red-500/5 disabled:opacity-50 transition-colors"
+                >
+                  {t('settings.general.cli.uninstall')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleInstallCli}
+                disabled={cliBusy}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-primary text-fg-inverse hover:bg-accent-primary-hover disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              >
+                {cliBusy ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
+                {t('settings.general.cli.install')}
+              </button>
+            )}
+          </div>
+        </div>
       </SettingsList>
     </div>
   )

@@ -19,6 +19,8 @@ process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
 import { WindowManager } from './window-manager'
 import { registerBuddyHandlers } from './ipc/buddy-handlers'
 import { BuddyCoreService } from './buddy/service'
+import { BuddyCliServer } from './buddy/cli-server'
+import { getCliInstallStatus, installBuddyCli, uninstallBuddyCli } from './buddy/cli-installer'
 import { BuddyEventBus } from './buddy/events'
 import { fixShellPath } from './buddy/shell-path'
 import { setupMenu, updateMenuLanguage, getMenuLanguage } from './menu'
@@ -34,6 +36,7 @@ fixShellPath()
 const windowManager = new WindowManager()
 const buddyEvents = new BuddyEventBus()
 const buddyService = new BuddyCoreService({ events: buddyEvents })
+const cliServer = new BuddyCliServer({ service: buddyService, events: buddyEvents })
 
 let allowAgentQuit = false
 const agentQuitGuard = new AgentUpdateQuitGuard(buddyService.agents.updates, async()=>{
@@ -86,6 +89,7 @@ buddyEvents.subscribe((event) => {
 
 app.whenReady().then(async () => {
   await buddyService.recoverInterruptedRuns()
+  await cliServer.start().catch(err => console.warn('[cli-server] failed to start:', err))
   windowManager.createWindow()
   void buddyService.initializeAgents().catch(error => console.warn('Agent initialization failed', error instanceof Error ? error.message : 'unknown error'))
   const mainWindow = windowManager.getMainWindow()
@@ -243,6 +247,16 @@ app.whenReady().then(async () => {
     return `data:${mimeType};base64,${base64}`
   })
 
+  const cliInstallerContext = () => ({
+    dataRoot: buddyService.getStore().dataRoot,
+    appExecPath: app.isPackaged ? process.execPath : undefined,
+    repoRoot: app.isPackaged ? undefined : app.getAppPath()
+  })
+
+  ipcMain.handle('cli:getStatus', () => getCliInstallStatus(cliInstallerContext()))
+  ipcMain.handle('cli:install', () => installBuddyCli(cliInstallerContext()))
+  ipcMain.handle('cli:uninstall', () => uninstallBuddyCli(cliInstallerContext()))
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       windowManager.createWindow()
@@ -259,4 +273,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('will-quit', () => {
+  void cliServer.close()
 })

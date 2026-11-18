@@ -3,10 +3,14 @@
   "version": "2.0.19",
   "description": "macOS native desktop app with built-in Buddy Core",
   "main": "./out/main/index.js",
+  "bin": {
+    "buddy": "./bin/buddy"
+  },
   "packageManager": "pnpm@11.1.3",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "buddy": "node out/main/cli.js",
     "preview": "electron-vite preview",
     "test": "vitest run tests/unit",
     "test:e2e": "sh scripts/run-e2e.sh",
