@@ -139,12 +139,23 @@ function buildLauncherCommand(input) {
     };
   }
   if (kind === "native_opencode") {
+    const isWecode = baseCmd[0] === "wecode" && baseCmd[1] === "opencode";
+    const leadingArgs = isWecode ? ["opencode"] : [];
+    const remainingPrefix = isWecode ? prefixArgs.slice(1) : prefixArgs;
+    const restArgs = remainingPrefix[0] === "run" ? remainingPrefix.slice(1) : remainingPrefix;
+    const hasFormat = restArgs.includes("--format") || restArgs.some((a) => a.startsWith("--format="));
+    const formatArgs = hasFormat ? [] : ["--format", "json"];
+    const hasPermissionFlag = restArgs.includes("--auto") || restArgs.includes("--dangerously-skip-permissions");
+    const permissionArgs = [];
+    if (!hasPermissionFlag) {
+      permissionArgs.push("--auto");
+    }
     const args2 = [
-      ...prefixArgs,
+      ...leadingArgs,
       "run",
-      "--format",
-      "json",
-      "--dangerously-skip-permissions"
+      ...formatArgs,
+      ...permissionArgs,
+      ...restArgs
     ];
     if (input.sessionId) args2.push("--session", input.sessionId);
     const promptText = input.promptText?.trim();

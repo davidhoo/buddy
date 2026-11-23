@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildLauncherCommand,
+  clearOpenCodeVersionCache,
   commandKindFor,
   createLineSplitter,
+  detectOpenCodeMajorVersion,
   drainLauncherStreams,
   isWecodeClaudeCommand,
   isWecodeCodexCommand,
@@ -262,10 +264,24 @@ describe('launcher command builder', () => {
     expect(elapsed).toBeLessThan(500)
   })
 
-  it('builds OpenCode json run command with prompt as a positional argument', () => {
+  it('builds OpenCode json run command with prompt as a positional argument (uses --auto for OpenCode 2.x)', () => {
     expect(buildLauncherCommand({
       actor: 'opencode',
       command: 'opencode',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt'
+    })).toEqual({
+      command: 'opencode',
+      args: ['run', '--format', 'json', '--auto', 'hello from prompt'],
+      kind: 'native_opencode'
+    })
+  })
+
+  it('builds OpenCode json run command using --dangerously-skip-permissions for OpenCode 1.x', () => {
+    expect(buildLauncherCommand({
+      actor: 'opencode',
+      command: 'opencode',
+      opencodeVersion: 1,
       promptFile: '/tmp/prompt.md',
       promptText: 'hello from prompt'
     })).toEqual({
@@ -288,13 +304,79 @@ describe('launcher command builder', () => {
         'run',
         '--format',
         'json',
-        '--dangerously-skip-permissions',
+        '--auto',
         '--session',
         'opencode-session',
         'hello from prompt'
       ],
       kind: 'native_opencode'
     })
+  })
+
+  it('places options such as --model after run subcommand for OpenCode', () => {
+    expect(buildLauncherCommand({
+      actor: 'opencode',
+      command: 'opencode --model opencode-go/gpt-6-luna',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt'
+    })).toEqual({
+      command: 'opencode',
+      args: [
+        'run',
+        '--format',
+        'json',
+        '--auto',
+        '--model',
+        'opencode-go/gpt-6-luna',
+        'hello from prompt'
+      ],
+      kind: 'native_opencode'
+    })
+  })
+
+  it('places model selection after run subcommand when model is passed in input', () => {
+    expect(buildLauncherCommand({
+      actor: 'opencode',
+      command: 'opencode',
+      model: 'opencode-go/gpt-6-luna',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello from prompt'
+    })).toEqual({
+      command: 'opencode',
+      args: [
+        'run',
+        '--format',
+        'json',
+        '--auto',
+        '--model',
+        'opencode-go/gpt-6-luna',
+        'hello from prompt'
+      ],
+      kind: 'native_opencode'
+    })
+  })
+
+  it('does not duplicate permission flags if already present in command', () => {
+    expect(buildLauncherCommand({
+      actor: 'opencode',
+      command: 'opencode run --auto',
+      promptFile: '/tmp/prompt.md',
+      promptText: 'hello'
+    })).toEqual({
+      command: 'opencode',
+      args: ['run', '--format', 'json', '--auto', 'hello'],
+      kind: 'native_opencode'
+    })
+  })
+
+  it('detects OpenCode major version or returns null for non-existent command', () => {
+    clearOpenCodeVersionCache()
+    // Non-existent command returns null
+    expect(detectOpenCodeMajorVersion('non_existent_opencode_cmd_12345')).toBeNull()
+
+    // Detects OpenCode version from current machine (v2.x)
+    const version = detectOpenCodeMajorVersion('opencode')
+    expect(version).toBe(2)
   })
 
   it('builds Kimi Code stream-json command with -p prompt', () => {
@@ -827,7 +909,7 @@ describe('launcher command builder', () => {
         'run',
         '--format',
         'json',
-        '--dangerously-skip-permissions',
+        '--auto',
         '--session',
         'sess-123',
         'test prompt'
