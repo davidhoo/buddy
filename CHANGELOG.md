@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.21] - 2026-11-25
+
+### Fixed
+- OpenCode 原生 CLI（2.0+）改用 `--auto` 替代不支持的 `--dangerously-skip-permissions`，并根据检测到的 OpenCode 主版本在 1.x 与 2.0+ 间自动适配权限参数（#13, #14）
+- 修复 OpenCode CLI `--model` 等选项位置，将运行参数置于 `run` 子命令之后，避免根命令无法识别参数而退出（#14）
+- 补充 OpenCode 版本检测的运行时环境兼容，并将相关单元测试与本机安装的 OpenCode 版本解耦
+
+### Changed
+- 更新 OpenCode 与 WeCode OpenCode 设置页提示文案，说明各版本对应的自动批准权限参数
+
+---
+
 ## [2.0.20] - 2026-11-18
 
 ### Added
