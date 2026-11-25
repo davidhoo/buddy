@@ -246,6 +246,7 @@ export function detectOpenCodeMajorVersion(executable = 'opencode', extraArgs: s
       encoding: 'utf8',
       timeout: 3000,
       windowsHide: true,
+      env: mergeChildEnv(process.env, withCompatibleRuntimeEnv(executable)),
       stdio: ['ignore', 'pipe', 'ignore']
     })
     if (res.status === 0 && res.stdout) {

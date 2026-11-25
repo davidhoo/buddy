@@ -1,3 +1,6 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildLauncherCommand,
@@ -268,6 +271,7 @@ describe('launcher command builder', () => {
     expect(buildLauncherCommand({
       actor: 'opencode',
       command: 'opencode',
+      opencodeVersion: 2,
       promptFile: '/tmp/prompt.md',
       promptText: 'hello from prompt'
     })).toEqual({
@@ -295,6 +299,7 @@ describe('launcher command builder', () => {
     expect(buildLauncherCommand({
       actor: 'opencode',
       command: 'opencode',
+      opencodeVersion: 2,
       promptFile: '/tmp/prompt.md',
       promptText: 'hello from prompt',
       sessionId: 'opencode-session'
@@ -317,6 +322,7 @@ describe('launcher command builder', () => {
     expect(buildLauncherCommand({
       actor: 'opencode',
       command: 'opencode --model opencode-go/gpt-6-luna',
+      opencodeVersion: 2,
       promptFile: '/tmp/prompt.md',
       promptText: 'hello from prompt'
     })).toEqual({
@@ -339,6 +345,7 @@ describe('launcher command builder', () => {
       actor: 'opencode',
       command: 'opencode',
       model: 'opencode-go/gpt-6-luna',
+      opencodeVersion: 2,
       promptFile: '/tmp/prompt.md',
       promptText: 'hello from prompt'
     })).toEqual({
@@ -369,14 +376,43 @@ describe('launcher command builder', () => {
     })
   })
 
-  it('detects OpenCode major version or returns null for non-existent command', () => {
+  it('detects OpenCode major version from executable output and returns null for non-existent command', () => {
     clearOpenCodeVersionCache()
-    // Non-existent command returns null
     expect(detectOpenCodeMajorVersion('non_existent_opencode_cmd_12345')).toBeNull()
 
-    // Detects OpenCode version from current machine (v2.x)
-    const version = detectOpenCodeMajorVersion('opencode')
-    expect(version).toBe(2)
+    const root = mkdtempSync(join(tmpdir(), 'buddy-opencode-ver-'))
+    try {
+      const makeStub = (subDir: string, versionOutput: string): string => {
+        const dir = join(root, subDir)
+        mkdirSync(dir, { recursive: true })
+        const binPath = join(dir, 'opencode')
+        writeFileSync(binPath, `#!/bin/sh\necho "${versionOutput}"\n`)
+        chmodSync(binPath, 0o755)
+        return binPath
+      }
+
+      const v1Bin = makeStub('v1', '1.19.6')
+      const v2Bin = makeStub('v2', 'opencode 2.3.2')
+
+      expect(detectOpenCodeMajorVersion(v1Bin)).toBe(1)
+      expect(detectOpenCodeMajorVersion(v2Bin)).toBe(2)
+
+      expect(buildLauncherCommand({
+        actor: 'opencode',
+        command: v1Bin,
+        promptFile: '/tmp/prompt.md',
+        promptText: 'hello'
+      }).args).toEqual(['run', '--format', 'json', '--dangerously-skip-permissions', 'hello'])
+
+      expect(buildLauncherCommand({
+        actor: 'opencode',
+        command: v2Bin,
+        promptFile: '/tmp/prompt.md',
+        promptText: 'hello'
+      }).args).toEqual(['run', '--format', 'json', '--auto', 'hello'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('builds Kimi Code stream-json command with -p prompt', () => {
@@ -899,6 +935,7 @@ describe('launcher command builder', () => {
     expect(buildLauncherCommand({
       actor: 'wecode_opencode',
       command: 'wecode opencode',
+      opencodeVersion: 2,
       promptFile: '/tmp/prompt.md',
       promptText: 'test prompt',
       sessionId: 'sess-123'
