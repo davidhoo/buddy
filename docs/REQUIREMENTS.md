@@ -908,7 +908,7 @@ Actor 输出格式：
 |-------|-------------|---------|
 | Claude | `claude --dangerously-skip-permissions` | `{cmd} -p --output-format stream-json --verbose --input-format text [--resume SID]`，prompt 通过 stdin |
 | Codex | `codex` | 新会话：`{cmd} exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -C REPO_ROOT -o OUTPUT_FILE -`；resume：`{cmd} exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -C REPO_ROOT -o OUTPUT_FILE resume SID -` |
-| OpenCode | `opencode` | `{cmd} run --format json --dangerously-skip-permissions [--session SID] [PROMPT]` |
+| OpenCode | `opencode` | `{cmd} run --format json [--auto / --dangerously-skip-permissions] [--session SID] [PROMPT]` |
 | Kimi | `kimi` | `{cmd} --print --output-format stream-json --input-format text [--session SID]`，prompt 通过 stdin |
 
 权限模式、profile、sandbox 等参数主要由用户写入启动命令。例外：`allow_dangerous_flags=true` 时，原生 Codex adapter 会为非交互流程自动追加 `--dangerously-bypass-approvals-and-sandbox`；`allow_dangerous_flags=false` 时绝不追加，并阻止用户命令中已有危险参数——见 §10 安全模型。

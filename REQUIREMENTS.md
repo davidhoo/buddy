@@ -908,7 +908,7 @@ Actor 输出格式：
 |-------|-------------|---------|
 | Claude | `claude --dangerously-skip-permissions` | `{cmd} -p --output-format stream-json --verbose --input-format text [--resume SID]`，prompt 通过 stdin |
 | Codex | `codex` | `{cmd} exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -C REPO_ROOT -o OUTPUT_FILE [-]`；resume：`{cmd} exec resume SID -` |
-| OpenCode | `opencode` | `{cmd} run --format json --dangerously-skip-permissions [--session SID] [PROMPT]` |
+| OpenCode | `opencode` | `{cmd} run --format json [--auto / --dangerously-skip-permissions] [--session SID] [PROMPT]` |
 | Kimi | `kimi` | `{cmd} --print --output-format stream-json --input-format text [--session SID]`，prompt 通过 stdin |
 
 权限模式、profile、sandbox 等参数由用户写入启动命令。`--dangerously-*` 是用户显式选择，应用不偷偷追加，但默认填充字符串中包含——见 §10 安全模型。

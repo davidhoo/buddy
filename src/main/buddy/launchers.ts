@@ -1,5 +1,5 @@
 import { AGENT_RECIPES } from '../../shared/agents'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { basename, dirname, resolve } from 'node:path'
 import { existsSync, statSync, chmodSync } from 'node:fs'
@@ -33,6 +33,8 @@ export interface LauncherCommandInput {
   sessionId?: string
   /** Buddy launcher timeout; native_agy maps this to --print-timeout (agy default is only 5m). */
   timeoutSeconds?: number
+  /** Optional OpenCode version override for tests or explicit configuration (e.g. 1 or 2). */
+  opencodeVersion?: number | string
 }
 
 export interface LauncherCommand {
@@ -228,6 +230,43 @@ const UNADAPTED_NATIVE_EXECUTABLES = new Set([
   'mothx', 'penguin', 'omo', 'prime-agent', 'empryo', 'ante'
 ])
 
+const opencodeVersionCache = new Map<string, number | null>()
+
+/**
+ * Detects the major version of OpenCode (e.g. 1 or 2) by executing `<command> --version`.
+ * Returns the detected major version, or null if detection fails.
+ */
+export function detectOpenCodeMajorVersion(executable = 'opencode', extraArgs: string[] = []): number | null {
+  const cacheKey = [executable, ...extraArgs].join(' ')
+  if (opencodeVersionCache.has(cacheKey)) {
+    return opencodeVersionCache.get(cacheKey) ?? null
+  }
+  try {
+    const res = spawnSync(executable, [...extraArgs, '--version'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    if (res.status === 0 && res.stdout) {
+      const match = res.stdout.match(/(?:opencode\s+)?v?(\d+)(?:\.\d+)?/i)
+      if (match) {
+        const major = parseInt(match[1], 10)
+        opencodeVersionCache.set(cacheKey, major)
+        return major
+      }
+    }
+  } catch {
+    // Ignore error
+  }
+  opencodeVersionCache.set(cacheKey, null)
+  return null
+}
+
+export function clearOpenCodeVersionCache(): void {
+  opencodeVersionCache.clear()
+}
+
 export function buildLauncherCommand(input: LauncherCommandInput): LauncherCommand {
   let baseCmd = [...splitCommand(input.command), ...(input.args ?? [])]
   if(input.model) {
@@ -349,12 +388,32 @@ export function buildLauncherCommand(input: LauncherCommandInput): LauncherComma
   }
 
   if (kind === 'native_opencode') {
+    const isWecode = isWecodeOpenCodeCommand(baseCmd)
+    const leadingArgs = isWecode ? ['opencode'] : []
+    const remainingPrefix = isWecode ? prefixArgs.slice(1) : prefixArgs
+    const restArgs = remainingPrefix[0] === 'run' ? remainingPrefix.slice(1) : remainingPrefix
+
+    const hasFormat = restArgs.includes('--format') || restArgs.some((a) => a.startsWith('--format='))
+    const formatArgs = hasFormat ? [] : ['--format', 'json']
+
+    const hasPermissionFlag =
+      restArgs.includes('--auto') || restArgs.includes('--dangerously-skip-permissions')
+    const permissionArgs: string[] = []
+    if (!hasPermissionFlag) {
+      const version = input.opencodeVersion !== undefined
+        ? (typeof input.opencodeVersion === 'number'
+            ? input.opencodeVersion
+            : parseInt(String(input.opencodeVersion).replace(/^v/i, ''), 10))
+        : detectOpenCodeMajorVersion(command, isWecode ? ['opencode'] : [])
+      permissionArgs.push(version === 1 ? '--dangerously-skip-permissions' : '--auto')
+    }
+
     const args = [
-      ...prefixArgs,
+      ...leadingArgs,
       'run',
-      '--format',
-      'json',
-      '--dangerously-skip-permissions'
+      ...formatArgs,
+      ...permissionArgs,
+      ...restArgs
     ]
     if (input.sessionId) args.push('--session', input.sessionId)
     const promptText = input.promptText?.trim()
